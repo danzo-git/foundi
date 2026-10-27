@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "1080925286687",
+    "project_id": "foundi-7c837",
+    "storage_bucket": "foundi-7c837.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1080925286687:android:513c1aca87e9c9259a002a",
+        "android_client_info": {
+          "package_name": "com.example.foundi"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1080925286687-rhqibl72ipvh6ovtbgpkcqosn9l8d763.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.foundi",
+            "certificate_hash": "b955170f582f792e9bb0d8917763ebca361148e3"
+          }
+        },
+        {
+          "client_id": "1080925286687-rlfusiht86ml2se0amerihhf2d54fh7k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD_qQ8_Fqk1Lj2Q4dcaJrmBQiMjURlKtAg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1080925286687-rlfusiht86ml2se0amerihhf2d54fh7k.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1080925286687-gukb7dolh1b2p11ftfubqcdqsokpfm66.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.foundi"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>1080925286687-gukb7dolh1b2p11ftfubqcdqsokpfm66.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.1080925286687-gukb7dolh1b2p11ftfubqcdqsokpfm66</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>1080925286687-rhqibl72ipvh6ovtbgpkcqosn9l8d763.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyD-64-WKrgDlGKvps5tEYbEgv53YoSvsBc</string>
+	<key>GCM_SENDER_ID</key>
+	<string>1080925286687</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.example.foundi</string>
+	<key>PROJECT_ID</key>
+	<string>foundi-7c837</string>
+	<key>STORAGE_BUCKET</key>
+	<string>foundi-7c837.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:1080925286687:ios:9cb983305deac41a9a002a</string>
+</dict>
+</plist>

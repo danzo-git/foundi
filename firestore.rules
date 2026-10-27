@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    function validProfile(data) {
+      return data.keys().hasAll(['fullName', 'phone', 'profession', 'registrationConfirmed', 'createdAt', 'updatedAt'])
+        && data.fullName is string && data.fullName.size() <= 100
+        && data.phone is string
+        && (data.phone == '' || data.phone.matches('^\\+[1-9][0-9]{7,14}$'))
+        && data.profession is string && data.profession.size() <= 100
+        && data.registrationConfirmed is bool
+        && data.createdAt is timestamp && data.updatedAt == request.time;
+    }
+    match /users/{uid} {
+      // Unverified users need access to their own registration draft, never another profile.
+      allow get: if owner(uid);
+      allow create: if owner(uid) && validProfile(request.resource.data)
+        && request.resource.data.keys().hasOnly([
+          'fullName', 'phone', 'profession', 'registrationConfirmed', 'createdAt', 'updatedAt'
+        ]) && request.resource.data.createdAt == request.time;
+      // Future roles, verification statuses and other server fields cannot be added or changed.
+      allow update: if owner(uid) && validProfile(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'fullName', 'phone', 'profession', 'registrationConfirmed', 'updatedAt'
+        ]);
+    }
+    match /authEmailChallenges/{challenge} {
+      allow read, write: if false;
+    }
+    match /authEmailRateLimits/{limit} {
+      allow read, write: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
