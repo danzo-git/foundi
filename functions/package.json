@@ -6,12 +6,19 @@
     "node": "22"
   },
   "scripts": {
-    "test": "node --test",
-    "check": "node --check src/index.js && node --check src/otp-service.js && node --check src/account-service.js && node --check src/auth-validation.js"
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/index.js && node --check src/otp-service.js && node --check src/account-service.js && node --check src/auth-validation.js && node --check src/professional-service.js && node --check scripts/configure-onboarding.js && node --check rules-test/permissions.test.cjs && node --check src/catalog-service.js",
+    "test:rules": "node --test rules-test/*.test.cjs",
+    "test:integration": "node --test integration-test/*.test.cjs",
+    "test:emulated": "npm run test:rules && npm run test:integration"
   },
   "dependencies": {
     "firebase-admin": "^14.5.0",
     "firebase-functions": "^7.4.0",
     "nodemailer": "^10.2.1"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "^12.19.0"
   }
 }

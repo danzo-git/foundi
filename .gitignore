@@ -51,3 +51,7 @@ functions/.secret*
 .firebase/
 *-debug.log
 **/*service-account*.json
+
+/admin/build/
+
+/.firebase-integration.json

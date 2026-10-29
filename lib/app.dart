@@ -4,10 +4,18 @@ import 'features/auth/domain/auth_repository.dart';
 import 'features/auth/presentation/auth_screen.dart';
 import 'features/auth/presentation/account_screen.dart';
 import 'features/auth/presentation/verification_screen.dart';
+import 'features/professional/domain/professional_repository.dart';
+import 'features/professional/presentation/professional_gate.dart';
+import 'features/navigation/presentation/foundi_shell.dart';
 
 class FoundiApp extends StatelessWidget {
-  const FoundiApp({super.key, required this.authRepository});
+  const FoundiApp({
+    super.key,
+    required this.authRepository,
+    this.professionalRepository,
+  });
   final AuthRepository authRepository;
+  final ProfessionalRepository? professionalRepository;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -32,6 +40,14 @@ class FoundiApp extends StatelessWidget {
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFFDCE7E2)),
+        ),
+      ),
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFFDCE7E2)),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -92,7 +108,14 @@ class FoundiApp extends StatelessWidget {
             repository: authRepository,
           );
         }
-        return AccountScreen(user: user, repository: authRepository);
+        return professionalRepository == null
+            ? FoundiShell(user: user, auth: authRepository)
+            : ProfessionalGate(
+                key: ValueKey(user.id),
+                user: user,
+                auth: authRepository,
+                repository: professionalRepository!,
+              );
       },
     ),
   );

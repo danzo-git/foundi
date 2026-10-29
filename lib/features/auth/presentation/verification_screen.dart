@@ -97,13 +97,6 @@ class _VerificationScreenState extends AuthActionState<VerificationScreen> {
             'Confirme ton adresse ${widget.user.email} avec le code à six chiffres reçu par e-mail.',
         icon: Icons.mark_email_read_outlined,
       ),
-      const Text(
-        'Étape 3 sur 3',
-        style: TextStyle(fontWeight: FontWeight.w700),
-      ),
-      const SizedBox(height: 10),
-      const LinearProgressIndicator(value: 1),
-      const SizedBox(height: 28),
       if (_challenge != null)
         Form(
           key: _form,

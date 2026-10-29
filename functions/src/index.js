@@ -1,12 +1,14 @@
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore } = require("firebase-admin/firestore");
+const { getStorage } = require("firebase-admin/storage");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret, defineString, defineInt, defineBoolean } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const nodemailer = require("nodemailer");
 const { createOtpService, OtpError } = require("./otp-service");
 const { changeRegistrationEmail } = require("./account-service");
+const { createProfessionalService } = require("./professional-service");
 
 initializeApp();
 const smtpPassword = defineSecret("SMTP_PASSWORD");
@@ -52,9 +54,10 @@ async function handle(operation) {
   try {
     return await operation();
   } catch (error) {
+    if (error instanceof HttpsError) throw error;
     if (error instanceof OtpError) throw new HttpsError(error.code, error.message);
     // Do not log SMTP errors, codes, addresses or tokens.
-    logger.error("Email authentication failed.", { code: String(error.code || "internal") });
+    logger.error("Foundi operation failed.", { code: String(error.code || "internal") });
     throw new HttpsError("internal", "Authentication is temporarily unavailable.");
   }
 }
@@ -73,3 +76,45 @@ exports.changeRegistrationEmail = onCall({ ...options, secrets: [] }, (request) 
     auth: getAuth(), uid: request.auth?.uid, email: request.data?.email,
     authTime: request.auth?.token.auth_time,
   })));
+
+const professional = createProfessionalService({
+  store, auth: getAuth(), files: {
+    save: async (path, bytes, contentType) => {
+      const file = getStorage().bucket().file(path);
+      await file.save(bytes, { resumable: false, contentType,
+        preconditionOpts: { ifGenerationMatch: 0 }, metadata: { cacheControl: 'private, no-store' } });
+      const [metadata] = await file.getMetadata();
+      return metadata.generation;
+    },
+    exists: async (path, generation) => {
+      try {
+        const [metadata] = await getStorage().bucket().file(path).getMetadata();
+        return String(metadata.generation) === generation && !metadata.metadata?.firebaseStorageDownloadTokens;
+      } catch (error) { if (error.code === 404) return false; throw error; }
+    },
+    remove: path => getStorage().bucket().file(path).delete({ ignoreNotFound: true }),
+  },
+});
+const proOptions = { region: 'europe-west1', maxInstances: 3, concurrency: 4, timeoutSeconds: 120, memory: '256MiB' };
+exports.startProfessionalProfile = onCall(proOptions, r => handle(() => professional.ensureDraft(r.auth?.uid)));
+exports.saveProfessionalActivity = onCall(proOptions, r => handle(() => professional.saveActivity(r.auth?.uid, r.data?.activity, r.data?.complete === true)));
+exports.uploadProfessionalDocument = onCall(proOptions, r => handle(() => professional.uploadDocument(r.auth?.uid, r.data?.kind, r.data?.name, r.data?.base64)));
+exports.submitProfessionalProfile = onCall(proOptions, r => handle(() => professional.submit(r.auth?.uid, r.data?.certified)));
+exports.reviewProfessionalProfile = onCall(proOptions, r => handle(() => professional.decide(r.auth?.uid, r.auth?.token, r.data?.uid, r.data?.status, r.data?.reason, r.data?.revision)));
+exports.checkProfessionalAccess = onCall(proOptions, r => handle(() => professional.requireApproved(r.auth?.uid)));
+
+exports.readProfessionalDocument = onCall(proOptions, r => handle(async () => {
+  if (!r.auth || r.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Accès administratif requis.');
+  const user = await getAuth().getUser(r.auth.uid);
+  if (user.disabled || user.customClaims?.admin !== true) throw new HttpsError('permission-denied', 'Accès révoqué.');
+  const { uid, kind } = r.data || {};
+  if (![uid, kind].every(v => typeof v === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(v))) throw new HttpsError('invalid-argument', 'Document invalide.');
+  const doc = (await getFirestore().doc('professionalProfiles/' + uid + '/documents/' + kind).get()).data();
+  if (doc?.state !== 'ready' || doc.objectPath !== 'professionalDocuments/' + uid + '/' + kind + '/' + doc.uploadId || !['application/pdf','image/png','image/jpeg'].includes(doc.contentType) || doc.size > 5242880) throw new HttpsError('failed-precondition', 'Document indisponible.');
+  const [bytes] = await getStorage().bucket().file(doc.objectPath, { generation: doc.generation }).download();
+  return { base64: bytes.toString('base64'), contentType: doc.contentType };
+}));
+
+const { createCatalogService } = require('./catalog-service');
+const catalogService = createCatalogService({ store, auth: getAuth() });
+exports.updateProfessionalCatalog = onCall(proOptions, r => handle(() => catalogService.update(r.auth?.uid, r.auth?.token, r.data)));

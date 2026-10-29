@@ -1,32 +1,59 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function admin() { return request.auth != null && request.auth.token.get('admin', false) == true; }
+    match /professionalAudit/{id} { allow read: if admin(); allow write: if false; }
     function owner(uid) {
       return request.auth != null && request.auth.uid == uid;
     }
     function validProfile(data) {
-      return data.keys().hasAll(['fullName', 'phone', 'profession', 'registrationConfirmed', 'createdAt', 'updatedAt'])
+      return data.keys().hasAll(['fullName', 'phone', 'registrationConfirmed', 'createdAt', 'updatedAt'])
         && data.fullName is string && data.fullName.size() <= 100
         && data.phone is string
         && (data.phone == '' || data.phone.matches('^\\+[1-9][0-9]{7,14}$'))
-        && data.profession is string && data.profession.size() <= 100
+        && data.get('profession', '') is string && data.get('profession', '').size() <= 100
         && data.registrationConfirmed is bool
+        && data.get('registrationPath', 'client') in ['client', 'professional']
+        && data.get('preferredMode', 'client') in ['client', 'professional']
+        && data.get('termsVersion', '') is string && data.get('termsVersion', '').size() <= 100
         && data.createdAt is timestamp && data.updatedAt == request.time;
+    }
+    function validConsent(data) {
+      return data.get('termsVersion', '') == '' || (
+        get(/databases/$(database)/documents/legalDocuments/current).data.published == true
+        && data.termsVersion == get(/databases/$(database)/documents/legalDocuments/current).data.version
+        && data.termsAcceptedAt == request.time
+      );
     }
     match /users/{uid} {
       // Unverified users need access to their own registration draft, never another profile.
-      allow get: if owner(uid);
-      allow create: if owner(uid) && validProfile(request.resource.data)
+      allow get: if owner(uid) || admin();
+      allow create: if owner(uid) && validProfile(request.resource.data) && validConsent(request.resource.data)
         && request.resource.data.keys().hasOnly([
-          'fullName', 'phone', 'profession', 'registrationConfirmed', 'createdAt', 'updatedAt'
+          'fullName', 'phone', 'profession', 'registrationConfirmed', 'registrationPath',
+          'preferredMode', 'termsVersion', 'termsAcceptedAt', 'createdAt', 'updatedAt'
         ]) && request.resource.data.createdAt == request.time;
       // Future roles, verification statuses and other server fields cannot be added or changed.
       allow update: if owner(uid) && validProfile(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['termsVersion', 'termsAcceptedAt'])
+          || validConsent(request.resource.data))
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'fullName', 'phone', 'profession', 'registrationConfirmed', 'updatedAt'
+          'fullName', 'phone', 'profession', 'registrationConfirmed', 'registrationPath',
+          'preferredMode', 'termsVersion', 'termsAcceptedAt', 'updatedAt'
         ]);
+      match /notifications/{id} { allow get, list: if owner(uid); allow write: if false; }
     }
+    match /professionalProfiles/{uid} {
+      allow get: if owner(uid) || admin();
+      allow list: if admin();
+      allow write: if false;
+      match /documents/{kind} { allow get, list: if owner(uid) || admin(); allow write: if false; }
+    }
+    match /referenceData/{id} { allow get: if id == 'professionalOnboarding'; allow list, write: if false; }
+    match /legalDocuments/{id} { allow get: if id == 'current'; allow list, write: if false; }
+    // Publication will use a backend transaction checking approved + business rules.
+    match /proposals/{id} { allow read, write: if false; }
     match /authEmailChallenges/{challenge} {
       allow read, write: if false;
     }

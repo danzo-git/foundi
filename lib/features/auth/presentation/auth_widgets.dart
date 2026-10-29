@@ -38,16 +38,43 @@ class AuthLayout extends StatelessWidget {
     required this.children,
     this.onBack,
     this.actions,
+    this.footer,
   });
   final String title;
   final List<Widget> children;
   final VoidCallback? onBack;
   final List<Widget>? actions;
+  final List<Widget>? footer;
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(title),
+      title: Row(
+        children: [
+          Container(
+            width: 26,
+            height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFF087F70),
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: const Text(
+              'F',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'Foundi',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
       backgroundColor: Colors.transparent,
       leading: onBack == null
           ? null
@@ -61,13 +88,26 @@ class AuthLayout extends StatelessWidget {
     body: SafeArea(
       child: Align(
         alignment: Alignment.topCenter,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: children,
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 440,
+                minHeight: constraints.maxHeight > 48
+                    ? constraints.maxHeight - 48
+                    : 0,
+              ),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ...children,
+                    if (footer != null) ...[
+                      const SizedBox(height: 28),
+                      ...footer!,
+                    ],
+                  ],
+              ),
             ),
           ),
         ),
@@ -91,12 +131,6 @@ class AuthHeading extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      CircleAvatar(
-        radius: 30,
-        backgroundColor: const Color(0xFFDEF4EA),
-        child: Icon(icon, color: const Color(0xFF107865), size: 30),
-      ),
-      const SizedBox(height: 24),
       Text(
         title,
         style: Theme.of(
@@ -226,13 +260,11 @@ class ProfileFields extends StatelessWidget {
     super.key,
     required this.name,
     required this.phone,
-    required this.profession,
     this.enabled = true,
     this.optional = false,
   });
   final TextEditingController name;
   final TextEditingController phone;
-  final TextEditingController profession;
   final bool enabled;
   final bool optional;
 
@@ -261,26 +293,203 @@ class ProfileFields extends StatelessWidget {
         autofillHints: const [AutofillHints.telephoneNumber],
         textInputAction: TextInputAction.next,
         decoration: const InputDecoration(
-          labelText: 'Numéro de téléphone',
+          labelText: 'Téléphone (facultatif)',
           hintText: '+2250700000000',
           helperText: 'Avec l’indicatif du pays. Aucun SMS ne sera envoyé.',
           helperMaxLines: 2,
         ),
-        validator: (value) => _validate(value, AuthValidators.phone),
-      ),
-      const SizedBox(height: 18),
-      TextFormField(
-        key: const ValueKey('profession'),
-        controller: profession,
-        enabled: enabled,
-        textCapitalization: TextCapitalization.sentences,
-        textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(
-          labelText: 'Profession / activité',
-          hintText: 'Ex. : étudiant, commerçant, plombier',
-        ),
-        validator: (value) => _validate(value, AuthValidators.profession),
+        validator: (value) => value == null || value.trim().isEmpty
+            ? null
+            : AuthValidators.phone(value),
       ),
     ],
   );
+}
+
+class OnboardingProgress extends StatelessWidget {
+  const OnboardingProgress(this.step, {super.key});
+  final int step;
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Étape $step sur 3',
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 10),
+      Row(
+        children: List.generate(
+          3,
+          (index) => Expanded(
+            child: Container(
+              height: 5,
+              margin: EdgeInsets.only(right: index == 2 ? 0 : 6),
+              decoration: BoxDecoration(
+                color: index < step
+                    ? const Color(0xFF087F70)
+                    : const Color(0xFFD7E6E0),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 24),
+    ],
+  );
+}
+
+class PathChoice extends StatelessWidget {
+  const PathChoice({
+    super.key,
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+    this.badge,
+  });
+  final String title, description;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback? onTap;
+  final String? badge;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Semantics(
+      selected: selected,
+      button: true,
+      child: Material(
+        color: selected ? const Color(0xFFDEF4EA) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(
+            color: selected ? const Color(0xFF43A891) : const Color(0xFFDCE7E2),
+          ),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: selected ? Colors.white : const Color(0xFFDEF4EA),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: const Color(0xFF107865)),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        description,
+                        style: const TextStyle(
+                          color: Color(0xFF647D75),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (badge != null)
+                  Text(
+                    badge!,
+                    style: const TextStyle(
+                      color: Color(0xFF107865),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  )
+                else
+                  Icon(
+                    selected ? Icons.check_circle : Icons.circle_outlined,
+                    color: selected
+                        ? const Color(0xFF107865)
+                        : const Color(0xFFDCE7E2),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class LegalConsent extends StatelessWidget {
+  const LegalConsent({
+    super.key,
+    required this.documents,
+    required this.accepted,
+    required this.onChanged,
+  });
+  final LegalDocuments documents;
+  final bool accepted;
+  final ValueChanged<bool>? onChanged;
+  void _show(BuildContext context, String title, String text) =>
+      showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: SingleChildScrollView(child: SelectableText(text)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Fermer'),
+            ),
+          ],
+        ),
+      );
+  @override
+  Widget build(BuildContext context) => !documents.published
+      ? const AuthNotice(
+          'Les CGU et la politique de confidentialité sont en préparation. Leur acceptation sera demandée après publication, avant la soumission professionnelle.',
+          isError: false,
+        )
+      : Column(
+          children: [
+            CheckboxListTile(
+              key: const ValueKey('acceptTerms'),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: accepted,
+              onChanged: onChanged == null
+                  ? null
+                  : (v) => onChanged!(v ?? false),
+              title: const Text(
+                'J’accepte les CGU et la politique de confidentialité',
+                style: TextStyle(fontSize: 13),
+              ),
+            ),
+            Wrap(
+              children: [
+                TextButton(
+                  onPressed: () => _show(context, 'CGU', documents.terms),
+                  child: const Text('Lire les CGU'),
+                ),
+                TextButton(
+                  onPressed: () => _show(
+                    context,
+                    'Politique de confidentialité',
+                    documents.privacy,
+                  ),
+                  child: const Text('Confidentialité'),
+                ),
+              ],
+            ),
+          ],
+        );
 }

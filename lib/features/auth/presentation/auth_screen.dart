@@ -13,263 +13,309 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends AuthActionState<AuthScreen> {
   final _form = GlobalKey<FormState>();
-  final _email = TextEditingController();
-  final _password = TextEditingController();
-  final _confirmation = TextEditingController();
-  final _name = TextEditingController();
-  final _phone = TextEditingController();
-  final _profession = TextEditingController();
-  bool _registering = false;
-  int _step = 0;
-
+  final _email = TextEditingController(), _password = TextEditingController();
+  final _name = TextEditingController(), _phone = TextEditingController();
+  // 0: common login, 1: choice of path, 2: account creation.
+  int _page = 0;
+  String? _path;
+  bool _accepted = false;
+  LegalDocuments? _legal;
+  bool _loadingLegal = false;
   @override
   void dispose() {
-    for (final controller in [
-      _email,
-      _password,
-      _confirmation,
-      _name,
-      _phone,
-      _profession,
-    ]) {
-      controller.dispose();
+    for (final c in [_email, _password, _name, _phone]) {
+      c.dispose();
     }
     super.dispose();
   }
 
-  void _switchMode() {
+  void _go(int page) {
     FocusScope.of(context).unfocus();
     setState(() {
-      _registering = !_registering;
-      _step = 0;
+      _page = page;
       error = null;
       _password.clear();
-      _confirmation.clear();
     });
+    if (page == 2 && _legal == null) _loadLegal();
+  }
+
+  Future<void> _loadLegal() async {
+    setState(() => _loadingLegal = true);
+    await perform(() async {
+      final documents = await widget.repository.loadLegalDocuments();
+      if (mounted) setState(() => _legal = documents);
+    });
+    if (mounted) setState(() => _loadingLegal = false);
+  }
+
+  bool _consentReady() {
+    if (_legal == null) {
+      setState(() => error = 'Charge les conditions avant de continuer.');
+      return false;
+    }
+    if (_legal!.published && !_accepted) {
+      setState(
+        () => error = 'Accepte les CGU et la politique de confidentialité.',
+      );
+      return false;
+    }
+    return true;
   }
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
-    FocusScope.of(context).unfocus();
-    if (_registering && _step == 0) {
-      setState(() {
-        _step = 1;
-        error = null;
-      });
-      return;
-    }
-    final success = await perform(
-      () => _registering
+    if (_page == 2 && !_consentReady()) return;
+    await perform(
+      () => _page == 2
           ? widget.repository.registerWithPassword(
               email: _email.text,
               password: _password.text,
               profile: AccountProfile(
                 fullName: _name.text.trim(),
                 phone: AuthValidators.normalizePhone(_phone.text),
-                profession: _profession.text.trim(),
                 registrationConfirmed: true,
+                registrationPath: _path ?? 'client',
+                termsVersion: _legal!.published ? _legal!.version : '',
               ),
             )
           : widget.repository.signInWithPassword(_email.text, _password.text),
     );
-    if (success && mounted) {
-      _password.clear();
-      _confirmation.clear();
-    }
   }
 
-  void _resetPassword(bool defining) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PasswordResetScreen(
-          repository: widget.repository,
-          initialEmail: _email.text,
-          defining: defining,
-        ),
+  Future<void> _google() async {
+    if (_page == 2 && !_consentReady()) return;
+    await perform(
+      () => widget.repository.signInWithGoogle(
+        registering: _page == 2,
+        registrationPath: _path ?? 'client',
+        termsVersion: _page == 2 && _legal!.published ? _legal!.version : '',
       ),
     );
   }
 
+  void _reset(bool defining) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => PasswordResetScreen(
+        repository: widget.repository,
+        initialEmail: _email.text,
+        defining: defining,
+      ),
+    ),
+  );
   @override
   Widget build(BuildContext context) => PopScope(
-    canPop: !_registering,
+    canPop: _page == 0,
     onPopInvokedWithResult: (didPop, _) {
-      if (!didPop && !busy) {
-        if (_step == 1) {
-          setState(() {
-            _step = 0;
-            error = null;
-          });
-        } else {
-          _switchMode();
-        }
-      }
+      if (!didPop && !busy) _go(_page - 1);
     },
-    child: AuthLayout(
-      title: _registering ? 'Créer un compte' : 'Se connecter',
-      onBack: _registering && !busy
-          ? () {
-              if (_step == 1) {
-                setState(() {
-                  _step = 0;
-                  error = null;
-                });
-              } else {
-                _switchMode();
-              }
-            }
-          : null,
-      children: [
-        AuthHeading(
-          title: _registering
-              ? (_step == 0 ? 'Faisons connaissance' : 'Sécurise ton compte')
-              : 'Heureux de te retrouver',
-          description: _registering
-              ? (_step == 0
-                    ? 'Renseigne tes informations pour créer ton compte Foundi.'
-                    : 'Choisis tes identifiants. Nous vérifierons ensuite ton adresse e-mail.')
-              : 'Connecte-toi pour retrouver tes recherches et tes échanges.',
-          icon: _registering ? Icons.person_add_alt_outlined : Icons.login,
-        ),
-        if (_registering) ...[
-          Text(
-            'Étape ${_step + 1} sur 3',
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 10),
-          LinearProgressIndicator(value: (_step + 1) / 3),
-          const SizedBox(height: 24),
-        ],
-        Form(
-          key: _form,
-          child: AutofillGroup(
-            child: Column(
-              key: ValueKey('$_registering-$_step'),
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (_registering && _step == 0)
-                  ProfileFields(
-                    name: _name,
-                    phone: _phone,
-                    profession: _profession,
-                    enabled: !busy,
-                  )
-                else ...[
-                  TextFormField(
-                    key: const ValueKey('email'),
-                    controller: _email,
-                    enabled: !busy,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    autocorrect: false,
-                    autofillHints: const [AutofillHints.email],
-                    decoration: const InputDecoration(
-                      labelText: 'Adresse e-mail',
-                      hintText: 'toi@exemple.com',
-                    ),
-                    validator: AuthValidators.email,
-                  ),
-                  const SizedBox(height: 18),
-                  PasswordField(
-                    fieldKey: 'password',
-                    controller: _password,
-                    enabled: !busy,
-                    newPassword: _registering,
-                    validator: _registering
-                        ? AuthValidators.password
-                        : AuthValidators.loginPassword,
-                  ),
-                  if (_registering) ...[
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 10),
-                      child: Text(
-                        'Au moins 12 caractères.',
-                        style: TextStyle(color: Color(0xFF647D75)),
-                      ),
-                    ),
-                    PasswordField(
-                      fieldKey: 'passwordConfirmation',
-                      controller: _confirmation,
-                      label: 'Confirmer le mot de passe',
-                      newPassword: true,
-                      enabled: !busy,
-                      validator: (value) => value == _password.text
-                          ? null
-                          : 'Les mots de passe ne correspondent pas.',
-                    ),
-                  ] else
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: busy ? null : () => _resetPassword(false),
-                        child: const Text('Mot de passe oublié ?'),
-                      ),
-                    ),
-                ],
-              ],
-            ),
-          ),
-        ),
-        AuthNotice(error),
-        const SizedBox(height: 24),
+    child: _page == 1 ? _choice() : _credentials(),
+  );
+  Widget _choice() => AuthLayout(
+    title: 'Créer un compte',
+    onBack: () => _go(0),
+    footer: [
+      const AuthNotice(
+        'Tu pourras utiliser les deux espaces avec un seul compte.',
+        isError: false,
+      ),
+      AuthButton(
+        key: const ValueKey('continuePath'),
+        label: 'Continuer',
+        onPressed: _path == null ? null : () => _go(2),
+      ),
+    ],
+    children: [
+      const AuthHeading(
+        title: 'Créer un compte',
+        description: 'Comment souhaites-tu utiliser Foundi ?',
+      ),
+      PathChoice(
+        key: const ValueKey('clientPath'),
+        title: 'Je cherche un service',
+        description: 'Publier mes besoins et recevoir des offres',
+        icon: Icons.search,
+        selected: _path == 'client',
+        onTap: () => setState(() => _path = 'client'),
+      ),
+      PathChoice(
+        key: const ValueKey('professionalPath'),
+        title: 'Je suis professionnel',
+        description: 'Répondre aux demandes de clients',
+        icon: Icons.work_outline,
+        selected: _path == 'professional',
+        onTap: () => setState(() => _path = 'professional'),
+      ),
+      TextButton(
+        onPressed: () => _go(0),
+        child: const Text('Déjà inscrit ? Se connecter'),
+      ),
+    ],
+  );
+  Widget _credentials() {
+    final registering = _page == 2;
+    return AuthLayout(
+      title: registering ? 'Créer un compte' : 'Se connecter',
+      onBack: registering && !busy ? () => _go(1) : null,
+      footer: [
         AuthButton(
           key: const ValueKey('submitAuth'),
-          label: _registering
-              ? (_step == 0 ? 'Continuer' : 'Créer mon compte')
-              : 'Se connecter',
+          label: registering ? 'Continuer' : 'Se connecter',
           busy: busy,
           onPressed: _submit,
         ),
-        if (!_registering || _step == 0) ...[
-          const SizedBox(height: 24),
-          const Row(
-            children: [
-              Expanded(child: Divider()),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Text('ou'),
-              ),
-              Expanded(child: Divider()),
-            ],
-          ),
-          const SizedBox(height: 20),
-          OutlinedButton.icon(
-            key: const ValueKey('googleAuth'),
-            onPressed: busy
-                ? null
-                : () => perform(
-                    () => widget.repository.signInWithGoogle(
-                      registering: _registering,
-                    ),
-                  ),
-            icon: const Icon(Icons.account_circle_outlined),
-            label: Text(
-              _registering
-                  ? 'S’inscrire avec Google'
-                  : 'Se connecter avec Google',
-            ),
-          ),
-        ],
         const SizedBox(height: 20),
-        Text(
-          _registering ? 'Tu as déjà un compte ?' : 'Tu découvres Foundi ?',
-          textAlign: TextAlign.center,
+        const Row(
+          children: [
+            Expanded(child: Divider()),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14),
+              child: Text('ou'),
+            ),
+            Expanded(child: Divider()),
+          ],
         ),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          key: const ValueKey('googleAuth'),
+          onPressed: busy ? null : _google,
+          icon: const Icon(Icons.account_circle_outlined),
+          label: Text(
+            registering ? 'Continuer avec Google' : 'Se connecter avec Google',
+          ),
+        ),
+        const SizedBox(height: 24),
         TextButton(
           key: const ValueKey('switchAuthMode'),
-          onPressed: busy ? null : _switchMode,
-          child: Text(_registering ? 'Se connecter' : 'Créer un compte'),
+          onPressed: busy ? null : () => _go(registering ? 0 : 1),
+          child: Text(
+            registering
+                ? 'Déjà inscrit ? Se connecter'
+                : 'Tu découvres Foundi ? Créer un compte',
+          ),
         ),
-        if (!_registering)
+        if (!registering) ...[
+          const Text(
+            'Même connexion pour clients et professionnels.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: Color(0xFF647D75)),
+          ),
           TextButton(
             key: const ValueKey('setupPassword'),
-            onPressed: busy ? null : () => _resetPassword(true),
+            onPressed: busy ? null : () => _reset(true),
             child: const Text(
               'Compte créé avec un code ? Définir mon mot de passe',
               textAlign: TextAlign.center,
             ),
           ),
+        ],
       ],
-    ),
-  );
+      children: [
+        AuthHeading(
+          title: registering
+              ? 'Faisons connaissance'
+              : 'Heureux de te retrouver',
+          description: registering
+              ? 'Créons ton compte Foundi.'
+              : 'Connecte-toi pour retrouver tes échanges.',
+        ),
+        if (registering && _path == 'professional') const OnboardingProgress(1),
+        Form(
+          key: _form,
+          child: AutofillGroup(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (registering) ...[
+                  TextFormField(
+                    key: const ValueKey('fullName'),
+                    controller: _name,
+                    enabled: !busy,
+                    decoration: const InputDecoration(
+                      labelText: 'Nom complet ou nom affiché',
+                      hintText: 'Ton nom',
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                    autofillHints: const [AutofillHints.name],
+                    validator: AuthValidators.fullName,
+                  ),
+                  const SizedBox(height: 18),
+                ],
+                TextFormField(
+                  key: const ValueKey('email'),
+                  controller: _email,
+                  enabled: !busy,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  autocorrect: false,
+                  autofillHints: const [AutofillHints.email],
+                  decoration: const InputDecoration(
+                    labelText: 'Adresse e-mail',
+                    hintText: 'nom@exemple.com',
+                  ),
+                  validator: AuthValidators.email,
+                ),
+                const SizedBox(height: 18),
+                PasswordField(
+                  fieldKey: 'password',
+                  controller: _password,
+                  enabled: !busy,
+                  newPassword: registering,
+                  validator: registering
+                      ? AuthValidators.password
+                      : AuthValidators.loginPassword,
+                ),
+                if (registering) ...[
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Au moins 12 caractères.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF647D75)),
+                    ),
+                  ),
+                  TextFormField(
+                    key: const ValueKey('phone'),
+                    controller: _phone,
+                    enabled: !busy,
+                    keyboardType: TextInputType.phone,
+                    autofillHints: const [AutofillHints.telephoneNumber],
+                    decoration: const InputDecoration(
+                      labelText: 'Téléphone (+225) · facultatif',
+                      hintText: '+2250700000000',
+                    ),
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? null
+                        : AuthValidators.phone(v),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_legal != null)
+                    LegalConsent(
+                      documents: _legal!,
+                      accepted: _accepted,
+                      onChanged: busy
+                          ? null
+                          : (v) => setState(() => _accepted = v),
+                    )
+                  else if (_loadingLegal)
+                    const LinearProgressIndicator()
+                  else
+                    TextButton(
+                      onPressed: _loadLegal,
+                      child: const Text('Réessayer de charger les conditions'),
+                    ),
+                ] else
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: busy ? null : () => _reset(false),
+                      child: const Text('Mot de passe oublié ?'),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        AuthNotice(error),
+      ],
+    );
+  }
 }

@@ -189,15 +189,34 @@ test("disabled, verified, Google-only and legacy users cannot request registrati
   }
 });
 
-test("requires full classic profile, including a phone with country code", async () => {
+test("requires the common name and confirmation, validates a provided phone", async () => {
   for (const fields of [
-    { fullName: "" }, { phone: "0700000000" }, { profession: "" }, { registrationConfirmed: false },
+    { fullName: "" }, { phone: "0700000000" }, { registrationConfirmed: false },
   ]) {
     const ctx = setup();
     Object.assign(ctx.store.documents.get("users/owner"), fields);
     await assert.rejects(ctx.requestCode("owner", "ip"), failsWith("failed-precondition"));
     assert.equal(ctx.mail.length, 0);
   }
+});
+
+test('V3 client verification needs neither a phone nor professional information', async () => {
+  const ctx = setup();
+  Object.assign(ctx.store.documents.get('users/owner'), { phone: '', profession: '' });
+  const challenge = await ctx.requestCode('owner', 'ip');
+  await ctx.verifyCode('owner', challenge.challengeId, '012345', 'ip');
+  assert.equal(ctx.users.get('owner').emailVerified, true);
+});
+
+test('V3 verification also accepts a profile with the optional phone and profession fields absent', async () => {
+  const ctx = setup();
+  const profile = ctx.store.documents.get('users/owner');
+  delete profile.phone;
+  delete profile.profession;
+  const challenge = await ctx.requestCode('owner', 'ip');
+  await ctx.verifyCode('owner', challenge.challengeId, '012345', 'ip');
+  assert.equal(ctx.users.get('owner').emailVerified, true);
+  assert.equal(ctx.users.size, 1);
 });
 
 test("a code for the old email cannot verify a changed email", async () => {

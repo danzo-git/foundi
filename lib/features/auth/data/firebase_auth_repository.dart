@@ -139,6 +139,9 @@ class FirebaseAuthRepository implements AuthRepository {
               phone: data['phone'] as String? ?? '',
               profession: data['profession'] as String? ?? '',
               registrationConfirmed: data['registrationConfirmed'] == true,
+              registrationPath: data['registrationPath'] as String? ?? 'client',
+              preferredMode: data['preferredMode'] as String? ?? 'client',
+              termsVersion: data['termsVersion'] as String? ?? '',
             ),
           ),
         );
@@ -184,6 +187,12 @@ class FirebaseAuthRepository implements AuthRepository {
         'phone': profile.phone,
         'profession': profile.profession.trim(),
         'registrationConfirmed': profile.registrationConfirmed,
+        'registrationPath': profile.registrationPath,
+        'preferredMode': profile.preferredMode,
+        'termsVersion': profile.termsVersion,
+        if (profile.termsVersion.isNotEmpty &&
+            existing.data()?['termsVersion'] != profile.termsVersion)
+          'termsAcceptedAt': FieldValue.serverTimestamp(),
         if (!existing.exists) 'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -203,14 +212,7 @@ class FirebaseAuthRepository implements AuthRepository {
       email: email.trim().toLowerCase(),
       password: password,
     );
-    await _writeProfile(
-      AccountProfile(
-        fullName: profile.fullName,
-        phone: profile.phone,
-        profession: profile.profession,
-        registrationConfirmed: true,
-      ),
-    );
+    await _writeProfile(profile.copyWith(registrationConfirmed: true));
   });
 
   @override
@@ -305,18 +307,14 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Future<void> saveProfile(AccountProfile profile) => _pauseSession(
-    () => _writeProfile(
-      AccountProfile(
-        fullName: profile.fullName,
-        phone: profile.phone,
-        profession: profile.profession,
-        registrationConfirmed: true,
-      ),
-    ),
+    () => _writeProfile(profile.copyWith(registrationConfirmed: true)),
   );
 
   @override
-  Future<void> confirmGoogleRegistration() => _pauseSession(() async {
+  Future<void> confirmGoogleRegistration({
+    String registrationPath = 'client',
+    String termsVersion = '',
+  }) => _pauseSession(() async {
     final user = _auth.currentUser;
     if (user == null ||
         !user.providerData.any((p) => p.providerId == 'google.com')) {
@@ -324,75 +322,122 @@ class FirebaseAuthRepository implements AuthRepository {
     }
     await _profile(user.uid).update({
       'registrationConfirmed': true,
+      'registrationPath': registrationPath,
+      'termsVersion': termsVersion,
+      if (termsVersion.isNotEmpty)
+        'termsAcceptedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   });
 
   @override
-  Future<void> signInWithGoogle({required bool registering}) => _pauseSession(
-    () async {
-      UserCredential credential;
-      try {
-        if (kIsWeb) {
-          credential = await _auth.signInWithPopup(
-            GoogleAuthProvider()
-              ..setCustomParameters({'prompt': 'select_account'}),
-          );
-        } else {
-          if (defaultTargetPlatform != TargetPlatform.android &&
-              defaultTargetPlatform != TargetPlatform.iOS &&
-              defaultTargetPlatform != TargetPlatform.macOS) {
-            throw const AuthFailure(
-              'La connexion Google est disponible sur Android, iOS et le Web.',
-            );
-          }
-          await (_googleInitialization ??= GoogleSignIn.instance.initialize());
-          final account = await GoogleSignIn.instance.authenticate();
-          final token = account.authentication.idToken;
-          if (token == null) {
-            throw const AuthFailure('Google n’a pas confirmé la connexion.');
-          }
-          credential = await _auth.signInWithCredential(
-            GoogleAuthProvider.credential(idToken: token),
-          );
-        }
-      } on GoogleSignInException catch (error) {
-        if (error.code == GoogleSignInExceptionCode.canceled) return;
-        throw const AuthFailure(
-          'Impossible de se connecter avec Google. Réessaie.',
+  Future<void> signInWithGoogle({
+    required bool registering,
+    String registrationPath = 'client',
+    String termsVersion = '',
+  }) => _pauseSession(() async {
+    UserCredential credential;
+    try {
+      if (kIsWeb) {
+        credential = await _auth.signInWithPopup(
+          GoogleAuthProvider()
+            ..setCustomParameters({'prompt': 'select_account'}),
         );
-      } on FirebaseAuthException catch (error) {
-        if (error.code == 'popup-closed-by-user' ||
-            error.code == 'cancelled-popup-request') {
-          return;
+      } else {
+        if (defaultTargetPlatform != TargetPlatform.android &&
+            defaultTargetPlatform != TargetPlatform.iOS &&
+            defaultTargetPlatform != TargetPlatform.macOS) {
+          throw const AuthFailure(
+            'La connexion Google est disponible sur Android, iOS et le Web.',
+          );
         }
-        rethrow;
+        await (_googleInitialization ??= GoogleSignIn.instance.initialize());
+        final account = await GoogleSignIn.instance.authenticate();
+        final token = account.authentication.idToken;
+        if (token == null) {
+          throw const AuthFailure('Google n’a pas confirmé la connexion.');
+        }
+        credential = await _auth.signInWithCredential(
+          GoogleAuthProvider.credential(idToken: token),
+        );
       }
-      final user = credential.user!;
-      final ref = _profile(user.uid);
-      final name = user.displayName ?? '';
-      await _firestore.runTransaction((transaction) async {
-        final existing = await transaction.get(ref);
-        if (!existing.exists) {
-          transaction.set(ref, {
-            'fullName': name.length > 100 ? name.substring(0, 100) : name,
-            'phone': '',
-            'profession': '',
-            'registrationConfirmed':
-                registering || credential.additionalUserInfo?.isNewUser != true,
-            'createdAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        } else if (registering &&
-            existing.data()?['registrationConfirmed'] != true) {
-          transaction.update(ref, {
-            'registrationConfirmed': true,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        }
-      });
-    },
-  );
+    } on GoogleSignInException catch (error) {
+      if (error.code == GoogleSignInExceptionCode.canceled) return;
+      throw const AuthFailure(
+        'Impossible de se connecter avec Google. Réessaie.',
+      );
+    } on FirebaseAuthException catch (error) {
+      if (error.code == 'popup-closed-by-user' ||
+          error.code == 'cancelled-popup-request') {
+        return;
+      }
+      rethrow;
+    }
+    final user = credential.user!;
+    final ref = _profile(user.uid);
+    final name = user.displayName ?? '';
+    await _firestore.runTransaction((transaction) async {
+      final existing = await transaction.get(ref);
+      if (!existing.exists) {
+        transaction.set(ref, {
+          'fullName': name.length > 100 ? name.substring(0, 100) : name,
+          'phone': '',
+          'profession': '',
+          'registrationPath': registering ? registrationPath : 'client',
+          'preferredMode': 'client',
+          'termsVersion': registering ? termsVersion : '',
+          if (registering && termsVersion.isNotEmpty)
+            'termsAcceptedAt': FieldValue.serverTimestamp(),
+          'registrationConfirmed':
+              registering || credential.additionalUserInfo?.isNewUser != true,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      } else if (registering) {
+        transaction.update(ref, {
+          'registrationConfirmed': true,
+          'registrationPath': registrationPath,
+          if (termsVersion.isNotEmpty &&
+              existing.data()?['termsVersion'] != termsVersion) ...{
+            'termsVersion': termsVersion,
+            'termsAcceptedAt': FieldValue.serverTimestamp(),
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    });
+  });
+
+  @override
+  Future<LegalDocuments> loadLegalDocuments() => _safe(() async {
+    final data = (await _firestore.doc('legalDocuments/current').get()).data();
+    if (data?['published'] != true) return const LegalDocuments();
+    return LegalDocuments(
+      version: data?['version'] as String? ?? '',
+      terms: data?['terms'] as String? ?? '',
+      privacy: data?['privacy'] as String? ?? '',
+    );
+  });
+  @override
+  Future<void> acceptLegal(String version) => _pauseSession(() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw const AuthFailure('Reconnecte-toi pour continuer.');
+    await _profile(uid).update({
+      'termsVersion': version,
+      'termsAcceptedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  });
+  @override
+  Future<void> setPreferredMode(String mode) => _safe(() async {
+    if (!['client', 'professional'].contains(mode) || _auth.currentUser == null) {
+      throw const AuthFailure('Mode indisponible.');
+    }
+    await _profile(_auth.currentUser!.uid).update({
+      'preferredMode': mode,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  });
 
   @override
   Future<void> signOut() => _pauseSession(() async {

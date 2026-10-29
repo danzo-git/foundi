@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'app.dart';
 import 'features/auth/data/firebase_auth_repository.dart';
 import 'firebase_options.dart';
+import 'features/professional/data/firebase_professional_repository.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,8 +25,22 @@ class _BootstrapState extends State<_Bootstrap> {
   late Future<FirebaseAuthRepository> _initialization = _initialize();
 
   Future<FirebaseAuthRepository> _initialize() async {
+    const emulated = bool.fromEnvironment('USE_FIREBASE_EMULATORS');
+    const project = String.fromEnvironment(
+      'FIREBASE_EMULATOR_PROJECT',
+      defaultValue: 'demo-foundi',
+    );
+    final options = DefaultFirebaseOptions.currentPlatform;
     await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
+      options: emulated
+          ? FirebaseOptions(
+              apiKey: options.apiKey,
+              appId: options.appId,
+              messagingSenderId: options.messagingSenderId,
+              projectId: project,
+              storageBucket: '$project.appspot.com',
+            )
+          : options,
     );
     if (const bool.fromEnvironment('USE_FIREBASE_EMULATORS')) {
       const configuredHost = String.fromEnvironment('FIREBASE_EMULATOR_HOST');
@@ -34,11 +49,29 @@ class _BootstrapState extends State<_Bootstrap> {
           : (!kIsWeb && defaultTargetPlatform == TargetPlatform.android
                 ? '10.0.2.2'
                 : 'localhost');
-      await FirebaseAuth.instance.useAuthEmulator(host, 9099);
-      FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
+      await FirebaseAuth.instance.useAuthEmulator(
+        host,
+        const int.fromEnvironment(
+          'FIREBASE_AUTH_EMULATOR_PORT',
+          defaultValue: 9099,
+        ),
+      );
+      FirebaseFirestore.instance.useFirestoreEmulator(
+        host,
+        const int.fromEnvironment(
+          'FIRESTORE_EMULATOR_PORT',
+          defaultValue: 8080,
+        ),
+      );
       FirebaseFunctions.instanceFor(
         region: 'europe-west1',
-      ).useFunctionsEmulator(host, 5001);
+      ).useFunctionsEmulator(
+        host,
+        const int.fromEnvironment(
+          'FUNCTIONS_EMULATOR_PORT',
+          defaultValue: 5001,
+        ),
+      );
     }
     return FirebaseAuthRepository();
   }
@@ -48,7 +81,10 @@ class _BootstrapState extends State<_Bootstrap> {
     future: _initialization,
     builder: (context, snapshot) {
       if (snapshot.hasData) {
-        return FoundiApp(authRepository: snapshot.requireData);
+        return FoundiApp(
+          authRepository: snapshot.requireData,
+          professionalRepository: FirebaseProfessionalRepository(),
+        );
       }
       return MaterialApp(
         debugShowCheckedModeBanner: false,

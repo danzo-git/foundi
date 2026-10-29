@@ -28,11 +28,11 @@ function requirePendingPasswordUser(user) {
   normalizeEmail(user.email);
 }
 function requireCompleteProfile(profile) {
+  const phone = profile?.phone ?? '';
   if (typeof profile?.fullName !== "string" || profile.fullName.trim().length < 2 ||
-      profile.fullName.length > 100 || typeof profile.phone !== "string" ||
-      !/^\+[1-9][0-9]{7,14}$/.test(profile.phone) ||
-      typeof profile.profession !== "string" || !profile.profession.trim() ||
-      profile.profession.length > 100 || profile.registrationConfirmed !== true) {
+      profile.fullName.length > 100 || typeof phone !== "string" ||
+      (phone !== '' && !/^\+[1-9][0-9]{7,14}$/.test(phone)) ||
+      profile.registrationConfirmed !== true) {
     throw new OtpError("failed-precondition", "Complete your registration profile.");
   }
 }

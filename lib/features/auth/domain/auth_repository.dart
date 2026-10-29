@@ -4,16 +4,43 @@ class AccountProfile {
     this.phone = '',
     this.profession = '',
     this.registrationConfirmed = false,
+    this.registrationPath = 'client',
+    this.preferredMode = 'client',
+    this.termsVersion = '',
   });
   final String fullName;
   final String phone;
   final String profession;
   final bool registrationConfirmed;
+  final String registrationPath, preferredMode, termsVersion;
 
   bool get isComplete =>
       fullName.trim().length >= 2 &&
-      RegExp(r'^\+[1-9][0-9]{7,14}$').hasMatch(phone) &&
-      profession.trim().isNotEmpty;
+      (phone.isEmpty || RegExp(r'^\+[1-9][0-9]{7,14}$').hasMatch(phone));
+
+  AccountProfile copyWith({
+    String? fullName,
+    String? phone,
+    bool? registrationConfirmed,
+    String? registrationPath,
+    String? preferredMode,
+    String? termsVersion,
+  }) => AccountProfile(
+    fullName: fullName ?? this.fullName,
+    phone: phone ?? this.phone,
+    profession: profession,
+    registrationConfirmed: registrationConfirmed ?? this.registrationConfirmed,
+    registrationPath: registrationPath ?? this.registrationPath,
+    preferredMode: preferredMode ?? this.preferredMode,
+    termsVersion: termsVersion ?? this.termsVersion,
+  );
+}
+
+class LegalDocuments {
+  const LegalDocuments({this.version = '', this.terms = '', this.privacy = ''});
+  final String version, terms, privacy;
+  bool get published =>
+      version.isNotEmpty && terms.isNotEmpty && privacy.isNotEmpty;
 }
 
 class FoundiUser {
@@ -72,8 +99,18 @@ abstract interface class AuthRepository {
   Future<void> changeRegistrationEmail(String email, String password);
   Future<void> refreshUser();
   Future<void> sendPasswordReset(String email);
-  Future<void> signInWithGoogle({required bool registering});
-  Future<void> confirmGoogleRegistration();
+  Future<void> signInWithGoogle({
+    required bool registering,
+    String registrationPath = 'client',
+    String termsVersion = '',
+  });
+  Future<void> confirmGoogleRegistration({
+    String registrationPath = 'client',
+    String termsVersion = '',
+  });
+  Future<LegalDocuments> loadLegalDocuments();
+  Future<void> acceptLegal(String version);
+  Future<void> setPreferredMode(String mode);
   Future<void> saveProfile(AccountProfile profile);
   Future<void> signOut();
 }

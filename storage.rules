@@ -1,0 +1,11 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /professionalDocuments/{uid}/{kind}/{file} {
+      // Uploads are validated by the backend; no public download tokens.
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}
