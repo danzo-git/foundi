@@ -9,6 +9,7 @@ import 'app.dart';
 import 'features/auth/data/firebase_auth_repository.dart';
 import 'firebase_options.dart';
 import 'features/professional/data/firebase_professional_repository.dart';
+import 'features/requests/data/firebase_request_repository.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -84,6 +85,7 @@ class _BootstrapState extends State<_Bootstrap> {
         return FoundiApp(
           authRepository: snapshot.requireData,
           professionalRepository: FirebaseProfessionalRepository(),
+          requestRepository: FirebaseRequestRepository(),
         );
       }
       return MaterialApp(

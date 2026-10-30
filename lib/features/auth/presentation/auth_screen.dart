@@ -5,8 +5,9 @@ import 'auth_widgets.dart';
 import 'password_reset_screen.dart';
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key, required this.repository});
+  const AuthScreen({super.key, required this.repository, this.onExplore});
   final AuthRepository repository;
+  final VoidCallback? onExplore;
   @override
   State<AuthScreen> createState() => _AuthScreenState();
 }
@@ -194,6 +195,11 @@ class _AuthScreenState extends AuthActionState<AuthScreen> {
           ),
         ),
         if (!registering) ...[
+          if (widget.onExplore != null)
+            TextButton(
+              onPressed: busy ? null : widget.onExplore,
+              child: const Text('Explorer sans compte'),
+            ),
           const Text(
             'Même connexion pour clients et professionnels.',
             textAlign: TextAlign.center,

@@ -86,9 +86,11 @@ class FoundiBottomBar extends StatelessWidget {
     super.key,
     required this.accountSelected,
     required this.onSelect,
+    this.selectedIndex,
   });
   final bool accountSelected;
   final ValueChanged<int> onSelect;
+  final int? selectedIndex;
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: const BoxDecoration(
@@ -101,11 +103,21 @@ class FoundiBottomBar extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Row(
           children: [
-            item('Accueil', Icons.home_outlined, 0, !accountSelected),
-            item('Explorer', Icons.search, 1, false),
-            item('Publier', Icons.add, 2, false),
+            item(
+              'Accueil',
+              Icons.home_outlined,
+              0,
+              selectedIndex == null ? !accountSelected : selectedIndex == 0,
+            ),
+            item('Explorer', Icons.search, 1, selectedIndex == 1),
+            item('Publier', Icons.add, 2, selectedIndex == 2),
             item('Messages', Icons.chat_bubble_outline, 3, false),
-            item('Compte', Icons.account_circle_outlined, 4, accountSelected),
+            item(
+              'Compte',
+              Icons.account_circle_outlined,
+              4,
+              selectedIndex == null ? accountSelected : selectedIndex == 4,
+            ),
           ],
         ),
       ),

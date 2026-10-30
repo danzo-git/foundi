@@ -5,7 +5,11 @@ import '../../auth/presentation/auth_widgets.dart';
 import '../../professional/domain/professional_repository.dart';
 import '../../professional/presentation/professional_status_label.dart';
 import 'settings_view.dart';
+import '../../requests/presentation/explorer_view.dart';
 import 'space_widgets.dart';
+import '../../requests/domain/request_repository.dart';
+import '../../requests/presentation/request_composer.dart';
+import '../../requests/presentation/request_views.dart';
 
 class FoundiShell extends StatefulWidget {
   const FoundiShell({
@@ -16,6 +20,8 @@ class FoundiShell extends StatefulWidget {
     this.professionalRepository,
     this.onDossier,
     this.active = true,
+    this.requestRepository,
+    this.catalogRepository,
   });
   final FoundiUser user;
   final AuthRepository auth;
@@ -23,6 +29,8 @@ class FoundiShell extends StatefulWidget {
   final ProfessionalRepository? professionalRepository;
   final VoidCallback? onDossier;
   final bool active;
+  final RequestRepository? requestRepository;
+  final ProfessionalRepository? catalogRepository;
   @override
   State<FoundiShell> createState() => _FoundiShellState();
 }
@@ -33,6 +41,123 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
       widget.user.profile.preferredMode == 'professional';
   bool _account = false, _settings = false, _switched = false;
   BuildContext? _selectorContext;
+  FoundiRequest? _editing;
+  String? _requestPage, _requestId;
+  String _requestReturn = 'explore';
+  bool _hasExplorer = false, _explorerStartForMe = false;
+  int _explorerEntryVersion = 0;
+  bool _hasPublication = false;
+  bool _publicationComplete = false;
+  int _publicationVersion = 0;
+  void _showRequests(String? page) => setState(() {
+    if (page == 'explore' || page == 'opportunities') {
+      _hasExplorer = true;
+      if (page == 'opportunities') {
+        _explorerStartForMe = true;
+        _explorerEntryVersion++;
+      }
+      page = 'explore';
+    }
+    _requestPage = page;
+    _settings = false;
+    _account = page == 'mine';
+  });
+  void _openRequest(FoundiRequest request, String from) {
+    _requestId = request.id;
+    _requestReturn = from;
+    _showRequests('detail');
+  }
+
+  void _publish() {
+    final repository = widget.requestRepository;
+    final catalog = widget.catalogRepository;
+    if (repository == null || catalog == null) {
+      showComingSoon(context);
+      return;
+    }
+    if (_publicationComplete) {
+      _publicationVersion++;
+      _publicationComplete = false;
+    }
+    _hasPublication = true;
+    _showRequests('publish');
+  }
+
+  Widget _requestBody(Widget home) => Stack(
+    fit: StackFit.expand,
+    children: [
+      Offstage(
+        offstage: _requestPage == 'publish',
+        child: switch (_requestPage) {
+          'explore' => const SizedBox.shrink(),
+          'mine' => RequestListView(
+            key: ValueKey(_requestPage),
+            repository: widget.requestRepository!,
+            uid: _requestPage == 'mine' ? widget.user.id : null,
+            onOpen: (r) => _openRequest(r, _requestPage!),
+            onPublish: _publish,
+            onEdit: (r) {
+              _editing = r;
+              _showRequests('edit');
+            },
+          ),
+          'edit' => RequestComposer(
+            key: ValueKey('edit-${_editing!.id}'),
+            repository: widget.requestRepository!,
+            catalog: widget.catalogRepository!,
+            initial: _editing,
+            onExit: () => _showRequests('mine'),
+            onMine: () => _showRequests('mine'),
+            onOpen: (r) => _openRequest(r, 'mine'),
+          ),
+          'detail' => RequestDetailView(
+            key: ValueKey(_requestId),
+            repository: widget.requestRepository!,
+            id: _requestId!,
+            onBack: () => _showRequests(_requestReturn),
+          ),
+          _ => home,
+        },
+      ),
+      if (_hasExplorer)
+        Offstage(
+          key: const ValueKey('explorerHost'),
+          offstage: _requestPage != 'explore',
+          child: ExplorerView(
+            repository: widget.requestRepository!,
+            catalog: widget.catalogRepository,
+            profile: widget.professional,
+            professionalSpace: professionalSpace,
+            initialForMe: _explorerStartForMe,
+            entryVersion: _explorerEntryVersion,
+            onOpen: (r) => _openRequest(r, 'explore'),
+            onPublish: _publish,
+            onProfile: _activity,
+          ),
+        ),
+      if (_hasPublication)
+        Offstage(
+          key: const ValueKey('publicationHost'),
+          offstage: _requestPage != 'publish',
+          child: RequestComposer(
+            key: ValueKey('requestComposer-$_publicationVersion'),
+            repository: widget.requestRepository!,
+            catalog: widget.catalogRepository!,
+            active: _requestPage == 'publish' && widget.active,
+            onPublished: () => _publicationComplete = true,
+            onExit: () => _showRequests(null),
+            onMine: () {
+              _hasPublication = false;
+              _showRequests('mine');
+            },
+            onOpen: (r) {
+              _hasPublication = false;
+              _openRequest(r, 'mine');
+            },
+          ),
+        ),
+    ],
+  );
   bool get professionalSpace => widget.professional.approved && _professional;
   @override
   void didUpdateWidget(FoundiShell oldWidget) {
@@ -148,6 +273,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
       _professional = result;
       _account = false;
       _settings = false;
+      _requestPage = null;
     });
   }
 
@@ -169,6 +295,14 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
   }
 
   void _navigate(int index) {
+    if (widget.requestRepository != null && index == 1) {
+      _showRequests('explore');
+      return;
+    }
+    if (index == 2 && widget.requestRepository != null) {
+      _publish();
+      return;
+    }
     if (index != 0 && index != 4) {
       showComingSoon(context);
       return;
@@ -176,6 +310,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
     setState(() {
       _account = index == 4;
       _settings = false;
+      _requestPage = null;
     });
   }
 
@@ -197,9 +332,15 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
         ),
       ),
       child: PopScope(
-        canPop: !widget.active || (!_settings && !_account),
+        canPop:
+            !widget.active || (!_settings && !_account && _requestPage == null),
         onPopInvokedWithResult: (didPop, _) {
           if (!didPop && widget.active) {
+            if (_requestPage == 'publish' || _requestPage == 'edit') return;
+            if (_requestPage != null) {
+              _showRequests(_requestPage == 'detail' ? _requestReturn : null);
+              return;
+            }
             setState(() {
               if (_settings) {
                 _settings = false;
@@ -235,53 +376,80 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                               ),
                             ),
                             const SizedBox(width: 6),
-                            const Text(
-                              'Paramètres',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: FoundiUi.ink,
+                            const Expanded(
+                              child: Text(
+                                'Paramètres',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: FoundiUi.ink,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       )
-                    else
+                    else if (_requestPage != 'publish' &&
+                        _requestPage != 'edit' &&
+                        _requestPage != 'detail')
                       FoundiBrand(
-                        onSettings: _account
+                        onSettings: _account && _requestPage == null
                             ? () => setState(() => _settings = true)
                             : null,
                       ),
                     Expanded(
-                      child: _settings
-                          ? FoundiSettings(
-                              user: widget.auth.currentUser ?? widget.user,
-                              professional: widget.professional,
-                              professionalSpace: professionalSpace,
-                              onSpaces: _spaces,
-                              onDossier: _dossier,
-                              onActivity: _activity,
-                              onSignOut: () => perform(widget.auth.signOut),
-                              busy: busy,
-                              error: error,
-                            )
-                          : _account
-                          ? AccountScreen(
-                              user: widget.user,
-                              professional: widget.professional,
-                              professionalSpace: professionalSpace,
-                              onSpaces: _spaces,
-                              onDossier: _dossier,
-                              onActivity: _activity,
-                            )
-                          : FoundiHome(
-                              user: widget.user,
-                              profile: widget.professional,
-                              professionalSpace: professionalSpace,
-                              switched: _switched,
-                              onSpaces: _spaces,
-                              onDossier: _dossier,
-                            ),
+                      child: _requestBody(
+                        _settings
+                            ? FoundiSettings(
+                                user: widget.auth.currentUser ?? widget.user,
+                                professional: widget.professional,
+                                professionalSpace: professionalSpace,
+                                onSpaces: _spaces,
+                                onDossier: _dossier,
+                                onActivity: _activity,
+                                onSignOut: () => perform(widget.auth.signOut),
+                                busy: busy,
+                                error: error,
+                              )
+                            : _account
+                            ? AccountScreen(
+                                user: widget.user,
+                                professional: widget.professional,
+                                professionalSpace: professionalSpace,
+                                onSpaces: _spaces,
+                                onDossier: _dossier,
+                                onActivity: _activity,
+                                onPublish: widget.requestRepository == null
+                                    ? null
+                                    : _publish,
+                                onRequests: widget.requestRepository == null
+                                    ? null
+                                    : () => _showRequests('mine'),
+                              )
+                            : FoundiHome(
+                                onOpportunities:
+                                    professionalSpace &&
+                                        widget.requestRepository
+                                            is OpportunityRepository
+                                    ? () => _showRequests('opportunities')
+                                    : null,
+                                user: widget.user,
+                                profile: widget.professional,
+                                professionalSpace: professionalSpace,
+                                switched: _switched,
+                                onSpaces: _spaces,
+                                onDossier: _dossier,
+                                onPublish: widget.requestRepository == null
+                                    ? null
+                                    : _publish,
+                                onRequests: widget.requestRepository == null
+                                    ? null
+                                    : () => _showRequests('mine'),
+                                onExplore: widget.requestRepository == null
+                                    ? null
+                                    : () => _showRequests('explore'),
+                              ),
+                      ),
                     ),
                   ],
                 ),
@@ -290,6 +458,16 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           ),
           bottomNavigationBar: FoundiBottomBar(
             accountSelected: _account,
+            selectedIndex: _requestPage == 'publish'
+                ? 2
+                : _requestPage == 'explore' ||
+                      (_requestPage == 'detail' && _requestReturn == 'explore')
+                ? 1
+                : _requestPage == 'mine' ||
+                      _account ||
+                      (_requestPage == 'detail' && _requestReturn == 'mine')
+                ? 4
+                : 0,
             onSelect: _navigate,
           ),
         ),
@@ -301,17 +479,23 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
 class FoundiHome extends StatelessWidget {
   const FoundiHome({
     super.key,
+    this.onOpportunities,
     required this.user,
     required this.profile,
     required this.professionalSpace,
     required this.onSpaces,
     required this.onDossier,
     this.switched = false,
+    this.onPublish,
+    this.onRequests,
+    this.onExplore,
   });
+  final VoidCallback? onOpportunities;
   final FoundiUser user;
   final ProfessionalProfile profile;
   final bool professionalSpace, switched;
   final VoidCallback onSpaces, onDossier;
+  final VoidCallback? onPublish, onRequests, onExplore;
   @override
   Widget build(BuildContext context) {
     final personal = user.profile.fullName.isNotEmpty
@@ -444,19 +628,27 @@ class FoundiHome extends StatelessWidget {
                         : const Color(0xFFE7F0EC),
                     side: BorderSide.none,
                     shape: const StadiumBorder(),
-                    onPressed: () => showComingSoon(context),
+                    onPressed: label == 'Pour moi' && onOpportunities != null
+                        ? onOpportunities
+                        : () => showComingSoon(context),
                   ),
               ],
             ),
             const SizedBox(height: 20),
-            const ComingSoonCard(title: 'Opportunités à venir'),
+            if (onOpportunities != null)
+              FoundiPanel(
+                onTap: onOpportunities,
+                child: const Text('Opportunités pour moi  ›'),
+              )
+            else
+              const ComingSoonCard(title: 'Opportunités à venir'),
             const SizedBox(height: 12),
             const ComingSoonCard(title: 'Demandes groupées à venir'),
           ] else if (profile.approved && switched) ...[
             FoundiPanel(
               color: FoundiUi.soft,
-              onTap: () => showComingSoon(context),
-              child: const Column(
+              onTap: onPublish ?? () => showComingSoon(context),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -469,7 +661,9 @@ class FoundiHome extends StatelessWidget {
                   ),
                   SizedBox(height: 10),
                   Text(
-                    'Exprime ton besoin. La publication sera bientôt disponible.',
+                    onPublish == null
+                        ? 'Exprime ton besoin. La publication sera bientôt disponible.'
+                        : 'Exprime ton besoin et publie-le sur Foundi.',
                     style: TextStyle(
                       fontSize: 13,
                       color: FoundiUi.muted,
@@ -480,8 +674,8 @@ class FoundiHome extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 32),
-            const Text(
-              'Mes demandes (à venir)',
+            Text(
+              onRequests == null ? 'Mes demandes (à venir)' : 'Mes demandes',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -489,7 +683,13 @@ class FoundiHome extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            const ComingSoonCard(title: 'Suivi des demandes'),
+            if (onRequests == null)
+              const ComingSoonCard(title: 'Suivi des demandes')
+            else
+              FoundiPanel(
+                onTap: onRequests,
+                child: const Text('Consulter mes demandes  ›'),
+              ),
           ] else ...[
             FoundiPanel(
               color: FoundiUi.soft,
@@ -518,9 +718,21 @@ class FoundiHome extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            const ComingSoonCard(title: 'Explorer les demandes'),
+            if (onExplore == null)
+              const ComingSoonCard(title: 'Explorer les demandes')
+            else
+              FoundiPanel(
+                onTap: onExplore,
+                child: const Text('Explorer les demandes  ›'),
+              ),
             const SizedBox(height: 12),
-            const ComingSoonCard(title: 'Mes demandes'),
+            if (onRequests == null)
+              const ComingSoonCard(title: 'Mes demandes')
+            else
+              FoundiPanel(
+                onTap: onRequests,
+                child: const Text('Mes demandes  ›'),
+              ),
           ],
           if (profile.status != ProfessionalStatus.none &&
               !profile.approved) ...[

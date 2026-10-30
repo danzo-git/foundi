@@ -52,7 +52,20 @@ service cloud.firestore {
     }
     match /referenceData/{id} { allow get: if id == 'professionalOnboarding'; allow list, write: if false; }
     match /legalDocuments/{id} { allow get: if id == 'current'; allow list, write: if false; }
-    // Publication will use a backend transaction checking approved + business rules.
+    // Public projection contains only public request fields, written by publishRequest.
+    match /requests/{id} {
+      allow get: if resource.data.status == 'published';
+      allow list: if resource.data.status == 'published'
+        && request.query.limit != null && request.query.limit <= 50;
+      allow write: if false;
+    }
+    match /userRequests/{uid}/items/{id} {
+      allow get: if owner(uid) || admin();
+      allow list: if (owner(uid) || admin())
+        && request.query.limit != null && request.query.limit <= 50;
+      allow write: if false;
+    }
+    // Proposals are outside V5 and remain closed.
     match /proposals/{id} { allow read, write: if false; }
     match /authEmailChallenges/{challenge} {
       allow read, write: if false;

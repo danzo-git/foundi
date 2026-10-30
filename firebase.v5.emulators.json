@@ -1,0 +1,15 @@
+{
+  "functions": [{ "source": "functions", "codebase": "auth", "predeploy": [] }],
+  "firestore": { "rules": "firestore.rules", "indexes": "firestore.indexes.json" },
+  "storage": { "rules": "storage.rules" },
+  "emulators": {
+    "auth": { "port": 9359 },
+    "firestore": { "port": 8259, "websocketPort": 9269 },
+    "storage": { "port": 9459 },
+    "functions": { "port": 5159 },
+    "hub": { "port": 4659 },
+    "logging": { "port": 4759 },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
+  }
+}

@@ -142,9 +142,15 @@ test('corrections require a reason, preserve documents, resubmit and reject stal
   await assert.rejects(c.decide('admin',{admin:true},'u','approved','',-1),fails('aborted'));
   await c.decide('admin',{admin:true},'u','needs_changes','Document illisible',c.profile().revision);
   await assert.rejects(c.requireApproved('u'),fails('permission-denied'));
-  await c.saveActivity('u',activity,true);
+  const corrected = { ...activity, description: 'Description corrigée des prestations du professionnel.' };
+  await c.saveActivity('u',corrected,false);
+  assert.equal(c.profile().status,'needs_changes');
+  assert.equal(c.profile().onboardingStep,2);
+  await c.saveActivity('u',corrected,true);
+  assert.equal(c.profile().onboardingStep,3);
   await c.uploadDocument('u','identity','corrected.pdf',pdf);
   await c.submit('u',true); assert.equal(c.profile().status,'pending');
+  assert.equal(c.profile().description,corrected.description);
   await c.decide('admin',{admin:true},'u','approved','',c.profile().revision);
   assert.equal(c.profile().status,'approved');
   assert.equal([...c.documents.keys()].filter(k=>k.startsWith('professionalAudit/')).length,2);

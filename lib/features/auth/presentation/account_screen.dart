@@ -17,11 +17,14 @@ class AccountScreen extends StatelessWidget {
     required this.onSpaces,
     required this.onDossier,
     required this.onActivity,
+    this.onPublish,
+    this.onRequests,
   });
   final FoundiUser user;
   final ProfessionalProfile professional;
   final bool professionalSpace;
   final VoidCallback onSpaces, onDossier, onActivity;
+  final VoidCallback? onPublish, onRequests;
   @override
   Widget build(BuildContext context) {
     final personalName = user.profile.fullName.isNotEmpty
@@ -234,7 +237,9 @@ class AccountScreen extends StatelessWidget {
           else
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
                 children: [
                   const Text(
                     'Mon espace actuel : ',
@@ -253,6 +258,21 @@ class AccountScreen extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 32),
+          if (onRequests != null) ...[
+            FoundiPanel(
+              onTap: onRequests,
+              padding: EdgeInsets.zero,
+              child: const ListTile(
+                leading: Icon(
+                  Icons.description_outlined,
+                  color: FoundiUi.green,
+                ),
+                title: Text('Mes demandes'),
+                trailing: Icon(Icons.chevron_right),
+              ),
+            ),
+            const SizedBox(height: 18),
+          ],
           if (approved || !hasDossier) ...[
             const Text(
               'Vue d’ensemble',
@@ -276,16 +296,18 @@ class AccountScreen extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             FoundiPanel(
-              onTap: () => showComingSoon(context),
+              onTap: onPublish ?? () => showComingSoon(context),
               padding: EdgeInsets.zero,
-              child: const ListTile(
+              child: ListTile(
                 leading: Icon(Icons.add, color: FoundiUi.green),
                 title: Text(
                   'Publier',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
                 subtitle: Text(
-                  'Bientôt disponible',
+                  onPublish == null
+                      ? 'Bientôt disponible'
+                      : 'Exprimer un besoin',
                   style: TextStyle(fontSize: 12, color: FoundiUi.muted),
                 ),
                 trailing: Icon(Icons.chevron_right),

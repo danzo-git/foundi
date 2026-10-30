@@ -209,6 +209,8 @@ class FakePro implements ProfessionalRepository {
   final changes = StreamController<ProfessionalProfile>.broadcast();
   final docChanges = StreamController<List<ProfessionalDocument>>.broadcast();
   bool failSave = false;
+  bool failPartialSave = false;
+  bool loseStartResponse = false;
   int accessChecks = 0;
   void emit(ProfessionalProfile p) {
     profile = p;
@@ -237,6 +239,9 @@ class FakePro implements ProfessionalRepository {
     if (profile.status == ProfessionalStatus.none) {
       emit(const ProfessionalProfile(status: ProfessionalStatus.draft));
     }
+    if (loseStartResponse) {
+      throw const AuthFailure('Réponse serveur indisponible.');
+    }
   }
 
   @override
@@ -244,10 +249,14 @@ class FakePro implements ProfessionalRepository {
     ProfessionalActivity value, {
     required bool complete,
   }) async {
-    if (failSave) throw const AuthFailure('Réseau indisponible.');
+    if (failSave || (failPartialSave && !complete)) {
+      throw const AuthFailure('Réseau indisponible.');
+    }
     emit(
       ProfessionalProfile(
-        status: ProfessionalStatus.draft,
+        status: profile.status == ProfessionalStatus.needsChanges
+            ? ProfessionalStatus.needsChanges
+            : ProfessionalStatus.draft,
         step: complete ? 3 : 2,
         activity: value,
       ),
@@ -440,6 +449,36 @@ void main() {
     },
   );
   testWidgets(
+    'professional signup opens the saved draft after a lost response',
+    (t) async {
+      final a = FakeAuth();
+      final p = FakePro()..loseStartResponse = true;
+      await flow(t, a, p, () async {
+        await choose(t, professional: true);
+        await signup(t);
+        await verify(t);
+        expect(find.text('Parlons de ton activité'), findsOneWidget);
+        expect(find.text('Préparons ton dossier'), findsNothing);
+        expect(p.profile.status, ProfessionalStatus.draft);
+      });
+    },
+  );
+  testWidgets('professional registration resumes its draft and can exit', (
+    t,
+  ) async {
+    final a = FakeAuth(
+      user: account(data: profile.copyWith(registrationPath: 'professional')),
+    );
+    final p = FakePro(
+      profile: const ProfessionalProfile(status: ProfessionalStatus.draft),
+    );
+    await flow(t, a, p, () async {
+      expect(find.text('Parlons de ton activité'), findsOneWidget);
+      await tap(t, find.text('Enregistrer et terminer plus tard'));
+      expect(find.text('Parlons de ton activité'), findsNothing);
+    });
+  });
+  testWidgets(
     'Google follows the chosen professional path and uses the same UID',
     (t) async {
       final a = FakeAuth();
@@ -583,6 +622,53 @@ void main() {
         p.failSave = false;
         await tap(t, find.text('Enregistrer et terminer plus tard'));
         expect(find.text('Dossier à compléter'), findsOneWidget);
+      });
+    },
+  );
+  testWidgets(
+    'correction returns to documents and resubmits despite failed partial autosave',
+    (t) async {
+      final p = FakePro(
+        profile: const ProfessionalProfile(
+          status: ProfessionalStatus.needsChanges,
+          step: 3,
+          reviewReason: 'Précisez votre activité',
+          activity: activity,
+        ),
+      )..failPartialSave = true;
+      p.documents = [
+        const ProfessionalDocument('identity', 'identite.pdf', true),
+        const ProfessionalDocument('qualification', 'qualification.pdf', true),
+      ];
+      await flow(t, FakeAuth(user: account()), p, () async {
+        await tap(t, find.text('Reprendre mon dossier'));
+        expect(find.text('Vérifie ton profil'), findsOneWidget);
+        await tap(t, find.byIcon(Icons.arrow_back));
+        await fill(
+          t,
+          'activityDescription',
+          'Description corrigée de mes prestations de service.',
+        );
+        await t.pump(const Duration(seconds: 1));
+        await t.pumpAndSettle();
+        expect(
+          find.textContaining('Brouillon non synchronisé'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Réseau indisponible.'), findsOneWidget);
+        await tap(t, find.text('Continuer'));
+        expect(find.text('Vérifie ton profil'), findsOneWidget);
+        expect(find.textContaining('Brouillon non synchronisé'), findsNothing);
+        expect(p.profile.status, ProfessionalStatus.needsChanges);
+        expect(p.profile.step, 3);
+        expect(find.text('identite.pdf'), findsOneWidget);
+        await tap(t, find.byKey(const ValueKey('certifyProfile')));
+        await tap(t, find.text('Soumettre mon dossier'));
+        expect(p.profile.status, ProfessionalStatus.pending);
+        expect(
+          p.profile.activity.description,
+          'Description corrigée de mes prestations de service.',
+        );
       });
     },
   );

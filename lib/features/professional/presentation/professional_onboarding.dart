@@ -92,12 +92,13 @@ class _ProfessionalOnboardingState
       try {
         await widget.repository.saveActivity(value, complete: false);
         if (mounted) setState(() => _saveError = null);
-      } catch (_) {
+      } catch (failure) {
         if (mounted) {
           setState(() {
             _dirty = true;
-            _saveError =
-                'Brouillon non synchronisé. Vérifie ta connexion et réessaie avant de quitter.';
+            _saveError = failure is AuthFailure
+                ? 'Brouillon non synchronisé. ${failure.message}'
+                : 'Brouillon non synchronisé. Vérifie ta connexion et réessaie avant de quitter.';
           });
         }
       }
@@ -130,9 +131,16 @@ class _ProfessionalOnboardingState
       return;
     }
     if (!_form.currentState!.validate()) return;
+    _timer?.cancel();
     final ok = await perform(() async {
-      await _flush();
+      // Finish any autosave, then validate and save the current form directly.
+      // A failed partial save must not veto a new complete save.
+      await _saves;
+      _dirty = true;
+      if (mounted) setState(() => _saveError = null);
       await widget.repository.saveActivity(_activity, complete: true);
+      _dirty = false;
+      _saveError = null;
     });
     if (ok && mounted) {
       setState(() {
@@ -300,7 +308,7 @@ class _ProfessionalOnboardingState
           isError: false,
         ),
       AuthNotice(_saveError),
-      AuthNotice(error),
+      if (error != _saveError) AuthNotice(error),
     ],
   );
   Widget _selection(

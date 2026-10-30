@@ -52,7 +52,11 @@ class FirebaseProfessionalRepository implements ProfessionalRepository {
     }
   }
 
-  Future<void> _call(String name, [Map<String, dynamic>? data]) async {
+  Future<void> _call(
+    String name, [
+    Map<String, dynamic>? data,
+    int retries = 0,
+  ]) async {
     try {
       await _functions
           .httpsCallable(
@@ -63,6 +67,18 @@ class FirebaseProfessionalRepository implements ProfessionalRepository {
           )
           .call(data);
     } on FirebaseFunctionsException catch (e) {
+      // Only retry operations that can safely save the same input again after
+      // a temporary failure or a lost server response.
+      if (retries > 0 &&
+          const [
+            'unavailable',
+            'deadline-exceeded',
+            'internal',
+            'unknown',
+          ].contains(e.code)) {
+        await Future<void>.delayed(const Duration(seconds: 1));
+        return _call(name, data, retries - 1);
+      }
       throw AuthFailure(switch (e.code) {
         'failed-precondition' ||
         'invalid-argument' ||
@@ -77,7 +93,7 @@ class FirebaseProfessionalRepository implements ProfessionalRepository {
   }
 
   @override
-  Future<void> start() => _call('startProfessionalProfile');
+  Future<void> start() => _call('startProfessionalProfile', null, 2);
   @override
   Future<void> saveActivity(
     ProfessionalActivity activity, {
@@ -85,7 +101,7 @@ class FirebaseProfessionalRepository implements ProfessionalRepository {
   }) => _call('saveProfessionalActivity', {
     'activity': activity.toMap(),
     'complete': complete,
-  });
+  }, 2);
   @override
   Future<void> uploadDocument(String kind, String name, Uint8List bytes) =>
       _call('uploadProfessionalDocument', {

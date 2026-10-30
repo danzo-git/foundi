@@ -7,9 +7,9 @@
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check src/index.js && node --check src/otp-service.js && node --check src/account-service.js && node --check src/auth-validation.js && node --check src/professional-service.js && node --check scripts/configure-onboarding.js && node --check rules-test/permissions.test.cjs && node --check src/catalog-service.js",
+    "check": "node --check src/index.js && node --check src/otp-service.js && node --check src/account-service.js && node --check src/auth-validation.js && node --check src/professional-service.js && node --check scripts/configure-onboarding.js && node --check rules-test/permissions.test.cjs && node --check src/catalog-service.js && node --check src/request-service.js && node --check rules-test/requests.test.cjs && node --check integration-test/request-flow.test.cjs && node --check src/opportunity-service.js",
     "test:rules": "node --test rules-test/*.test.cjs",
-    "test:integration": "node --test integration-test/*.test.cjs",
+    "test:integration": "node --test --test-concurrency=1 integration-test/*.test.cjs",
     "test:emulated": "npm run test:rules && npm run test:integration"
   },
   "dependencies": {

@@ -18,6 +18,8 @@ Les catégories, zones et exigences documentaires réelles restent à fournir. L
 
 ## Installation
 
+Le sprint V5 (FOUN-38, FOUN-39, FOUN-42) ajoute la publication, Mes demandes et Explorer sans compte. Le schéma public/privé, les adaptations Firebase, les tests locaux et les étapes de démonstration sont décrits dans [docs/demandes-v5.md](docs/demandes-v5.md). La livraison V5 nécessite un accord distinct avant tout déploiement Firebase.
+
 Flutter avec Dart 3.12 et Node.js 22 sont nécessaires.
 
 ```powershell

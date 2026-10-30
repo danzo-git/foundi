@@ -5,6 +5,7 @@ import '../../navigation/presentation/foundi_shell.dart';
 import '../domain/professional_repository.dart';
 import 'professional_onboarding.dart';
 import 'professional_status_label.dart';
+import '../../requests/domain/request_repository.dart';
 
 class ProfessionalGate extends StatefulWidget {
   const ProfessionalGate({
@@ -12,10 +13,12 @@ class ProfessionalGate extends StatefulWidget {
     required this.user,
     required this.auth,
     required this.repository,
+    this.requestRepository,
   });
   final FoundiUser user;
   final AuthRepository auth;
   final ProfessionalRepository repository;
+  final RequestRepository? requestRepository;
   @override
   State<ProfessionalGate> createState() => _ProfessionalGateState();
 }
@@ -84,7 +87,12 @@ class _ProfessionalGateState extends AuthActionState<ProfessionalGate> {
         );
       }
       Widget? overlay;
-      if (_view == 'edit' &&
+      // The Firestore snapshot can arrive before the callable response, or
+      // after a response was lost. The saved draft is the source of truth.
+      final resumeRegistration =
+          _view == 'auto' &&
+          widget.user.profile.registrationPath == 'professional';
+      if ((_view == 'edit' || resumeRegistration) &&
           (profile.status == ProfessionalStatus.draft ||
               profile.status == ProfessionalStatus.needsChanges)) {
         overlay = ProfessionalOnboarding(
@@ -93,7 +101,7 @@ class _ProfessionalGateState extends AuthActionState<ProfessionalGate> {
           auth: widget.auth,
           repository: widget.repository,
           profile: profile,
-          onExit: () => _show('auto'),
+          onExit: () => _show('client'),
         );
       } else if (_view == 'dossier') {
         overlay = _dossier(profile);
@@ -110,6 +118,8 @@ class _ProfessionalGateState extends AuthActionState<ProfessionalGate> {
               auth: widget.auth,
               professional: profile,
               professionalRepository: widget.repository,
+              requestRepository: widget.requestRepository,
+              catalogRepository: widget.repository,
               onDossier: () => _openDossier(profile),
               active: overlay == null,
             ),

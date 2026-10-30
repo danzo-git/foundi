@@ -7,15 +7,28 @@ import 'features/auth/presentation/verification_screen.dart';
 import 'features/professional/domain/professional_repository.dart';
 import 'features/professional/presentation/professional_gate.dart';
 import 'features/navigation/presentation/foundi_shell.dart';
+import 'features/requests/domain/request_repository.dart';
+import 'features/requests/presentation/request_views.dart';
 
-class FoundiApp extends StatelessWidget {
+class FoundiApp extends StatefulWidget {
   const FoundiApp({
     super.key,
     required this.authRepository,
     this.professionalRepository,
+    this.requestRepository,
   });
   final AuthRepository authRepository;
   final ProfessionalRepository? professionalRepository;
+  final RequestRepository? requestRepository;
+  @override
+  State<FoundiApp> createState() => _FoundiAppState();
+}
+
+class _FoundiAppState extends State<FoundiApp> {
+  bool _authRequested = false;
+  AuthRepository get authRepository => widget.authRepository;
+  ProfessionalRepository? get professionalRepository =>
+      widget.professionalRepository;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -84,7 +97,21 @@ class FoundiApp extends StatelessWidget {
           );
         }
         final user = snapshot.data;
-        if (user == null) return AuthScreen(repository: authRepository);
+        if (user == null) {
+          if (widget.requestRepository != null && !_authRequested) {
+            return GuestRequests(
+              catalog: professionalRepository,
+              repository: widget.requestRepository!,
+              onAuthenticate: () => setState(() => _authRequested = true),
+            );
+          }
+          return AuthScreen(
+            repository: authRepository,
+            onExplore: widget.requestRepository == null
+                ? null
+                : () => setState(() => _authRequested = false),
+          );
+        }
         if (user.needsGoogleConfirmation) {
           return GoogleRegistrationScreen(
             user: user,
@@ -109,12 +136,18 @@ class FoundiApp extends StatelessWidget {
           );
         }
         return professionalRepository == null
-            ? FoundiShell(user: user, auth: authRepository)
+            ? FoundiShell(
+                user: user,
+                auth: authRepository,
+                requestRepository: widget.requestRepository,
+                catalogRepository: professionalRepository,
+              )
             : ProfessionalGate(
                 key: ValueKey(user.id),
                 user: user,
                 auth: authRepository,
                 repository: professionalRepository!,
+                requestRepository: widget.requestRepository,
               );
       },
     ),

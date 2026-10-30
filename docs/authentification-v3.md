@@ -96,6 +96,16 @@ Pour une livraison complète de la V3, déployer ensemble `functions:auth`, `fir
 
 Après mise à jour du backend, un compte déjà créé peut sélectionner « Réessayer » ou « Devenir professionnel ». La création du brouillon ne nécessite pas le catalogue de référence. Tant que les catégories, zones et exigences documentaires ne sont pas configurées, les informations textuelles du brouillon restent enregistrables et la poursuite vers la soumission est bloquée volontairement.
 
+### Blocage après une demande de correction
+
+Le statut `needs_changes` doit être accepté par les fonctions de sauvegarde, de dépôt de justificatifs et de soumission. Une ancienne version déployée qui autorise uniquement `draft` refuse le dossier après une demande de correction, même si le code local est corrigé et ses tests passent. `flutter run` met à jour l’application ; les fonctions Firebase nécessitent un déploiement distinct :
+
+```powershell
+firebase deploy --only "functions:auth:saveProfessionalActivity,functions:auth:uploadProfessionalDocument,functions:auth:submitProfessionalProfile" --project foundi-7c837 --non-interactive
+```
+
+Vérifier les trois fonctions ensemble : un dossier `needs_changes` doit pouvoir enregistrer l’étape 2, rejoindre l’étape 3, remplacer un justificatif puis redevenir `pending` après certification. Les justificatifs déjà enregistrés sont conservés. Un dossier `pending`, approuvé, refusé ou suspendu reste non modifiable. Aucun changement manuel de statut en base n’est nécessaire.
+
 ### Blocage à l’envoi du code d’inscription
 
 Le message « Termine les informations de ton inscription ou actualise ton compte » peut provenir d’une ancienne version serveur qui exige encore une profession ou un téléphone. Déployer uniquement le client Flutter et les règles Firestore ne met pas à jour cette validation. Les fonctions V3 acceptent un profil sans profession, ainsi qu’un téléphone vide ou absent ; elles vérifient toujours le nom, la confirmation d’inscription, la session authentifiée et l’état de vérification de l’e-mail. Un téléphone renseigné doit conserver un format international valide.
