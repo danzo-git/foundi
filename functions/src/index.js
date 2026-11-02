@@ -285,3 +285,8 @@ const proposals = createProposalService({auth:getAuth(),store:{...store,
 exports.proposalAccess=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.access(r.auth?.uid,r.data?.requestId)));
 exports.sendProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.send(r.auth?.uid,r.data?.requestId,r.data?.proposal)));
 exports.proposalApproval=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.approval(r.auth?.uid,r.data?.proposalId)));
+
+const {createConversationService}=require('./conversation-service');
+const conversations=createConversationService({store,auth:getAuth()});
+exports.selectProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.select(r.auth?.uid,r.data)));
+exports.sendConversationMessage=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.send(r.auth?.uid,r.data)));

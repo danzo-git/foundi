@@ -26,7 +26,9 @@ class Proposal {
     required this.createdAt,
     this.amount,
     this.delay = '',
+    this.conversationId,
   });
+  final String? conversationId;
   final String id,
       requestId,
       requestTitle,
@@ -38,10 +40,14 @@ class Proposal {
       delay;
   final int createdAt;
   final int? amount;
-  String get statusLabel =>
-      status == 'sent' ? 'Envoyée' : 'Statut indisponible';
+  String get statusLabel => status == 'sent'
+      ? 'Envoyée'
+      : status == 'selected'
+      ? 'Choisie'
+      : 'Statut indisponible';
   factory Proposal.fromMap(String id, Map<String, dynamic> m) => Proposal(
     id: id,
+    conversationId: m['conversationId'] as String?,
     requestId: m['requestId'] as String,
     requestTitle: m['requestTitle'] as String,
     professionalUid: m['professionalUid'] as String,

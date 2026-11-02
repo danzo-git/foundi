@@ -72,6 +72,19 @@ service cloud.firestore {
       allow list: if party() && request.query.limit != null && request.query.limit <= 50;
       allow write: if false;
     }
+    match /conversations/{id} {
+      function participant(data) { return request.auth != null && (data.clientUid == request.auth.uid || data.professionalUid == request.auth.uid); }
+      allow get: if participant(resource.data);
+      allow list: if participant(resource.data) && request.query.limit != null && request.query.limit <= 50;
+      allow write: if false;
+      match /messages/{messageId} {
+        allow get: if participant(get(/databases/$(database)/documents/conversations/$(id)).data);
+        allow list: if participant(get(/databases/$(database)/documents/conversations/$(id)).data)
+          && request.query.limit != null && request.query.limit <= 100;
+        // Callable sets the authenticated sender, timestamp and last-message metadata atomically.
+        allow write: if false;
+      }
+    }
     match /authEmailChallenges/{challenge} {
       allow read, write: if false;
     }

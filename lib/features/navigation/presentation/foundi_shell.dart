@@ -1,3 +1,5 @@
+import '../../conversations/domain/conversation_repository.dart';
+import '../../conversations/presentation/conversation_views.dart';
 import '../../proposals/domain/proposal_repository.dart';
 import '../../proposals/presentation/proposal_views.dart';
 import 'package:flutter/material.dart';
@@ -44,7 +46,18 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
   bool _account = false, _settings = false, _switched = false;
   BuildContext? _selectorContext;
   FoundiRequest? _editing, _proposalRequest;
-  String? _proposalId, _receivedRequestId;
+  String? _proposalId, _receivedRequestId, _conversationId;
+  String _conversationReturn = 'messages';
+  ConversationRepository? get _conversations =>
+      widget.requestRepository is ConversationRepository
+      ? widget.requestRepository as ConversationRepository
+      : null;
+  void _openConversation(String id, String from) {
+    _conversationId = id;
+    _conversationReturn = from;
+    _showRequests('conversation');
+  }
+
   String _proposalDetailReturn = 'sentProposals';
   ProposalRepository? get _proposals =>
       widget.requestRepository is ProposalRepository
@@ -120,10 +133,29 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                     _receivedRequestId = r.id;
                     _showRequests('receivedProposals');
                   },
+            onConversation: _conversations == null
+                ? null
+                : (id) => _openConversation(id, 'mine'),
             onEdit: (r) {
               _editing = r;
               _showRequests('edit');
             },
+          ),
+          'messages' => ConversationListView(
+            repository: _conversations!,
+            uid: widget.user.id,
+            canShowClients:
+                widget.professional.status != ProfessionalStatus.none,
+            initialProfessional: professionalSpace,
+            onOpen: (id) => _openConversation(id, 'messages'),
+            onExplore: () => _showRequests('explore'),
+          ),
+          'conversation' => ConversationView(
+            key: ValueKey(_conversationId),
+            repository: _conversations!,
+            uid: widget.user.id,
+            id: _conversationId!,
+            onBack: () => _showRequests(_conversationReturn),
           ),
           'proposal-compose' => ProposalComposer(
             repository: _proposals!,
@@ -152,6 +184,17 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             key: ValueKey(_proposalId),
             repository: _proposals!,
             id: _proposalId!,
+            actionsBuilder: _conversations == null
+                ? null
+                : (p) => SelectionPanel(
+                    key: ValueKey('select-${p.id}'),
+                    repository: _conversations!,
+                    proposals: _proposals!,
+                    proposal: p,
+                    uid: widget.user.id,
+                    onOpen: (id) => _openConversation(id, 'proposal-detail'),
+                    onMine: () => _showRequests('mine'),
+                  ),
             onBack: () => _showRequests(_proposalDetailReturn),
           ),
           'edit' => RequestComposer(
@@ -362,6 +405,10 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
   }
 
   void _navigate(int index) {
+    if (index == 3 && _conversations != null) {
+      _showRequests('messages');
+      return;
+    }
     if (widget.requestRepository != null && index == 1) {
       _showRequests('explore');
       return;
@@ -410,7 +457,9 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             }
             if (_requestPage != null) {
               _showRequests(
-                _requestPage == 'proposal-detail'
+                _requestPage == 'conversation'
+                    ? _conversationReturn
+                    : _requestPage == 'proposal-detail'
                     ? _proposalDetailReturn
                     : _requestPage == 'detail'
                     ? _requestReturn
@@ -468,6 +517,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                       )
                     else if (_requestPage != 'publish' &&
                         _requestPage != 'edit' &&
+                        _requestPage != 'conversation' &&
                         _requestPage != 'detail')
                       FoundiBrand(
                         onSettings: _account && _requestPage == null
@@ -551,7 +601,10 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           ),
           bottomNavigationBar: FoundiBottomBar(
             accountSelected: _account,
-            selectedIndex: _requestPage == 'publish'
+            selectedIndex:
+                _requestPage == 'messages' || _requestPage == 'conversation'
+                ? 3
+                : _requestPage == 'publish'
                 ? 2
                 : _requestPage == 'proposal-compose' ||
                       _requestPage == 'explore' ||

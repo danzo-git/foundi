@@ -1,3 +1,5 @@
+import '../../conversations/domain/conversation_repository.dart';
+import '../../conversations/data/firebase_conversation_repository.dart';
 import '../../proposals/domain/proposal_repository.dart';
 import '../../proposals/data/firebase_proposal_repository.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -11,7 +13,8 @@ class FirebaseRequestRepository
         RequestManagementRepository,
         OpportunityRepository,
         ExplorerRepository,
-        ProposalRepository {
+        ProposalRepository,
+        ConversationRepository {
   FirebaseRequestRepository({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
@@ -24,6 +27,33 @@ class FirebaseRequestRepository
     _db,
     _functions,
   );
+  late final ConversationRepository _conversations =
+      FirebaseConversationRepository(_db, _functions);
+  @override
+  Future<SelectionResult> selectProposal(String requestId, String proposalId) =>
+      _conversations.selectProposal(requestId, proposalId);
+  @override
+  Stream<FoundiRequest?> watchOwnSelection(String uid, String requestId) =>
+      _conversations.watchOwnSelection(uid, requestId);
+  @override
+  Stream<List<Conversation>> watchConversations(
+    String uid, {
+    required bool asProfessional,
+  }) => _conversations.watchConversations(uid, asProfessional: asProfessional);
+  @override
+  Stream<Conversation?> watchConversation(String id) =>
+      _conversations.watchConversation(id);
+  @override
+  Stream<MessageBatch> watchMessages(String id, {int limit = 30}) =>
+      _conversations.watchMessages(id, limit: limit);
+  @override
+  String newMessageId(String id) => _conversations.newMessageId(id);
+  @override
+  Future<void> sendConversationMessage(
+    String id,
+    String messageId,
+    String text,
+  ) => _conversations.sendConversationMessage(id, messageId, text);
   @override
   Future<ProposalAccess> proposalAccess(String id) =>
       _proposals.proposalAccess(id);

@@ -141,9 +141,10 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
 
       if (action !== 'edit' && existing.status === target) return { id: requestId, ...existing };
 
-      if (existing.status === 'deleted' || (action !== 'delete' && existing.status !== 'published')) fail('failed-precondition', 'Cette demande n’est plus modifiable.');
+      if (existing.status === 'deleted' || (action === 'edit' && existing.status !== 'published') || (action === 'close' && !['published','in_discussion'].includes(existing.status))) fail('failed-precondition', 'Cette demande n’est plus modifiable.');
 
       if (value && expectedRevision !== (existing.updatedAt ?? existing.createdAt)) fail('aborted', 'Cette demande a changé. Rouvre-la avant de modifier.');
+      const conversation = existing.conversationId ? await tx.get(`conversations/${existing.conversationId}`) : null;
       let changed = {};
 
       if (value) {
@@ -171,6 +172,7 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
       const saved = { ...existing, ...changed, status: value ? 'published' : target, updatedAt: Math.max(clock(), (existing.updatedAt ?? existing.createdAt) + 1) };
 
       tx.set(path, saved);
+      if (conversation && action !== 'edit') tx.set(`conversations/${existing.conversationId}`, {...conversation,status:'read_only',requestSnapshot:{...conversation.requestSnapshot,status:target}});
 
       const publicFields = ['title','description','categoryId','categoryLabel','specialtyId','specialtyLabel','zoneId','zoneLabel','budget','status','createdAt','updatedAt'];
       tx.set(`requests/${requestId}`, Object.fromEntries(publicFields.map(key => [key, saved[key]])));

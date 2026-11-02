@@ -217,11 +217,13 @@ class RequestListView extends StatefulWidget {
     this.uid,
     this.onEdit,
     this.onProposals,
+    this.onConversation,
   });
   final RequestRepository repository;
   final String? uid;
   final ValueChanged<FoundiRequest>? onEdit;
   final ValueChanged<FoundiRequest>? onProposals;
+  final ValueChanged<String>? onConversation;
   final ValueChanged<FoundiRequest> onOpen;
   final VoidCallback onPublish;
   @override
@@ -318,6 +320,7 @@ class _RequestListViewState extends State<RequestListView> {
               for (final entry in {
                 '': 'Toutes',
                 'published': 'Publiées',
+                'in_discussion': 'En discussion',
                 'closed': 'Clôturées',
               }.entries)
                 ChoiceChip(
@@ -443,7 +446,8 @@ class _RequestListViewState extends State<RequestListView> {
                                   value: 'edit',
                                   child: Text('Modifier'),
                                 ),
-                              if (request.status == 'published')
+                              if (request.status == 'published' ||
+                                  request.status == 'in_discussion')
                                 const PopupMenuItem(
                                   value: 'close',
                                   child: Text('Clôturer'),
@@ -465,10 +469,34 @@ class _RequestListViewState extends State<RequestListView> {
                             isScrollControlled: true,
                             builder: (_) => SingleChildScrollView(
                               padding: const EdgeInsets.all(24),
-                              child: RequestContent(request),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  RequestContent(request),
+                                  if (request.conversationId != null &&
+                                      widget.onConversation != null)
+                                    FilledButton(
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        widget.onConversation!(
+                                          request.conversationId!,
+                                        );
+                                      },
+                                      child: const Text('Ouvrir la discussion'),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                   ),
+                  if (personal &&
+                      request.conversationId != null &&
+                      widget.onConversation != null)
+                    FilledButton(
+                      onPressed: () =>
+                          widget.onConversation!(request.conversationId!),
+                      child: const Text('Ouvrir la discussion'),
+                    ),
                   if (personal && widget.onProposals != null)
                     TextButton(
                       onPressed: () => widget.onProposals!(request),

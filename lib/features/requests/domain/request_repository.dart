@@ -40,6 +40,8 @@ class FoundiRequest {
     this.budget,
     this.revision,
     this.proposalCount = 0,
+    this.conversationId,
+    this.selectedProposalId,
     this.categoryId = '',
     this.specialtyId = '',
     this.zoneId = '',
@@ -54,6 +56,7 @@ class FoundiRequest {
       status;
   final int? revision;
   final int proposalCount;
+  final String? conversationId, selectedProposalId;
   final DateTime? createdAt;
   final int? budget;
   String get category => [
@@ -64,6 +67,7 @@ class FoundiRequest {
       budget == null ? 'Budget à discuter' : '${formatFcfa(budget!)} FCFA';
   String get statusLabel => switch (status) {
     'published' => 'Publiée',
+    'in_discussion' => 'En discussion',
     'closed' => 'Clôturée',
     'deleted' => 'Supprimée',
     _ => status,
@@ -71,6 +75,8 @@ class FoundiRequest {
   factory FoundiRequest.fromMap(String id, Map<String, dynamic> data) =>
       FoundiRequest(
         id: id,
+        conversationId: data['conversationId'] as String?,
+        selectedProposalId: data['selectedProposalId'] as String?,
         proposalCount: (data['proposalCount'] as num?)?.toInt() ?? 0,
         revision: ((data['updatedAt'] ?? data['createdAt']) as num?)?.toInt(),
         categoryId: data['categoryId'] as String? ?? '',

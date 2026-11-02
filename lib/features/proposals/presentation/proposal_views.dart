@@ -429,7 +429,9 @@ class ProposalDetailView extends StatefulWidget {
     required this.repository,
     required this.id,
     required this.onBack,
+    this.actionsBuilder,
   });
+  final Widget Function(Proposal)? actionsBuilder;
   final ProposalRepository repository;
   final String id;
   final VoidCallback onBack;
@@ -529,10 +531,13 @@ class _ProposalDetailViewState extends State<ProposalDetailView> {
                 ),
               ),
               const SizedBox(height: 20),
-              const RequestNotice(
-                'Consultation uniquement',
-                'Cette proposition est envoyée. Aucune acceptation ni conversation n’est ouverte ici.',
-              ),
+              if (widget.actionsBuilder != null)
+                widget.actionsBuilder!(p)
+              else
+                const RequestNotice(
+                  'Consultation uniquement',
+                  'Cette proposition est envoyée. Aucune acceptation ni conversation n’est ouverte ici.',
+                ),
             ],
           );
         },
