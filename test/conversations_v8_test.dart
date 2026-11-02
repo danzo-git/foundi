@@ -74,7 +74,7 @@ class Conversations extends Proposals implements ConversationRepository {
       categoryLabel: request.categoryLabel,
       specialtyLabel: request.specialtyLabel,
       zoneLabel: request.zoneLabel,
-      status: 'in_discussion',
+      status: 'published',
       createdAt: null,
       conversationId: request.id,
       selectedProposalId: offer.id,
@@ -88,6 +88,18 @@ class Conversations extends Proposals implements ConversationRepository {
     changes.add(null);
     return SelectionResult(request.id, false);
   }
+
+  @override
+  String newDecisionId(String requestId) => 'DecisionIdentifier${++messageIds}';
+  @override
+  Future<void> decideProposal(
+    String requestId,
+    String proposalId,
+    String action, {
+    required String decisionId,
+    String? expectedRetainedProposalId,
+    String reason = '',
+  }) async {}
 
   @override
   Stream<FoundiRequest?> watchOwnSelection(String uid, String requestId) =>
@@ -224,29 +236,18 @@ void main() {
       await tap(t, find.text('Mes demandes'));
       await tap(t, find.text('Voir les propositions reçues (1)'));
       await tap(t, find.text(request.title));
-      await tap(
-        t,
-        find.widgetWithText(FilledButton, 'Choisir ce professionnel'),
-      );
-      expect(r.choices, 0);
-      await tap(t, find.text('Annuler'));
-      expect(r.choices, 0);
       r.failSelection = true;
       await tap(
         t,
-        find.widgetWithText(FilledButton, 'Choisir ce professionnel'),
+        find.widgetWithText(FilledButton, 'Discuter avec ce professionnel'),
       );
-      await tap(t, find.text('Confirmer et discuter'));
-      expect(find.text('C’est confirmé !'), findsNothing);
       expect(find.text('Choix non confirmé. Réessaie.'), findsOneWidget);
       r.failSelection = false;
       await tap(
         t,
-        find.widgetWithText(FilledButton, 'Choisir ce professionnel'),
+        find.widgetWithText(FilledButton, 'Discuter avec ce professionnel'),
       );
-      await tap(t, find.text('Confirmer et discuter'));
-      expect(find.text('C’est confirmé !'), findsOneWidget);
-      await tap(t, find.widgetWithText(FilledButton, 'Ouvrir la discussion'));
+      expect(r.ownedRequest.status, 'published');
       await t.enterText(
         find.byKey(const ValueKey('messageText')),
         'Bonjour depuis le client',

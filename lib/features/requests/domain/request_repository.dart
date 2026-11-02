@@ -42,6 +42,8 @@ class FoundiRequest {
     this.proposalCount = 0,
     this.conversationId,
     this.selectedProposalId,
+    this.retainedProposalId,
+    this.retainedProfessionalName,
     this.categoryId = '',
     this.specialtyId = '',
     this.zoneId = '',
@@ -57,6 +59,7 @@ class FoundiRequest {
   final int? revision;
   final int proposalCount;
   final String? conversationId, selectedProposalId;
+  final String? retainedProposalId, retainedProfessionalName;
   final DateTime? createdAt;
   final int? budget;
   String get category => [
@@ -66,8 +69,8 @@ class FoundiRequest {
   String get budgetLabel =>
       budget == null ? 'Budget à discuter' : '${formatFcfa(budget!)} FCFA';
   String get statusLabel => switch (status) {
-    'published' => 'Publiée',
-    'in_discussion' => 'En discussion',
+    'published' => 'Ouverte',
+    'in_discussion' => 'Ouverte',
     'closed' => 'Clôturée',
     'deleted' => 'Supprimée',
     _ => status,
@@ -77,6 +80,8 @@ class FoundiRequest {
         id: id,
         conversationId: data['conversationId'] as String?,
         selectedProposalId: data['selectedProposalId'] as String?,
+        retainedProposalId: data['retainedProposalId'] as String?,
+        retainedProfessionalName: data['retainedProfessionalName'] as String?,
         proposalCount: (data['proposalCount'] as num?)?.toInt() ?? 0,
         revision: ((data['updatedAt'] ?? data['createdAt']) as num?)?.toInt(),
         categoryId: data['categoryId'] as String? ?? '',

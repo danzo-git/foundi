@@ -20,6 +20,8 @@ class Conversation {
     required this.updatedAt,
     required this.requestSnapshot,
     this.lastMessagePreview = '',
+    this.proposalStatus = 'discussing',
+    this.archivedReason,
   });
   final String id,
       requestId,
@@ -32,6 +34,8 @@ class Conversation {
       status,
       lastMessagePreview;
   final int updatedAt;
+  final String proposalStatus;
+  final String? archivedReason;
   final FoundiRequest requestSnapshot;
   String otherName(String uid) =>
       uid == clientUid ? professionalName : clientName;
@@ -40,13 +44,16 @@ class Conversation {
       Conversation(
         id: id,
         requestId: m['requestId'] as String,
-        selectedProposalId: m['selectedProposalId'] as String,
+        selectedProposalId:
+            (m['proposalId'] ?? m['selectedProposalId']) as String,
         clientUid: m['clientUid'] as String,
         professionalUid: m['professionalUid'] as String,
         clientName: m['clientName'] as String,
         professionalName: m['professionalName'] as String,
         requestTitle: m['requestTitle'] as String,
         status: m['status'] as String,
+        proposalStatus: m['proposalStatus'] as String? ?? 'discussing',
+        archivedReason: m['archivedReason'] as String?,
         updatedAt: (m['updatedAt'] as num).toInt(),
         lastMessagePreview: m['lastMessagePreview'] as String? ?? '',
         requestSnapshot: FoundiRequest.fromMap(
@@ -82,6 +89,15 @@ class MessageBatch {
 
 abstract interface class ConversationRepository {
   Future<SelectionResult> selectProposal(String requestId, String proposalId);
+  String newDecisionId(String requestId);
+  Future<void> decideProposal(
+    String requestId,
+    String proposalId,
+    String action, {
+    required String decisionId,
+    String? expectedRetainedProposalId,
+    String reason = '',
+  });
   Stream<FoundiRequest?> watchOwnSelection(String uid, String requestId);
   Stream<List<Conversation>> watchConversations(
     String uid, {

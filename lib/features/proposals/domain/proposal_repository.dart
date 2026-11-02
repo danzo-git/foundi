@@ -40,11 +40,7 @@ class Proposal {
       delay;
   final int createdAt;
   final int? amount;
-  String get statusLabel => status == 'sent'
-      ? 'Envoyée'
-      : status == 'selected'
-      ? 'Choisie'
-      : 'Statut indisponible';
+  String get statusLabel => proposalStatusLabel(status);
   factory Proposal.fromMap(String id, Map<String, dynamic> m) => Proposal(
     id: id,
     conversationId: m['conversationId'] as String?,
@@ -60,6 +56,14 @@ class Proposal {
     delay: m['delay'] as String? ?? '',
   );
 }
+
+String proposalStatusLabel(String status) => switch (status) {
+  'sent' => 'Reçue',
+  'selected' || 'discussing' => 'En discussion',
+  'retained' => 'Retenue',
+  'rejected' => 'Refusée',
+  _ => 'Statut indisponible',
+};
 
 class ProposalAccess {
   const ProposalAccess(this.canSend, this.proposalId);

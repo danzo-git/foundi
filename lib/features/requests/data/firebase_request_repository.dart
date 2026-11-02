@@ -33,6 +33,25 @@ class FirebaseRequestRepository
   Future<SelectionResult> selectProposal(String requestId, String proposalId) =>
       _conversations.selectProposal(requestId, proposalId);
   @override
+  String newDecisionId(String requestId) =>
+      _conversations.newDecisionId(requestId);
+  @override
+  Future<void> decideProposal(
+    String requestId,
+    String proposalId,
+    String action, {
+    required String decisionId,
+    String? expectedRetainedProposalId,
+    String reason = '',
+  }) => _conversations.decideProposal(
+    requestId,
+    proposalId,
+    action,
+    decisionId: decisionId,
+    expectedRetainedProposalId: expectedRetainedProposalId,
+    reason: reason,
+  );
+  @override
   Stream<FoundiRequest?> watchOwnSelection(String uid, String requestId) =>
       _conversations.watchOwnSelection(uid, requestId);
   @override

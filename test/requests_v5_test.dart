@@ -245,7 +245,7 @@ void main() {
           await capture(t, '04-confirmation');
           await fixtures.tap(t, find.text('Accéder à Mes demandes'));
           expect(find.text('Mon besoin de test'), findsOneWidget);
-          expect(find.text('Publiée'), findsOneWidget);
+          expect(find.text('Ouverte'), findsOneWidget);
           await capture(t, '05-mes-demandes');
           await fixtures.tap(t, find.text('Mon besoin de test'));
           expect(find.text('Détail de la demande'), findsOneWidget);

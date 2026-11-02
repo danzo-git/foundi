@@ -153,6 +153,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           'conversation' => ConversationView(
             key: ValueKey(_conversationId),
             repository: _conversations!,
+            proposals: _proposals,
             uid: widget.user.id,
             id: _conversationId!,
             onBack: () => _showRequests(_conversationReturn),

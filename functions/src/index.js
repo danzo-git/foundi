@@ -45,6 +45,7 @@ const store = {
   transaction: (operation) => getFirestore().runTransaction((transaction) => operation({
 
     get: async (path) => (await transaction.get(getFirestore().doc(path))).data(),
+    conversationsForRequest: async (id) => (await transaction.get(getFirestore().collection('conversations').where('requestId', '==', id))).docs.map(d => ({ id: d.id, ...d.data() })),
 
     set: (path, value) => transaction.set(getFirestore().doc(path), value),
 
@@ -290,3 +291,4 @@ const {createConversationService}=require('./conversation-service');
 const conversations=createConversationService({store,auth:getAuth()});
 exports.selectProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.select(r.auth?.uid,r.data)));
 exports.sendConversationMessage=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.send(r.auth?.uid,r.data)));
+exports.decideProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.decide(r.auth?.uid,r.data)));

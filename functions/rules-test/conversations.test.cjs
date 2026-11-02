@@ -7,3 +7,12 @@ check('conversations and messages are strictly participant-only, including list 
 check('selection, conversation metadata and all message mutations are callable-only; sender spoofing is denied',async()=>{
  for(const uid of ['client','pro','third']){const db=env.authenticatedContext(uid).firestore();await assertFails(setDoc(doc(db,'conversations/forged'),{clientUid:uid,professionalUid:'pro'}));for(const change of [{participantUids:[uid,'third']},{requestId:'other'},{selectedProposalId:'other'},{status:'active'}])await assertFails(updateDoc(doc(db,'conversations/private'),change));await assertFails(setDoc(doc(db,'conversations/private/messages/forged'),{senderUid:'other',text:'Falsifié',createdAt:1}));await assertFails(setDoc(doc(db,'conversations/private/messages/direct'),{senderUid:uid,text:'Direct',createdAt:1}));await assertFails(updateDoc(doc(db,'conversations/private/messages/message'),{text:'Modifié'}));await assertFails(deleteDoc(doc(db,'conversations/private/messages/message')));}
 });
+check('V8.1 decisions, retained reference, audit and rejected archive cannot be forged directly',async()=>{
+ for(const uid of ['client','pro','third']){const db=env.authenticatedContext(uid).firestore();
+  await assertFails(setDoc(doc(db,'userRequests/client/items/request'),{status:'published',retainedProposalId:'forged'}));
+  await assertFails(setDoc(doc(db,'userRequests/client/items/request/decisions/forged'),{actorUid:uid,action:'retain'}));
+  await assertFails(getDocs(query(collection(db,'userRequests/client/items/request/decisions'),limit(30))));
+  await assertFails(updateDoc(doc(db,'conversations/archived'),{status:'active',proposalStatus:'retained'}));
+  await assertFails(setDoc(doc(db,'conversations/archived/messages/new'),{senderUid:uid,text:'Après refus',createdAt:2}));
+ }
+});

@@ -1,212 +1,12 @@
+export 'proposal_negotiation.dart' show SelectionPanel;
+import 'proposal_negotiation.dart';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../auth/presentation/auth_widgets.dart';
 import '../../navigation/presentation/space_widgets.dart';
 import '../../proposals/domain/proposal_repository.dart';
-import '../../requests/domain/request_repository.dart';
 import '../../requests/presentation/request_views.dart';
 import '../domain/conversation_repository.dart';
-
-class SelectionPanel extends StatefulWidget {
-  const SelectionPanel({
-    super.key,
-    required this.repository,
-    required this.proposals,
-    required this.proposal,
-    required this.uid,
-    required this.onOpen,
-    required this.onMine,
-  });
-  final ConversationRepository repository;
-  final ProposalRepository proposals;
-  final Proposal proposal;
-  final String uid;
-  final ValueChanged<String> onOpen;
-  final VoidCallback onMine;
-  @override
-  State<SelectionPanel> createState() => _SelectionPanelState();
-}
-
-class _SelectionPanelState extends AuthActionState<SelectionPanel> {
-  late final Stream<FoundiRequest?> _own = widget.repository.watchOwnSelection(
-    widget.uid,
-    widget.proposal.requestId,
-  );
-  Future<bool>? _approval;
-  SelectionResult? _selected;
-  bool _confirming = false;
-  Future<void> _choose() async {
-    if (busy || _confirming) return;
-    _confirming = true;
-    final confirmed = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      useSafeArea: true,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const CircleAvatar(
-              radius: 30,
-              backgroundColor: FoundiUi.tint,
-              child: Icon(Icons.check, color: FoundiUi.green),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Confirmer votre choix ?',
-              style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Vous allez entrer en discussion privée avec ${widget.proposal.professionalName}. Aucun paiement n’est effectué et la prestation n’est pas terminée.',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Vous ne pourrez pas choisir une deuxième proposition tant que cette sélection est active. La demande ne recevra plus de nouvelles propositions.',
-            ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Confirmer et discuter'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Annuler'),
-            ),
-          ],
-        ),
-      ),
-    );
-    _confirming = false;
-    if (!mounted || confirmed != true) return;
-    await perform(() async {
-      _selected = await widget.repository.selectProposal(
-        widget.proposal.requestId,
-        widget.proposal.id,
-      );
-    });
-  }
-
-  Widget _open(String id) => FilledButton(
-    onPressed: () => widget.onOpen(id),
-    child: const Text('Ouvrir la discussion'),
-  );
-  @override
-  Widget build(BuildContext context) {
-    if (_selected != null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const CircleAvatar(
-            radius: 50,
-            backgroundColor: FoundiUi.tint,
-            child: Icon(Icons.check, size: 55, color: FoundiUi.green),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'C’est confirmé !',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          RequestNotice(
-            'En discussion',
-            'Une discussion privée est prête avec ${widget.proposal.professionalName}. La demande ne reçoit plus de nouvelles propositions.',
-          ),
-          const SizedBox(height: 24),
-          _open(_selected!.conversationId),
-          TextButton(
-            onPressed: widget.onMine,
-            child: const Text('Retour à mes demandes'),
-          ),
-        ],
-      );
-    }
-    if (widget.proposal.conversationId != null) {
-      return _open(widget.proposal.conversationId!);
-    }
-    if (widget.uid != widget.proposal.clientUid) {
-      return const RequestNotice(
-        'Proposition envoyée',
-        'La discussion sera disponible si le client choisit votre proposition.',
-      );
-    }
-    return StreamBuilder<FoundiRequest?>(
-      stream: _own,
-      builder: (context, s) {
-        if (s.hasError) {
-          return const AuthNotice(
-            'Impossible de vérifier la demande pour choisir une proposition.',
-          );
-        }
-        if (s.connectionState == ConnectionState.waiting) {
-          return const LinearProgressIndicator();
-        }
-        final request = s.data;
-        if (request?.selectedProposalId != null) {
-          return request!.selectedProposalId == widget.proposal.id &&
-                  request.conversationId != null
-              ? _open(request.conversationId!)
-              : const RequestNotice(
-                  'Un professionnel est déjà choisi',
-                  'Les autres propositions restent consultables. Aucun second choix n’est possible.',
-                );
-        }
-        if (request?.status != 'published') {
-          return const RequestNotice(
-            'Sélection indisponible',
-            'Cette demande n’est plus ouverte. Les propositions restent consultables.',
-          );
-        }
-        return FutureBuilder<bool>(
-          future: _approval ??= widget.proposals.proposalApproval(
-            widget.proposal.id,
-          ),
-          builder: (context, a) {
-            if (a.hasError) {
-              return Column(
-                children: [
-                  const AuthNotice(
-                    'Vérification professionnelle indisponible.',
-                  ),
-                  TextButton(
-                    onPressed: () => setState(() => _approval = null),
-                    child: const Text('Réessayer la vérification'),
-                  ),
-                ],
-              );
-            }
-            if (!a.hasData) return const LinearProgressIndicator();
-            if (a.data != true) {
-              return const RequestNotice(
-                'Sélection indisponible',
-                'Ce professionnel n’est plus approuvé.',
-              );
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const RequestNotice(
-                  'Choisir ce professionnel',
-                  'Votre choix ouvrira une discussion privée. Aucun paiement n’est effectué ici.',
-                ),
-                const SizedBox(height: 20),
-                AuthNotice(error),
-                if (busy) const LinearProgressIndicator(),
-                FilledButton(
-                  onPressed: busy ? null : _choose,
-                  child: const Text('Choisir ce professionnel'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-}
 
 class ConversationListView extends StatefulWidget {
   const ConversationListView({
@@ -310,7 +110,7 @@ class _ConversationListViewState extends State<ConversationListView> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Les conversations apparaîtront ici lorsqu’une proposition sera choisie.',
+                  'Les conversations apparaîtront ici lorsqu’un client ouvrira une discussion.',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 30),
@@ -320,8 +120,8 @@ class _ConversationListViewState extends State<ConversationListView> {
                 ),
                 const SizedBox(height: 24),
                 const RequestNotice(
-                  'Une discussion par proposition choisie',
-                  'Avant sélection, les professionnels ne peuvent pas contacter les clients par message.',
+                  'Une discussion privée par proposition',
+                  'Seul le client peut ouvrir une discussion à partir d’une proposition reçue.',
                 ),
               ],
             );
@@ -358,9 +158,7 @@ class _ConversationListViewState extends State<ConversationListView> {
                         const SizedBox(height: 8),
                         RequestTag(
                           c.active
-                              ? (_clients
-                                    ? 'Proposition choisie'
-                                    : 'En discussion')
+                              ? proposalStatusLabel(c.proposalStatus)
                               : 'Lecture seule',
                         ),
                         Text(
@@ -395,8 +193,10 @@ class ConversationView extends StatefulWidget {
     required this.id,
     required this.uid,
     required this.onBack,
+    this.proposals,
   });
   final ConversationRepository repository;
+  final ProposalRepository? proposals;
   final String id, uid;
   final VoidCallback onBack;
   @override
@@ -460,6 +260,45 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
     builder: (_) => SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: RequestContent(c.requestSnapshot),
+    ),
+  );
+  void _decisions(Conversation chat) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: StreamBuilder<Proposal?>(
+        stream: widget.proposals!.watchProposal(chat.selectedProposalId),
+        builder: (context, s) => s.hasError
+            ? const AuthNotice('Proposition indisponible.')
+            : !s.hasData
+            ? const LinearProgressIndicator()
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    s.data!.professionalName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                    ),
+                  ),
+                  RequestTag(s.data!.statusLabel),
+                  if (s.data!.status == 'rejected')
+                    const Text(
+                      'Proposition refusée. Discussion archivée en lecture seule.',
+                    ),
+                  ProposalDecisionPanel(
+                    key: ValueKey(s.data!.id),
+                    repository: widget.repository,
+                    proposal: s.data!,
+                    uid: widget.uid,
+                  ),
+                ],
+              ),
+      ),
     ),
   );
   @override
@@ -540,9 +379,7 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                         const SizedBox(height: 6),
                         RequestTag(
                           chat.active
-                              ? (widget.uid == chat.clientUid
-                                    ? 'En discussion'
-                                    : 'Proposition choisie')
+                              ? proposalStatusLabel(chat.proposalStatus)
                               : 'Lecture seule',
                         ),
                         const Text(
@@ -551,6 +388,18 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                         ),
                       ],
                     ),
+                  ),
+                ),
+              if (chat.active &&
+                  widget.proposals != null &&
+                  widget.uid == chat.clientUid &&
+                  !keyboardOpen)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => _decisions(chat),
+                    icon: const Icon(Icons.more_horiz),
+                    label: const Text('Retenir ou refuser'),
                   ),
                 ),
               Expanded(
@@ -632,10 +481,12 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                                   ),
                                 ),
                               if (batch.messages.isEmpty)
-                                const Padding(
-                                  padding: EdgeInsets.all(30),
+                                Padding(
+                                  padding: const EdgeInsets.all(30),
                                   child: Text(
-                                    'La discussion est prête. Écrivez votre premier message.',
+                                    chat.active
+                                        ? 'La discussion est prête. Écrivez votre premier message.'
+                                        : 'Aucun message dans cet historique.',
                                     textAlign: TextAlign.center,
                                   ),
                                 ),
@@ -671,11 +522,15 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                 ),
               ),
               if (!chat.active)
-                const Padding(
-                  padding: EdgeInsets.all(16),
+                Padding(
+                  padding: const EdgeInsets.all(16),
                   child: RequestNotice(
-                    'Discussion en lecture seule',
-                    'La demande est clôturée ou supprimée. L’historique reste consultable.',
+                    chat.proposalStatus == 'rejected'
+                        ? 'Proposition refusée · Lecture seule'
+                        : 'Discussion en lecture seule',
+                    chat.proposalStatus == 'rejected'
+                        ? 'Cette discussion est archivée après refus de la proposition. L’historique reste consultable.'
+                        : 'La demande a été supprimée. L’historique reste consultable.',
                   ),
                 ),
               if (chat.active)

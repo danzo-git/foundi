@@ -244,7 +244,9 @@ class _RequestListViewState extends State<RequestListView> {
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
-      builder: (context) => Padding(
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -258,7 +260,7 @@ class _RequestListViewState extends State<RequestListView> {
             Text(
               deleting
                   ? 'Elle disparaîtra des listes visibles. Cette action ne peut pas être annulée ici.'
-                  : 'Elle disparaîtra du fil public et des opportunités. Tu garderas accès à ton historique.',
+                  : 'Elle disparaîtra du fil public et des opportunités et ne recevra plus de nouvelles propositions. Les discussions non refusées pourront continuer et les historiques resteront accessibles.',
             ),
             const SizedBox(height: 24),
             FilledButton(
@@ -319,8 +321,7 @@ class _RequestListViewState extends State<RequestListView> {
             children: [
               for (final entry in {
                 '': 'Toutes',
-                'published': 'Publiées',
-                'in_discussion': 'En discussion',
+                'published': 'Ouvertes',
                 'closed': 'Clôturées',
               }.entries)
                 ChoiceChip(
@@ -367,7 +368,11 @@ class _RequestListViewState extends State<RequestListView> {
                 .where(
                   (r) =>
                       r.status != 'deleted' &&
-                      (!personal || _status.isEmpty || r.status == _status),
+                      (!personal ||
+                          _status.isEmpty ||
+                          r.status == _status ||
+                          (_status == 'published' &&
+                              r.status == 'in_discussion')),
                 )
                 .toList();
             if (requests.isEmpty) {

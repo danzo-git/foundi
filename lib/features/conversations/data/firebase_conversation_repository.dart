@@ -41,6 +41,28 @@ class FirebaseConversationRepository implements ConversationRepository {
   }
 
   @override
+  String newDecisionId(String requestId) =>
+      _db.collection('userRequests').doc().id;
+  @override
+  Future<void> decideProposal(
+    String requestId,
+    String proposalId,
+    String action, {
+    required String decisionId,
+    String? expectedRetainedProposalId,
+    String reason = '',
+  }) async {
+    await _call('decideProposal', {
+      'requestId': requestId,
+      'proposalId': proposalId,
+      'action': action,
+      'decisionId': decisionId,
+      'expectedRetainedProposalId': expectedRetainedProposalId,
+      'reason': reason,
+    });
+  }
+
+  @override
   Stream<FoundiRequest?> watchOwnSelection(String uid, String requestId) => _db
       .doc('userRequests/$uid/items/$requestId')
       .snapshots()

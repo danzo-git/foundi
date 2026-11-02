@@ -403,8 +403,12 @@ class _ProposalListViewState extends State<ProposalListView> {
                             DateTime.fromMillisecondsSinceEpoch(p.createdAt),
                           ),
                         ),
-                        const Text(
-                          'Consulter la proposition  ›',
+                        Text(
+                          p.status == 'rejected'
+                              ? 'Consulter l’historique  ›'
+                              : p.conversationId != null
+                              ? 'Reprendre la discussion  ›'
+                              : 'Voir et discuter  ›',
                           style: TextStyle(color: FoundiUi.green),
                         ),
                       ],
