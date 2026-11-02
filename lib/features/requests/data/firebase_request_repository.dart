@@ -1,3 +1,5 @@
+import '../../proposals/domain/proposal_repository.dart';
+import '../../proposals/data/firebase_proposal_repository.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../../auth/domain/auth_repository.dart';
@@ -8,7 +10,8 @@ class FirebaseRequestRepository
         RequestRepository,
         RequestManagementRepository,
         OpportunityRepository,
-        ExplorerRepository {
+        ExplorerRepository,
+        ProposalRepository {
   FirebaseRequestRepository({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
@@ -17,6 +20,28 @@ class FirebaseRequestRepository
            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
+  late final ProposalRepository _proposals = FirebaseProposalRepository(
+    _db,
+    _functions,
+  );
+  @override
+  Future<ProposalAccess> proposalAccess(String id) =>
+      _proposals.proposalAccess(id);
+  @override
+  Future<Proposal> sendProposal(String id, ProposalDraft draft) =>
+      _proposals.sendProposal(id, draft);
+  @override
+  Stream<List<Proposal>> watchSentProposals(String uid) =>
+      _proposals.watchSentProposals(uid);
+  @override
+  Stream<List<Proposal>> watchReceivedProposals(
+    String uid, {
+    String? requestId,
+  }) => _proposals.watchReceivedProposals(uid, requestId: requestId);
+  @override
+  Stream<Proposal?> watchProposal(String id) => _proposals.watchProposal(id);
+  @override
+  Future<bool> proposalApproval(String id) => _proposals.proposalApproval(id);
   @override
   Stream<List<FoundiRequest>> watchExplore({
     ExplorerFilters filters = const ExplorerFilters(),

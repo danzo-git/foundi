@@ -1,3 +1,5 @@
+import '../../proposals/domain/proposal_repository.dart';
+import '../../proposals/presentation/proposal_views.dart';
 import 'package:flutter/material.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../../auth/presentation/account_screen.dart';
@@ -41,7 +43,19 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
       widget.user.profile.preferredMode == 'professional';
   bool _account = false, _settings = false, _switched = false;
   BuildContext? _selectorContext;
-  FoundiRequest? _editing;
+  FoundiRequest? _editing, _proposalRequest;
+  String? _proposalId, _receivedRequestId;
+  String _proposalDetailReturn = 'sentProposals';
+  ProposalRepository? get _proposals =>
+      widget.requestRepository is ProposalRepository
+      ? widget.requestRepository as ProposalRepository
+      : null;
+  void _openProposal(String id, String from) {
+    _proposalId = id;
+    _proposalDetailReturn = from;
+    _showRequests('proposal-detail');
+  }
+
   String? _requestPage, _requestId;
   String _requestReturn = 'explore';
   bool _hasExplorer = false, _explorerStartForMe = false;
@@ -60,7 +74,11 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
     }
     _requestPage = page;
     _settings = false;
-    _account = page == 'mine';
+    _account =
+        page == 'mine' ||
+        page == 'sentProposals' ||
+        page == 'receivedProposals' ||
+        page == 'proposal-detail';
   });
   void _openRequest(FoundiRequest request, String from) {
     _requestId = request.id;
@@ -96,10 +114,45 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             uid: _requestPage == 'mine' ? widget.user.id : null,
             onOpen: (r) => _openRequest(r, _requestPage!),
             onPublish: _publish,
+            onProposals: _proposals == null
+                ? null
+                : (r) {
+                    _receivedRequestId = r.id;
+                    _showRequests('receivedProposals');
+                  },
             onEdit: (r) {
               _editing = r;
               _showRequests('edit');
             },
+          ),
+          'proposal-compose' => ProposalComposer(
+            repository: _proposals!,
+            request: _proposalRequest!,
+            onBack: () => _showRequests('detail'),
+            onSent: () => _showRequests('sentProposals'),
+          ),
+          'sentProposals' => ProposalListView(
+            key: const ValueKey('sentProposals'),
+            repository: _proposals!,
+            uid: widget.user.id,
+            received: false,
+            onBack: () => _showRequests(null),
+            onOpen: (id) => _openProposal(id, 'sentProposals'),
+          ),
+          'receivedProposals' => ProposalListView(
+            key: ValueKey('received-$_receivedRequestId'),
+            repository: _proposals!,
+            uid: widget.user.id,
+            received: true,
+            requestId: _receivedRequestId,
+            onBack: () => _showRequests('mine'),
+            onOpen: (id) => _openProposal(id, 'receivedProposals'),
+          ),
+          'proposal-detail' => ProposalDetailView(
+            key: ValueKey(_proposalId),
+            repository: _proposals!,
+            id: _proposalId!,
+            onBack: () => _showRequests(_proposalDetailReturn),
           ),
           'edit' => RequestComposer(
             key: ValueKey('edit-${_editing!.id}'),
@@ -114,6 +167,20 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             key: ValueKey(_requestId),
             repository: widget.requestRepository!,
             id: _requestId!,
+            actionsBuilder: _proposals == null
+                ? null
+                : (r) => ProposalAction(
+                    key: ValueKey('action-${r.id}'),
+                    repository: _proposals!,
+                    request: r,
+                    approved: widget.professional.approved,
+                    onCompose: () {
+                      _proposalRequest = r;
+                      _showRequests('proposal-compose');
+                    },
+                    onOpen: (id) => _openProposal(id, 'detail'),
+                    onProfile: _dossier,
+                  ),
             onBack: () => _showRequests(_requestReturn),
           ),
           _ => home,
@@ -336,9 +403,19 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             !widget.active || (!_settings && !_account && _requestPage == null),
         onPopInvokedWithResult: (didPop, _) {
           if (!didPop && widget.active) {
-            if (_requestPage == 'publish' || _requestPage == 'edit') return;
+            if (_requestPage == 'publish' ||
+                _requestPage == 'edit' ||
+                _requestPage == 'proposal-compose') {
+              return;
+            }
             if (_requestPage != null) {
-              _showRequests(_requestPage == 'detail' ? _requestReturn : null);
+              _showRequests(
+                _requestPage == 'proposal-detail'
+                    ? _proposalDetailReturn
+                    : _requestPage == 'detail'
+                    ? _requestReturn
+                    : null,
+              );
               return;
             }
             setState(() {
@@ -413,6 +490,18 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                               )
                             : _account
                             ? AccountScreen(
+                                onSentProposals:
+                                    _proposals != null &&
+                                        widget.professional.status !=
+                                            ProfessionalStatus.none
+                                    ? () => _showRequests('sentProposals')
+                                    : null,
+                                onReceivedProposals: _proposals == null
+                                    ? null
+                                    : () {
+                                        _receivedRequestId = null;
+                                        _showRequests('receivedProposals');
+                                      },
                                 user: widget.user,
                                 professional: widget.professional,
                                 professionalSpace: professionalSpace,
@@ -427,6 +516,10 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                                     : () => _showRequests('mine'),
                               )
                             : FoundiHome(
+                                onSentProposals:
+                                    professionalSpace && _proposals != null
+                                    ? () => _showRequests('sentProposals')
+                                    : null,
                                 onOpportunities:
                                     professionalSpace &&
                                         widget.requestRepository
@@ -460,7 +553,8 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             accountSelected: _account,
             selectedIndex: _requestPage == 'publish'
                 ? 2
-                : _requestPage == 'explore' ||
+                : _requestPage == 'proposal-compose' ||
+                      _requestPage == 'explore' ||
                       (_requestPage == 'detail' && _requestReturn == 'explore')
                 ? 1
                 : _requestPage == 'mine' ||
@@ -480,6 +574,7 @@ class FoundiHome extends StatelessWidget {
   const FoundiHome({
     super.key,
     this.onOpportunities,
+    this.onSentProposals,
     required this.user,
     required this.profile,
     required this.professionalSpace,
@@ -490,7 +585,7 @@ class FoundiHome extends StatelessWidget {
     this.onRequests,
     this.onExplore,
   });
-  final VoidCallback? onOpportunities;
+  final VoidCallback? onOpportunities, onSentProposals;
   final FoundiUser user;
   final ProfessionalProfile profile;
   final bool professionalSpace, switched;
@@ -598,6 +693,13 @@ class FoundiHome extends StatelessWidget {
           ),
           const SizedBox(height: 30),
           if (professionalSpace) ...[
+            if (onSentProposals != null) ...[
+              FoundiPanel(
+                onTap: onSentProposals,
+                child: const Text('Mes propositions  ›'),
+              ),
+              const SizedBox(height: 16),
+            ],
             const FutureOverview(professional: true),
             const SizedBox(height: 32),
             const Text(

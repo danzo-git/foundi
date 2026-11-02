@@ -273,3 +273,15 @@ const opportunities = createOpportunityService({ auth: getAuth(), store: {
 }});
 exports.listOpportunities = onCall({ region: 'europe-west1', maxInstances: 3, timeoutSeconds: 60 },
   r => handle(() => opportunities.list(r.auth?.uid, r.data)));
+
+const { createProposalService } = require('./proposal-service');
+const proposals = createProposalService({auth:getAuth(),store:{...store,
+  get:async path=>(await getFirestore().doc(path).get()).data(),
+  legacyOwners:async (id,createdAt)=>{
+    const docs=await getFirestore().collectionGroup('items').where('createdAt','==',createdAt).limit(50).get();
+    return docs.docs.filter(d=>d.id===id && /^userRequests\/[^/]+\/items\/[^/]+$/.test(d.ref.path)).map(d=>d.ref.parent.parent.id);
+  },
+}});
+exports.proposalAccess=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.access(r.auth?.uid,r.data?.requestId)));
+exports.sendProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.send(r.auth?.uid,r.data?.requestId,r.data?.proposal)));
+exports.proposalApproval=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.approval(r.auth?.uid,r.data?.proposalId)));

@@ -19,12 +19,17 @@ class AccountScreen extends StatelessWidget {
     required this.onActivity,
     this.onPublish,
     this.onRequests,
+    this.onSentProposals,
+    this.onReceivedProposals,
   });
   final FoundiUser user;
   final ProfessionalProfile professional;
   final bool professionalSpace;
   final VoidCallback onSpaces, onDossier, onActivity;
-  final VoidCallback? onPublish, onRequests;
+  final VoidCallback? onPublish,
+      onRequests,
+      onSentProposals,
+      onReceivedProposals;
   @override
   Widget build(BuildContext context) {
     final personalName = user.profile.fullName.isNotEmpty
@@ -258,6 +263,18 @@ class AccountScreen extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 32),
+          if (onSentProposals != null)
+            ListTile(
+              leading: const Icon(Icons.send_outlined),
+              title: const Text('Mes propositions'),
+              onTap: onSentProposals,
+            ),
+          if (onReceivedProposals != null)
+            ListTile(
+              leading: const Icon(Icons.inbox_outlined),
+              title: const Text('Propositions reçues'),
+              onTap: onReceivedProposals,
+            ),
           if (onRequests != null) ...[
             FoundiPanel(
               onTap: onRequests,

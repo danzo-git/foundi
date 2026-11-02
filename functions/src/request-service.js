@@ -109,6 +109,7 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
       tx.set(publicPath, published);
 
       tx.set(ownPath, published);
+      tx.set(`requestOwnership/${requestId}`, { ownerUid: uid });
 
       return { id: requestId, ...published };
 
@@ -185,4 +186,3 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
 }
 
 module.exports = { createRequestService };
-

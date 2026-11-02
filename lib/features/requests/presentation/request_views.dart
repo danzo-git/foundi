@@ -216,10 +216,12 @@ class RequestListView extends StatefulWidget {
     required this.onPublish,
     this.uid,
     this.onEdit,
+    this.onProposals,
   });
   final RequestRepository repository;
   final String? uid;
   final ValueChanged<FoundiRequest>? onEdit;
+  final ValueChanged<FoundiRequest>? onProposals;
   final ValueChanged<FoundiRequest> onOpen;
   final VoidCallback onPublish;
   @override
@@ -467,6 +469,13 @@ class _RequestListViewState extends State<RequestListView> {
                             ),
                           ),
                   ),
+                  if (personal && widget.onProposals != null)
+                    TextButton(
+                      onPressed: () => widget.onProposals!(request),
+                      child: Text(
+                        'Voir les propositions reçues (${request.proposalCount})',
+                      ),
+                    ),
                   const SizedBox(height: 14),
                 ],
                 Text(
@@ -662,7 +671,9 @@ class RequestDetailView extends StatefulWidget {
     required this.repository,
     required this.id,
     required this.onBack,
+    this.actionsBuilder,
   });
+  final Widget Function(FoundiRequest)? actionsBuilder;
   final RequestRepository repository;
   final String id;
   final VoidCallback onBack;
@@ -708,6 +719,11 @@ class _RequestDetailViewState extends State<RequestDetailView> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               RequestContent(s.requireData!),
+              if (widget.actionsBuilder != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 24),
+                  child: widget.actionsBuilder!(s.requireData!),
+                ),
               const SizedBox(height: 24),
               const RequestNotice(
                 'Coordonnées personnelles non affichées',

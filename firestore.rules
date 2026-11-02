@@ -65,8 +65,13 @@ service cloud.firestore {
         && request.query.limit != null && request.query.limit <= 50;
       allow write: if false;
     }
-    // Proposals are outside V5 and remain closed.
-    match /proposals/{id} { allow read, write: if false; }
+    match /requestOwnership/{id} { allow read, write: if false; }
+    match /proposals/{id} {
+      function party() { return request.auth != null && (resource.data.professionalUid == request.auth.uid || resource.data.clientUid == request.auth.uid); }
+      allow get: if party();
+      allow list: if party() && request.query.limit != null && request.query.limit <= 50;
+      allow write: if false;
+    }
     match /authEmailChallenges/{challenge} {
       allow read, write: if false;
     }

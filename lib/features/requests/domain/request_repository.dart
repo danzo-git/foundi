@@ -39,6 +39,7 @@ class FoundiRequest {
     required this.createdAt,
     this.budget,
     this.revision,
+    this.proposalCount = 0,
     this.categoryId = '',
     this.specialtyId = '',
     this.zoneId = '',
@@ -52,6 +53,7 @@ class FoundiRequest {
       zoneLabel,
       status;
   final int? revision;
+  final int proposalCount;
   final DateTime? createdAt;
   final int? budget;
   String get category => [
@@ -69,6 +71,7 @@ class FoundiRequest {
   factory FoundiRequest.fromMap(String id, Map<String, dynamic> data) =>
       FoundiRequest(
         id: id,
+        proposalCount: (data['proposalCount'] as num?)?.toInt() ?? 0,
         revision: ((data['updatedAt'] ?? data['createdAt']) as num?)?.toInt(),
         categoryId: data['categoryId'] as String? ?? '',
         specialtyId: data['specialtyId'] as String? ?? '',
