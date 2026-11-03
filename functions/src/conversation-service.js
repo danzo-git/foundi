@@ -7,6 +7,15 @@ const proposalOf = chat => chat.proposalId || chat.selectedProposalId;
 function linked(chat, p, id) {
   return chat && chat.requestId === p.requestId && proposalOf(chat) === id && chat.clientUid === p.clientUid && chat.professionalUid === p.professionalUid;
 }
+async function readConversation(tx, uid, id) {
+  const chat = await tx.get(`conversations/${id}`);
+  if (!chat || ![chat.clientUid,chat.professionalUid].includes(uid)) fail('permission-denied', 'Cette discussion est privée.');
+  const own = await tx.get(`userRequests/${chat.clientUid}/items/${chat.requestId}`);
+  const p = await tx.get(`proposals/${proposalOf(chat)}`);
+  const writable = chat.status === 'active' && own && ['published','closed','in_discussion'].includes(own.status) &&
+    p && linked(chat,p,proposalOf(chat)) && p.conversationId === id && ['discussing','retained','selected'].includes(p.status);
+  return {chat,own,p,writable:!!writable};
+}
 function createConversationService({ store, auth, clock = () => Date.now() }) {
   async function account(uid) {
     requireUid(uid);
@@ -85,25 +94,27 @@ function createConversationService({ store, auth, clock = () => Date.now() }) {
   }
   async function send(uid, data) {
     await account(uid);
-    if (!data || Object.keys(data).some(k => !['conversationId','messageId','text'].includes(k)) || !idOK(data.conversationId) || !idOK(data.messageId) || typeof data.text !== 'string' || !data.text.trim() || data.text.trim().length > 2000) fail('invalid-argument', 'Écris un message de 1 à 2000 caractères.');
-    const { conversationId, messageId } = data, text = data.text.trim();
+    const type = data?.type ?? 'text';
+    const fields = type === 'contact' ? ['conversationId','messageId','type','phoneNumber','consent'] : ['conversationId','messageId','type','text'];
+    if (!data || Object.keys(data).some(k => !fields.includes(k)) || !idOK(data.conversationId) || !idOK(data.messageId) ||
+        !['text','contact'].includes(type) || (type === 'text' && (typeof data.text !== 'string' || !data.text.trim() || data.text.trim().length > 2000)) ||
+        (type === 'contact' && (data.consent !== true || typeof data.phoneNumber !== 'string' || !/^\+[1-9][0-9]{7,14}$/.test(data.phoneNumber)))) fail('invalid-argument', type === 'contact' ? 'Confirme le numéro international à partager.' : 'Écris un message de 1 à 2000 caractères.');
+    const { conversationId, messageId } = data;
+    const payload = type === 'text' ? {text:data.text.trim()} : {phoneNumber:data.phoneNumber};
     return store.transaction(async tx => {
-      const chat = await tx.get(`conversations/${conversationId}`);
-      if (!chat || ![chat.clientUid,chat.professionalUid].includes(uid)) fail('permission-denied', 'Cette discussion est privée.');
-      const own = await tx.get(`userRequests/${chat.clientUid}/items/${chat.requestId}`);
-      const p = await tx.get(`proposals/${proposalOf(chat)}`);
+      const {chat,writable} = await readConversation(tx,uid,conversationId);
       const existing = await tx.get(`conversations/${conversationId}/messages/${messageId}`);
       if (existing) {
-        if (existing.senderUid !== uid || existing.text !== text) fail('already-exists', 'Cet identifiant correspond à un autre message.');
+        if (existing.senderUid !== uid || (existing.type || 'text') !== type || Object.entries(payload).some(([k,v])=>existing[k]!==v)) fail('already-exists', 'Cet identifiant correspond à un autre message.');
         return { messageId, createdAt: existing.createdAt };
       }
-      if (chat.status !== 'active' || !own || !['published','closed','in_discussion'].includes(own.status) || !p || !linked(chat,p,proposalOf(chat)) || p.conversationId !== conversationId || !['discussing','retained','selected'].includes(p.status)) fail('failed-precondition', 'Cette discussion est désormais en lecture seule.');
+      if (!writable) fail('failed-precondition', 'Cette discussion est désormais en lecture seule.');
       const now = Math.max(clock(), (chat.lastMessageAt || chat.createdAt) + 1);
-      tx.set(`conversations/${conversationId}/messages/${messageId}`, { senderUid: uid, text, createdAt: now });
-      tx.set(`conversations/${conversationId}`, { ...chat, lastMessageAt: now, lastMessagePreview: text.slice(0,120), updatedAt: now });
+      tx.set(`conversations/${conversationId}/messages/${messageId}`, { senderUid: uid, type, ...payload, createdAt: now });
+      tx.set(`conversations/${conversationId}`, { ...chat, lastMessageAt: now, lastMessagePreview: type === 'text' ? payload.text.slice(0,120) : 'Contact partagé', updatedAt: now });
       return { messageId, createdAt: now };
     });
   }
   return { select, decide, send };
 }
-module.exports = { createConversationService };
+module.exports = { createConversationService, readConversation, idOK };

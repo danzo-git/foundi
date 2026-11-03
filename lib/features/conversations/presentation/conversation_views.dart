@@ -6,7 +6,12 @@ import '../../auth/presentation/auth_widgets.dart';
 import '../../navigation/presentation/space_widgets.dart';
 import '../../proposals/domain/proposal_repository.dart';
 import '../../requests/presentation/request_views.dart';
+import '../../requests/domain/request_repository.dart' show formatFcfa;
 import '../domain/conversation_repository.dart';
+import '../domain/rich_conversation_repository.dart';
+import '../../proposals/presentation/proposal_views.dart';
+import 'rich_message_widgets.dart';
+import 'media_actions.dart';
 
 class ConversationListView extends StatefulWidget {
   const ConversationListView({
@@ -194,9 +199,13 @@ class ConversationView extends StatefulWidget {
     required this.uid,
     required this.onBack,
     this.proposals,
+    this.ownPhone = '',
+    this.mediaActions = const PlatformConversationMediaActions(),
   });
   final ConversationRepository repository;
   final ProposalRepository? proposals;
+  final String ownPhone;
+  final ConversationMediaActions mediaActions;
   final String id, uid;
   final VoidCallback onBack;
   @override
@@ -213,6 +222,104 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
   final _scroll = ScrollController();
   int _limit = 30;
   String? _pendingId, _pendingText;
+  Stream<Proposal?>? _linkedProposal;
+  String? _linkedId;
+  Stream<Proposal?> _proposalStream(String id) {
+    if (_linkedId != id) {
+      _linkedId = id;
+      _linkedProposal = widget.proposals!.watchProposal(id);
+    }
+    return _linkedProposal!;
+  }
+
+  void _offer(Conversation chat) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    builder: (sheet) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(sheet).bottom),
+      child: SizedBox(
+        height: min(
+          MediaQuery.sizeOf(sheet).height * .85,
+          max(
+            0,
+            MediaQuery.sizeOf(sheet).height -
+                MediaQuery.viewInsetsOf(sheet).bottom -
+                64,
+          ),
+        ),
+        child: ProposalDetailView(
+          repository: widget.proposals!,
+          id: chat.selectedProposalId,
+          onBack: () => Navigator.pop(sheet),
+          actionsBuilder: (p) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ProposalDecisionPanel(
+                repository: widget.repository,
+                proposal: p,
+                uid: widget.uid,
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(sheet),
+                child: const Text('Retour à la conversation'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+  Widget _offerHeader(Conversation chat) => StreamBuilder<Proposal?>(
+    stream: _proposalStream(chat.selectedProposalId),
+    builder: (context, s) {
+      if (s.hasError) {
+        return TextButton(
+          onPressed: () => _offer(chat),
+          child: const Text('Réessayer de voir la proposition'),
+        );
+      }
+      if (!s.hasData) {
+        return s.connectionState == ConnectionState.waiting
+            ? const SizedBox(height: 4, child: LinearProgressIndicator())
+            : TextButton(
+                onPressed: () => _offer(chat),
+                child: const Text('Proposition liée indisponible'),
+              );
+      }
+      final p = s.data!;
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 22),
+        child: FoundiPanel(
+          onTap: () => _offer(chat),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Proposition liée',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                '${p.amount == null ? 'Montant à discuter' : '${formatFcfa(p.amount!)} FCFA'}${p.delay.isEmpty ? '' : ' · ${p.delay}'}',
+              ),
+              Wrap(
+                spacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  RequestTag(p.statusLabel),
+                  TextButton(
+                    onPressed: () => _offer(chat),
+                    child: const Text('Voir la proposition'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
   @override
   void dispose() {
     _text.dispose();
@@ -353,6 +460,12 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                       onPressed: () => _request(chat),
                       icon: const Icon(Icons.info_outline),
                     ),
+                    if (widget.proposals != null)
+                      IconButton(
+                        tooltip: 'Voir la proposition',
+                        onPressed: () => _offer(chat),
+                        icon: const Icon(Icons.description_outlined),
+                      ),
                   ],
                 )
               else
@@ -402,6 +515,7 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                     label: const Text('Retenir ou refuser'),
                   ),
                 ),
+              if (!keyboardOpen && widget.proposals != null) _offerHeader(chat),
               Expanded(
                 child: StreamBuilder<MessageBatch>(
                   stream: _messages,
@@ -440,13 +554,25 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                             ),
                           ),
                         Expanded(
-                          child: ListView(
+                          child: ListView.builder(
                             controller: _scroll,
                             reverse: true,
                             padding: const EdgeInsets.all(20),
-                            children: [
-                              for (final m in batch.messages)
-                                Align(
+                            itemCount: batch.messages.length + 1,
+                            findChildIndexCallback: (key) {
+                              if (key == const ValueKey('history-footer')) {
+                                return batch.messages.length;
+                              }
+                              final index = batch.messages.indexWhere(
+                                (m) => key == ValueKey('${widget.uid}:${m.id}'),
+                              );
+                              return index < 0 ? null : index;
+                            },
+                            itemBuilder: (context, index) {
+                              if (index < batch.messages.length) {
+                                final m = batch.messages[index];
+                                return Align(
+                                  key: ValueKey('${widget.uid}:${m.id}'),
                                   alignment: m.senderUid == widget.uid
                                       ? Alignment.centerRight
                                       : Alignment.centerLeft,
@@ -467,7 +593,21 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.end,
                                       children: [
-                                        Text(m.text),
+                                        RichMessageBody(
+                                          key: ValueKey(
+                                            '${widget.uid}:${m.id}',
+                                          ),
+                                          message: m,
+                                          id: widget.id,
+                                          uid: widget.uid,
+                                          repository:
+                                              widget.repository
+                                                  is RichConversationRepository
+                                              ? widget.repository
+                                                    as RichConversationRepository
+                                              : null,
+                                          actions: widget.mediaActions,
+                                        ),
                                         const SizedBox(height: 6),
                                         Text(
                                           _time(m.createdAt),
@@ -479,41 +619,49 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                                       ],
                                     ),
                                   ),
-                                ),
-                              if (batch.messages.isEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.all(30),
-                                  child: Text(
-                                    chat.active
-                                        ? 'La discussion est prête. Écrivez votre premier message.'
-                                        : 'Aucun message dans cet historique.',
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              if (batch.messages.length >= _limit &&
-                                  _limit < 100)
-                                TextButton(
-                                  onPressed: () => setState(() {
-                                    _limit = min(100, _limit + 30);
-                                    _messages = widget.repository.watchMessages(
-                                      widget.id,
-                                      limit: _limit,
-                                    );
-                                  }),
-                                  child: const Text(
-                                    'Charger les anciens messages',
-                                  ),
-                                ),
-                              if (_limit == 100 && batch.messages.length == 100)
-                                const Text(
-                                  'Les 100 messages les plus récents sont affichés.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: FoundiUi.muted,
-                                  ),
-                                ),
-                            ],
+                                );
+                              }
+                              return Column(
+                                key: const ValueKey('history-footer'),
+                                children: [
+                                  if (batch.messages.isEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.all(30),
+                                      child: Text(
+                                        chat.active
+                                            ? 'La discussion est prête. Écrivez votre premier message.'
+                                            : 'Aucun message dans cet historique.',
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  if (batch.messages.length >= _limit &&
+                                      _limit < 100)
+                                    TextButton(
+                                      onPressed: () => setState(() {
+                                        _limit = min(100, _limit + 30);
+                                        _messages = widget.repository
+                                            .watchMessages(
+                                              widget.id,
+                                              limit: _limit,
+                                            );
+                                      }),
+                                      child: const Text(
+                                        'Charger les anciens messages',
+                                      ),
+                                    ),
+                                  if (_limit == 100 &&
+                                      batch.messages.length == 100)
+                                    const Text(
+                                      'Les 100 messages les plus récents sont affichés.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: FoundiUi.muted,
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -545,6 +693,14 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
+                            if (widget.repository is RichConversationRepository)
+                              ConversationExtrasButton(
+                                repository: widget.repository,
+                                id: widget.id,
+                                uid: widget.uid,
+                                phone: widget.ownPhone,
+                                actions: widget.mediaActions,
+                              ),
                             Expanded(
                               child: TextField(
                                 key: const ValueKey('messageText'),

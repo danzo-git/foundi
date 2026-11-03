@@ -6,7 +6,8 @@ const { getFirestore } = require("firebase-admin/firestore");
 
 const { getStorage } = require("firebase-admin/storage");
 
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 
 const { defineSecret, defineString, defineInt, defineBoolean } = require("firebase-functions/params");
 
@@ -292,3 +293,56 @@ const conversations=createConversationService({store,auth:getAuth()});
 exports.selectProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.select(r.auth?.uid,r.data)));
 exports.sendConversationMessage=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.send(r.auth?.uid,r.data)));
 exports.decideProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.decide(r.auth?.uid,r.data)));
+
+const {createAttachmentService}=require('./attachment-service');
+const {createClamScanner}=require('./attachment-scanner');
+const scanHost=defineString('ATTACHMENT_SCAN_HOST',{default:'disabled'});
+const scanPort=defineInt('ATTACHMENT_SCAN_PORT',{default:3310});
+const requireAttachmentScan=defineBoolean('ATTACHMENT_REQUIRE_SCAN',{default:true});
+const attachments=createAttachmentService({auth:getAuth(),store:{...store,
+  get:async path=>(await getFirestore().doc(path).get()).data(),
+  expiredAttachments:async(now,size)=>(await getFirestore().collectionGroup('attachments').where('expiresAt','<=',now).orderBy('expiresAt').limit(size).get()).docs.map(d=>({path:d.ref.path,...d.data()})),
+},requireScan:()=>requireAttachmentScan.value(),scan:bytes=>createClamScanner({host:scanHost.value(),port:scanPort.value()})(bytes),files:{
+  save:async(path,bytes,contentType,metadata)=>{
+    const file=getStorage().bucket().file(path);
+    try{await file.save(bytes,{resumable:false,contentType,preconditionOpts:{ifGenerationMatch:0},metadata:{cacheControl:'private, no-store',metadata}});}
+    catch(e){if(Number(e.code)!==412)throw e;}
+    const [saved]=await file.getMetadata();
+    if(saved.metadata?.firebaseStorageDownloadTokens||saved.metadata?.sha256!==metadata.sha256||saved.metadata?.messageid!==metadata.messageid||Number(saved.size)!==bytes.length||saved.contentType!==contentType)throw new OtpError('failed-precondition','Objet de stockage incohérent.');
+    return String(saved.generation);
+  },
+  read:async(path,generation)=>{
+    const file=getStorage().bucket().file(path,{generation}),[metadata]=await file.getMetadata();
+    if(metadata.metadata?.firebaseStorageDownloadTokens)throw new OtpError('failed-precondition','Fichier indisponible.');
+    return (await file.download())[0];
+  },
+  remove:path=>getStorage().bucket().file(path).delete({ignoreNotFound:true}),
+}});
+const attachmentOptions={region:'europe-west1',maxInstances:3,concurrency:2,timeoutSeconds:120,memory:'512MiB'};
+exports.prepareConversationAttachment=onCall(attachmentOptions,r=>handle(()=>attachments.prepare(r.auth?.uid,r.data)));
+exports.cancelConversationAttachment=onCall(attachmentOptions,r=>handle(()=>attachments.cancel(r.auth?.uid,r.data?.conversationId,r.data?.messageId)));
+async function attachmentHttp(req,res,operation){
+  res.set('Cache-Control','private, no-store');res.set('X-Content-Type-Options','nosniff');
+  try{
+    const token=/^Bearer (\S+)$/.exec(req.get('authorization')||'');
+    if(!token)throw new OtpError('unauthenticated','Connexion nécessaire.');
+    let identity;try{identity=await getAuth().verifyIdToken(token[1],true);}catch{throw new OtpError('unauthenticated','Reconnecte-toi pour continuer.');}
+    await operation(identity.uid);
+  }catch(e){
+    const codes={'unauthenticated':401,'permission-denied':403,'invalid-argument':400,'not-found':404,'already-exists':409,'failed-precondition':409,'resource-exhausted':429};
+    const known=e instanceof OtpError;const code=known?e.code:'unavailable';
+    if(!known)logger.warn('Attachment operation unavailable.',{code:String(e.code||'internal')});
+    if(!res.headersSent)res.status(codes[code]||503).json({error:{code,message:known?e.message:'Fichier indisponible. Réessaie plus tard.'}});
+  }
+}
+exports.uploadConversationAttachment=onRequest({...attachmentOptions,cors:true},(req,res)=>attachmentHttp(req,res,async uid=>{
+  if(req.method!=='POST')throw new OtpError('invalid-argument','Méthode invalide.');
+  const result=await attachments.upload(uid,req.get('x-conversation-id'),req.get('x-message-id'),req.rawBody);
+  res.status(result.state==='ready'?200:202).json(result);
+}));
+exports.readConversationAttachment=onRequest({...attachmentOptions,cors:true},(req,res)=>attachmentHttp(req,res,async uid=>{
+  if(req.method!=='GET')throw new OtpError('invalid-argument','Méthode invalide.');
+  const file=await attachments.read(uid,req.query.conversationId,req.query.messageId);
+  res.set('Content-Type',file.contentType);res.set('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.originalName)}`);res.status(200).send(file.bytes);
+}));
+exports.cleanupConversationAttachments=onSchedule({...attachmentOptions,schedule:'every 24 hours'},()=>attachments.cleanup());

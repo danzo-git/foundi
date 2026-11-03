@@ -7,15 +7,18 @@
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check src/index.js && node --check src/otp-service.js && node --check src/account-service.js && node --check src/auth-validation.js && node --check src/professional-service.js && node --check scripts/configure-onboarding.js && node --check rules-test/permissions.test.cjs && node --check src/catalog-service.js && node --check src/request-service.js && node --check rules-test/requests.test.cjs && node --check integration-test/request-flow.test.cjs && node --check src/opportunity-service.js && node --check src/proposal-service.js && node --check rules-test/proposals.test.cjs && node --check integration-test/proposal-flow.test.cjs && node --check src/conversation-service.js && node --check rules-test/conversations.test.cjs && node --check integration-test/conversation-flow.test.cjs && node --check src/negotiation-migration.js && node --check scripts/migrate-negotiation-v81.cjs",
-    "test:rules": "node --test rules-test/*.test.cjs",
+    "check": "node --check src/index.js && node --check src/otp-service.js && node --check src/account-service.js && node --check src/auth-validation.js && node --check src/professional-service.js && node --check scripts/configure-onboarding.js && node --check rules-test/permissions.test.cjs && node --check src/catalog-service.js && node --check src/request-service.js && node --check rules-test/requests.test.cjs && node --check integration-test/request-flow.test.cjs && node --check src/opportunity-service.js && node --check src/proposal-service.js && node --check rules-test/proposals.test.cjs && node --check integration-test/proposal-flow.test.cjs && node --check src/conversation-service.js && node --check rules-test/conversations.test.cjs && node --check integration-test/conversation-flow.test.cjs && node --check src/negotiation-migration.js && node --check scripts/migrate-negotiation-v81.cjs && node --check src/attachment-service.js && node --check src/attachment-validation.js && node --check src/attachment-scanner.js && node --check scripts/test-v82-emulators.cjs && node --check rules-test/attachments.test.cjs && node --check integration-test/attachments-flow.test.cjs",
+    "test:rules": "node --test --test-concurrency=1 rules-test/*.test.cjs",
     "test:integration": "node --test --test-concurrency=1 integration-test/*.test.cjs",
-    "test:emulated": "npm run test:rules && npm run test:integration"
+    "test:emulated": "npm run test:rules && npm run test:integration",
+    "test:v82:emulators": "node scripts/test-v82-emulators.cjs"
   },
   "dependencies": {
     "firebase-admin": "^14.5.0",
     "firebase-functions": "^7.4.0",
-    "nodemailer": "^10.2.1"
+    "nodemailer": "^10.2.1",
+    "pdf-lib": "^1.17.1",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

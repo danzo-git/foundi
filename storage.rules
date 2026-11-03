@@ -1,6 +1,11 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    match /conversations/{conversationId}/{allPaths=**} {
+      // Upload AND read use authenticated server endpoints with participant checks.
+      // Firebase object GET can mint a permanent download token, so SDK reads are denied too.
+      allow read, write: if false;
+    }
     match /professionalDocuments/{uid}/{kind}/{file} {
       // Uploads are validated by the backend; no public download tokens.
       allow get: if request.auth != null && request.auth.uid == uid;

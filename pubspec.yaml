@@ -40,6 +40,13 @@ dependencies:
   google_sign_in: ^7.2.0
   cloud_firestore: ^7.1.0
   file_picker: ^13.3.0
+  dio: ^5.11.1
+  image_picker: ^1.2.4
+  url_launcher: ^6.3.3
+  open_filex: ^5.0.0
+  path_provider: ^2.1.6
+  crypto: ^3.0.8
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:

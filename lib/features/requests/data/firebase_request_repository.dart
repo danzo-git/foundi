@@ -1,5 +1,8 @@
 import '../../conversations/domain/conversation_repository.dart';
 import '../../conversations/data/firebase_conversation_repository.dart';
+import '../../conversations/domain/rich_conversation_repository.dart';
+import '../../conversations/data/firebase_rich_conversation_repository.dart';
+import 'dart:typed_data';
 import '../../proposals/domain/proposal_repository.dart';
 import '../../proposals/data/firebase_proposal_repository.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -14,15 +17,49 @@ class FirebaseRequestRepository
         OpportunityRepository,
         ExplorerRepository,
         ProposalRepository,
-        ConversationRepository {
+        ConversationRepository,
+        RichConversationRepository {
   FirebaseRequestRepository({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
+    this.attachmentEndpointBase,
   }) : _db = firestore ?? FirebaseFirestore.instance,
        _functions =
            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
+  final String? attachmentEndpointBase;
+  late final RichConversationRepository _rich =
+      FirebaseRichConversationRepository(
+        _functions,
+        endpointBase: attachmentEndpointBase,
+      );
+  @override
+  Future<String> sendAttachment(
+    String conversationId,
+    String messageId,
+    AttachmentDraft draft, {
+    required AttachmentCancellation cancellation,
+    required void Function(double) onProgress,
+  }) => _rich.sendAttachment(
+    conversationId,
+    messageId,
+    draft,
+    cancellation: cancellation,
+    onProgress: onProgress,
+  );
+  @override
+  Future<String> cancelAttachment(String conversationId, String messageId) =>
+      _rich.cancelAttachment(conversationId, messageId);
+  @override
+  Future<Uint8List> readAttachment(String conversationId, String messageId) =>
+      _rich.readAttachment(conversationId, messageId);
+  @override
+  Future<void> shareContact(
+    String conversationId,
+    String messageId,
+    String phoneNumber,
+  ) => _rich.shareContact(conversationId, messageId, phoneNumber);
   late final ProposalRepository _proposals = FirebaseProposalRepository(
     _db,
     _functions,

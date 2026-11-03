@@ -23,6 +23,7 @@ class _Bootstrap extends StatefulWidget {
 }
 
 class _BootstrapState extends State<_Bootstrap> {
+  String? _attachmentEndpointBase;
   late Future<FirebaseAuthRepository> _initialization = _initialize();
 
   Future<FirebaseAuthRepository> _initialize() async {
@@ -73,6 +74,8 @@ class _BootstrapState extends State<_Bootstrap> {
           defaultValue: 5001,
         ),
       );
+      _attachmentEndpointBase =
+          'http://$host:${const int.fromEnvironment('FUNCTIONS_EMULATOR_PORT', defaultValue: 5001)}/$project/europe-west1';
     }
     return FirebaseAuthRepository();
   }
@@ -85,7 +88,9 @@ class _BootstrapState extends State<_Bootstrap> {
         return FoundiApp(
           authRepository: snapshot.requireData,
           professionalRepository: FirebaseProfessionalRepository(),
-          requestRepository: FirebaseRequestRepository(),
+          requestRepository: FirebaseRequestRepository(
+            attachmentEndpointBase: _attachmentEndpointBase,
+          ),
         );
       }
       return MaterialApp(

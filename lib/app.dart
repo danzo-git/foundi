@@ -25,6 +25,19 @@ class FoundiApp extends StatefulWidget {
 }
 
 class _FoundiAppState extends State<FoundiApp> {
+  final _navigator = GlobalKey<NavigatorState>();
+  late String? _sessionUid = widget.authRepository.currentUser?.id;
+  void _sessionChanged(String? uid) {
+    if (_sessionUid == uid) return;
+    _sessionUid = uid;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _navigator.currentState?.popUntil((route) => route.isFirst);
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+    });
+  }
+
   bool _authRequested = false;
   AuthRepository get authRepository => widget.authRepository;
   ProfessionalRepository? get professionalRepository =>
@@ -32,6 +45,7 @@ class _FoundiAppState extends State<FoundiApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
+    navigatorKey: _navigator,
     title: 'Foundi',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
@@ -97,6 +111,7 @@ class _FoundiAppState extends State<FoundiApp> {
           );
         }
         final user = snapshot.data;
+        _sessionChanged(user?.id);
         if (user == null) {
           if (widget.requestRepository != null && !_authRequested) {
             return GuestRequests(

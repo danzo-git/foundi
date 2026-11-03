@@ -67,16 +67,31 @@ class ConversationMessage {
   const ConversationMessage({
     required this.id,
     required this.senderUid,
-    required this.text,
+    this.text = '',
     required this.createdAt,
+    this.type = 'text',
+    this.phoneNumber,
+    this.storagePath,
+    this.originalName,
+    this.contentType,
+    this.sizeBytes,
   });
   final String id, senderUid, text;
   final int createdAt;
+  final String type;
+  final String? phoneNumber, storagePath, originalName, contentType;
+  final int? sizeBytes;
   factory ConversationMessage.fromMap(String id, Map<String, dynamic> m) =>
       ConversationMessage(
         id: id,
         senderUid: m['senderUid'] as String,
-        text: m['text'] as String,
+        text: m['text'] as String? ?? '',
+        type: m['type'] as String? ?? 'text',
+        phoneNumber: m['phoneNumber'] as String?,
+        storagePath: m['storagePath'] as String?,
+        originalName: m['originalName'] as String?,
+        contentType: m['contentType'] as String?,
+        sizeBytes: (m['sizeBytes'] as num?)?.toInt(),
         createdAt: (m['createdAt'] as num).toInt(),
       );
 }
