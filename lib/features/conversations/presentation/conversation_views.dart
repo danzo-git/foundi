@@ -12,6 +12,9 @@ import '../domain/rich_conversation_repository.dart';
 import '../../proposals/presentation/proposal_views.dart';
 import 'rich_message_widgets.dart';
 import 'media_actions.dart';
+import 'message_send_trace.dart';
+import 'text_message_outbox.dart';
+import '../../notifications/presentation/conversation_read_tracker.dart';
 
 class ConversationListView extends StatefulWidget {
   const ConversationListView({
@@ -200,11 +203,13 @@ class ConversationView extends StatefulWidget {
     required this.onBack,
     this.proposals,
     this.ownPhone = '',
+    this.active = true,
     this.mediaActions = const PlatformConversationMediaActions(),
   });
   final ConversationRepository repository;
   final ProposalRepository? proposals;
   final String ownPhone;
+  final bool active;
   final ConversationMediaActions mediaActions;
   final String id, uid;
   final VoidCallback onBack;
@@ -212,16 +217,60 @@ class ConversationView extends StatefulWidget {
   State<ConversationView> createState() => _ConversationViewState();
 }
 
-class _ConversationViewState extends AuthActionState<ConversationView> {
+class _ConversationViewState extends State<ConversationView> {
   late Stream<Conversation?> _conversation = widget.repository
       .watchConversation(widget.id);
-  late Stream<MessageBatch> _messages = widget.repository.watchMessages(
-    widget.id,
-  );
+  late TextMessageOutbox _outbox;
+  late Stream<MessageBatch> _messages;
+  String? error;
   final _text = TextEditingController();
   final _scroll = ScrollController();
   int _limit = 30;
-  String? _pendingId, _pendingText;
+  Stream<MessageBatch> _watchMessages() {
+    final outbox = _outbox;
+    return widget.repository.watchMessages(widget.id, limit: _limit).map((
+      batch,
+    ) {
+      outbox.observe(batch);
+      return batch;
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _bindOutbox();
+  }
+
+  void _bindOutbox() {
+    _outbox = TextMessageOutbox.forConversation(
+      widget.repository,
+      widget.uid,
+      widget.id,
+    );
+    _outbox.addListener(_outboxChanged);
+    _messages = _watchMessages();
+  }
+
+  void _outboxChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(ConversationView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.id != widget.id ||
+        oldWidget.uid != widget.uid ||
+        oldWidget.repository != widget.repository) {
+      _outbox.removeListener(_outboxChanged);
+      _limit = 30;
+      _text.clear();
+      error = null;
+      _conversation = widget.repository.watchConversation(widget.id);
+      _bindOutbox();
+    }
+  }
+
   Stream<Proposal?>? _linkedProposal;
   String? _linkedId;
   Stream<Proposal?> _proposalStream(String id) {
@@ -322,40 +371,29 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
   );
   @override
   void dispose() {
+    _outbox.removeListener(_outboxChanged);
     _text.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
-  Future<void> _send() async {
-    if (busy) return;
+  void _send(Conversation chat) {
+    final clock = Stopwatch()..start();
+    if (!chat.active ||
+        ![chat.clientUid, chat.professionalUid].contains(widget.uid)) {
+      return;
+    }
     final text = _text.text.trim();
     if (text.isEmpty || text.length > 2000) {
       setState(() => error = 'Écris un message de 1 à 2000 caractères.');
       return;
     }
-    if (_pendingId == null || text != _pendingText) {
-      _pendingId = widget.repository.newMessageId(widget.id);
-      _pendingText = text;
-    }
-    final ok = await perform(
-      () => widget.repository.sendConversationMessage(
-        widget.id,
-        _pendingId!,
-        text,
-      ),
-    );
-    if (ok && mounted) {
-      _text.clear();
-      _pendingId = null;
-      _pendingText = null;
-      if (_scroll.hasClients) {
-        _scroll.animateTo(
-          0,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
-      }
+    error = null;
+    // Clear synchronously: a second tap cannot resubmit the same composer draft.
+    _text.clear();
+    _outbox.send(text, clock);
+    if (_scroll.hasClients) {
+      _scroll.jumpTo(0);
     }
   }
 
@@ -410,6 +448,7 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
   );
   @override
   Widget build(BuildContext context) => StreamBuilder<Conversation?>(
+    key: ValueKey((widget.uid, widget.id, widget.repository)),
     stream: _conversation,
     builder: (context, c) {
       if (c.hasError ||
@@ -432,6 +471,9 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
       }
       if (!c.hasData) return const Center(child: CircularProgressIndicator());
       final chat = c.requireData!;
+      final canSend =
+          chat.active &&
+          [chat.clientUid, chat.professionalUid].contains(widget.uid);
       return LayoutBuilder(
         builder: (context, constraints) {
           final keyboardOpen =
@@ -518,153 +560,199 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
               if (!keyboardOpen && widget.proposals != null) _offerHeader(chat),
               Expanded(
                 child: StreamBuilder<MessageBatch>(
+                  key: ValueKey((widget.uid, widget.id, widget.repository)),
                   stream: _messages,
                   builder: (context, s) {
-                    if (s.hasError) {
-                      return Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const AuthNotice(
-                            'Messages indisponibles. Vérifie ta connexion.',
-                          ),
-                          TextButton(
-                            onPressed: () => setState(
-                              () => _messages = widget.repository.watchMessages(
-                                widget.id,
-                                limit: _limit,
-                              ),
-                            ),
-                            child: const Text('Réessayer les messages'),
-                          ),
-                        ],
-                      );
-                    }
-                    if (!s.hasData) {
+                    if (!s.hasError && !s.hasData && _outbox.items.isEmpty) {
                       return const Center(child: CircularProgressIndicator());
                     }
-                    final batch = s.requireData;
-                    return Column(
-                      children: [
-                        if (batch.fromCache)
-                          const Text(
-                            'Historique local — connexion en cours…',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: FoundiUi.muted,
+                    final batch = s.hasError
+                        ? const MessageBatch([])
+                        : s.data ?? const MessageBatch([]);
+                    final messages = _outbox.merge(batch);
+                    return ConversationReadTracker(
+                      conversationId: widget.id,
+                      uid: widget.uid,
+                      batch: batch,
+                      scroll: _scroll,
+                      active: widget.active && !s.hasError,
+                      child: Column(
+                        children: [
+                          if (s.hasError) ...[
+                            const AuthNotice(
+                              'Messages indisponibles. Vérifie ta connexion.',
+                            ),
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => _messages = _watchMessages()),
+                              child: const Text('Réessayer les messages'),
+                            ),
+                          ],
+                          if (batch.fromCache)
+                            const Text(
+                              'Historique local — connexion en cours…',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: FoundiUi.muted,
+                              ),
+                            ),
+                          Expanded(
+                            child: ListView.builder(
+                              controller: _scroll,
+                              reverse: true,
+                              padding: const EdgeInsets.all(20),
+                              itemCount: messages.length + 1,
+                              findChildIndexCallback: (key) {
+                                if (key == const ValueKey('history-footer')) {
+                                  return messages.length;
+                                }
+                                final index = messages.indexWhere(
+                                  (m) =>
+                                      key == ValueKey('${widget.uid}:${m.id}'),
+                                );
+                                return index < 0 ? null : index;
+                              },
+                              itemBuilder: (context, index) {
+                                if (index < messages.length) {
+                                  final m = messages[index];
+                                  final outgoing = _outbox.item(m.id);
+                                  WidgetsBinding.instance.addPostFrameCallback((
+                                    _,
+                                  ) {
+                                    if (mounted) {
+                                      MessageSendTrace.bubbleFrame(m.id);
+                                    }
+                                  });
+                                  return Align(
+                                    key: ValueKey('${widget.uid}:${m.id}'),
+                                    alignment: m.senderUid == widget.uid
+                                        ? Alignment.centerRight
+                                        : Alignment.centerLeft,
+                                    child: Container(
+                                      constraints: const BoxConstraints(
+                                        maxWidth: 320,
+                                      ),
+                                      margin: const EdgeInsets.only(bottom: 14),
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: m.senderUid == widget.uid
+                                            ? FoundiUi.tint
+                                            : Colors.white,
+                                        border: Border.all(
+                                          color: FoundiUi.line,
+                                        ),
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          RichMessageBody(
+                                            key: ValueKey(
+                                              '${widget.uid}:${m.id}',
+                                            ),
+                                            message: m,
+                                            id: widget.id,
+                                            uid: widget.uid,
+                                            repository:
+                                                widget.repository
+                                                    is RichConversationRepository
+                                                ? widget.repository
+                                                      as RichConversationRepository
+                                                : null,
+                                            actions: widget.mediaActions,
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            _time(m.createdAt),
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              color: FoundiUi.muted,
+                                            ),
+                                          ),
+                                          if (m.senderUid == widget.uid &&
+                                              m.type == 'text') ...[
+                                            Text(
+                                              switch (outgoing?.delivery) {
+                                                TextDelivery.sending =>
+                                                  'Envoi en cours',
+                                                TextDelivery.failed =>
+                                                  'Échec de l’envoi',
+                                                _ => 'Envoyé',
+                                              },
+                                              key: ValueKey('delivery-${m.id}'),
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: FoundiUi.muted,
+                                              ),
+                                            ),
+                                            if (outgoing?.delivery ==
+                                                TextDelivery.failed) ...[
+                                              Text(
+                                                outgoing!.error!,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                              if (canSend)
+                                                TextButton(
+                                                  key: ValueKey(
+                                                    'retry-${m.id}',
+                                                  ),
+                                                  onPressed: () =>
+                                                      _outbox.retry(m.id),
+                                                  child: const Text(
+                                                    'Réessayer',
+                                                  ),
+                                                ),
+                                            ],
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return Column(
+                                  key: const ValueKey('history-footer'),
+                                  children: [
+                                    if (messages.isEmpty && !s.hasError)
+                                      Padding(
+                                        padding: const EdgeInsets.all(30),
+                                        child: Text(
+                                          chat.active
+                                              ? 'La discussion est prête. Écrivez votre premier message.'
+                                              : 'Aucun message dans cet historique.',
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    if (batch.messages.length >= _limit &&
+                                        _limit < 100)
+                                      TextButton(
+                                        onPressed: () => setState(() {
+                                          _limit = min(100, _limit + 30);
+                                          _messages = _watchMessages();
+                                        }),
+                                        child: const Text(
+                                          'Charger les anciens messages',
+                                        ),
+                                      ),
+                                    if (_limit == 100 &&
+                                        batch.messages.length == 100)
+                                      const Text(
+                                        'Les 100 messages les plus récents sont affichés.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: FoundiUi.muted,
+                                        ),
+                                      ),
+                                  ],
+                                );
+                              },
                             ),
                           ),
-                        Expanded(
-                          child: ListView.builder(
-                            controller: _scroll,
-                            reverse: true,
-                            padding: const EdgeInsets.all(20),
-                            itemCount: batch.messages.length + 1,
-                            findChildIndexCallback: (key) {
-                              if (key == const ValueKey('history-footer')) {
-                                return batch.messages.length;
-                              }
-                              final index = batch.messages.indexWhere(
-                                (m) => key == ValueKey('${widget.uid}:${m.id}'),
-                              );
-                              return index < 0 ? null : index;
-                            },
-                            itemBuilder: (context, index) {
-                              if (index < batch.messages.length) {
-                                final m = batch.messages[index];
-                                return Align(
-                                  key: ValueKey('${widget.uid}:${m.id}'),
-                                  alignment: m.senderUid == widget.uid
-                                      ? Alignment.centerRight
-                                      : Alignment.centerLeft,
-                                  child: Container(
-                                    constraints: const BoxConstraints(
-                                      maxWidth: 320,
-                                    ),
-                                    margin: const EdgeInsets.only(bottom: 14),
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: m.senderUid == widget.uid
-                                          ? FoundiUi.tint
-                                          : Colors.white,
-                                      border: Border.all(color: FoundiUi.line),
-                                      borderRadius: BorderRadius.circular(18),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        RichMessageBody(
-                                          key: ValueKey(
-                                            '${widget.uid}:${m.id}',
-                                          ),
-                                          message: m,
-                                          id: widget.id,
-                                          uid: widget.uid,
-                                          repository:
-                                              widget.repository
-                                                  is RichConversationRepository
-                                              ? widget.repository
-                                                    as RichConversationRepository
-                                              : null,
-                                          actions: widget.mediaActions,
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          _time(m.createdAt),
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: FoundiUi.muted,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }
-                              return Column(
-                                key: const ValueKey('history-footer'),
-                                children: [
-                                  if (batch.messages.isEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.all(30),
-                                      child: Text(
-                                        chat.active
-                                            ? 'La discussion est prête. Écrivez votre premier message.'
-                                            : 'Aucun message dans cet historique.',
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                  if (batch.messages.length >= _limit &&
-                                      _limit < 100)
-                                    TextButton(
-                                      onPressed: () => setState(() {
-                                        _limit = min(100, _limit + 30);
-                                        _messages = widget.repository
-                                            .watchMessages(
-                                              widget.id,
-                                              limit: _limit,
-                                            );
-                                      }),
-                                      child: const Text(
-                                        'Charger les anciens messages',
-                                      ),
-                                    ),
-                                  if (_limit == 100 &&
-                                      batch.messages.length == 100)
-                                    const Text(
-                                      'Les 100 messages les plus récents sont affichés.',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: FoundiUi.muted,
-                                      ),
-                                    ),
-                                ],
-                              );
-                            },
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -681,7 +769,7 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                         : 'La demande a été supprimée. L’historique reste consultable.',
                   ),
                 ),
-              if (chat.active)
+              if (canSend)
                 SafeArea(
                   top: false,
                   child: Padding(
@@ -689,7 +777,6 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                     child: Column(
                       children: [
                         AuthNotice(error),
-                        if (busy) const LinearProgressIndicator(),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
@@ -705,7 +792,6 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                               child: TextField(
                                 key: const ValueKey('messageText'),
                                 controller: _text,
-                                enabled: !busy,
                                 minLines: 1,
                                 maxLines: keyboardOpen ? 2 : 4,
                                 maxLength: 2000,
@@ -719,7 +805,7 @@ class _ConversationViewState extends AuthActionState<ConversationView> {
                             IconButton.filled(
                               key: const ValueKey('sendMessage'),
                               tooltip: 'Envoyer le message',
-                              onPressed: busy ? null : _send,
+                              onPressed: () => _send(chat),
                               icon: const Icon(Icons.send),
                             ),
                           ],

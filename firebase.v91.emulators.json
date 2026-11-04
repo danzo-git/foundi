@@ -1,0 +1,49 @@
+{
+  "functions": [
+    {
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.log",
+        ".env.example",
+        ".secret.local",
+        ".env*"
+      ],
+      "source": "functions",
+      "predeploy": [],
+      "codebase": "auth"
+    }
+  ],
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "auth": {
+      "port": 1420
+    },
+    "firestore": {
+      "port": 1421,
+      "websocketPort": 1426
+    },
+    "storage": {
+      "port": 1422
+    },
+    "functions": {
+      "port": 1423
+    },
+    "hub": {
+      "port": 1424
+    },
+    "logging": {
+      "port": 1425
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
+  },
+  "storage": {
+    "rules": "storage.rules"
+  }
+}

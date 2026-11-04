@@ -14,6 +14,8 @@ import 'space_widgets.dart';
 import '../../requests/domain/request_repository.dart';
 import '../../requests/presentation/request_composer.dart';
 import '../../requests/presentation/request_views.dart';
+import '../../notifications/presentation/notification_views.dart';
+import '../../notifications/domain/notification_repository.dart';
 
 class FoundiShell extends StatefulWidget {
   const FoundiShell({
@@ -40,6 +42,141 @@ class FoundiShell extends StatefulWidget {
 }
 
 class _FoundiShellState extends AuthActionState<FoundiShell> {
+  NotificationScope? _notifications;
+  bool _openingNotification = false;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final scope = NotificationScope.maybeOf(context);
+    if (_notifications?.intent != scope?.intent) {
+      _notifications?.intent.removeListener(_notificationIntentChanged);
+      _notifications = scope;
+      scope?.intent.addListener(_notificationIntentChanged);
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _notificationIntentChanged(),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _notifications?.intent.removeListener(_notificationIntentChanged);
+    super.dispose();
+  }
+
+  void _notificationIntentChanged() {
+    if (!mounted || !widget.active || _openingNotification) return;
+    final intent = _notifications?.intent.value;
+    if (intent == null) return;
+    _notifications!.intent.value = null;
+    if (intent.uid != widget.user.id) {
+      _notificationUnavailable();
+      return;
+    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    _openNotification(intent.id, push: true);
+  }
+
+  void _notificationUnavailable() => ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text(
+        'Ce contenu n’est plus disponible ou cet accès n’est plus autorisé.',
+      ),
+    ),
+  );
+  Future<void> _openNotification(String id, {bool push = false}) async {
+    final scope = _notifications;
+    if (scope == null || _openingNotification) return;
+    _openingNotification = true;
+    try {
+      final target = await scope.repository.resolve(id);
+      if (!mounted || widget.auth.currentUser?.id != widget.user.id) return;
+      if (push) await scope.repository.markRead(widget.user.id, id);
+      if (!mounted) return;
+      switch (target.type) {
+        case 'professional':
+          _dossier();
+        case 'conversation':
+          if (_conversations == null) {
+            _notificationUnavailable();
+            return;
+          }
+          _openConversation(target.id, 'messages');
+        case 'proposal':
+          if (_proposals == null) {
+            _notificationUnavailable();
+            return;
+          }
+          _openProposal(target.id, 'sentProposals');
+        case 'requestProposals':
+          _receivedRequestId = target.id;
+          _showRequests('receivedProposals');
+        case 'opportunity':
+          if (!widget.professional.approved ||
+              widget.requestRepository == null) {
+            _notificationUnavailable();
+            return;
+          }
+          setState(() => _professional = true);
+          _requestId = target.id;
+          _requestReturn = 'explore';
+          _showRequests('detail');
+        default:
+          _notificationUnavailable();
+      }
+    } catch (_) {
+      if (mounted) {
+        _notificationUnavailable();
+      }
+    } finally {
+      _openingNotification = false;
+      if (mounted && _notifications?.intent.value != null) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _notificationIntentChanged(),
+        );
+      }
+    }
+  }
+
+  void _inbox() {
+    final scope = _notifications;
+    if (scope == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (inboxContext) => NotificationInbox(
+          repository: scope.repository,
+          uid: widget.user.id,
+          permission: scope.permission,
+          onOpen: (id) async {
+            final target = await scope.repository.resolve(id);
+            if (!mounted || !inboxContext.mounted) return;
+            // Resolve before dismissing, then revalidate again in the shell during navigation.
+            if (target.id.isEmpty) return;
+            Navigator.pop(inboxContext);
+            await _openNotification(id);
+          },
+        ),
+      ),
+    );
+  }
+
+  void _notificationSettings() {
+    final scope = _notifications;
+    if (scope != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => NotificationSettings(
+            repository: scope.repository,
+            uid: widget.user.id,
+            permission: scope.permission,
+          ),
+        ),
+      );
+    }
+  }
+
   late bool _professional =
       widget.professional.approved &&
       widget.user.profile.preferredMode == 'professional';
@@ -155,6 +292,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             repository: _conversations!,
             proposals: _proposals,
             ownPhone: widget.user.profile.phone,
+            active: widget.active,
             uid: widget.user.id,
             id: _conversationId!,
             onBack: () => _showRequests(_conversationReturn),
@@ -274,6 +412,11 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
   @override
   void didUpdateWidget(FoundiShell oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _notificationIntentChanged(),
+      );
+    }
     if (!widget.professional.approved) {
       _professional = false;
       if (oldWidget.professional.approved && _selectorContext != null) {
@@ -522,6 +665,13 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                         _requestPage != 'conversation' &&
                         _requestPage != 'detail')
                       FoundiBrand(
+                        notificationBell: _notifications == null
+                            ? null
+                            : NotificationBell(
+                                repository: _notifications!.repository,
+                                uid: widget.user.id,
+                                onOpen: _inbox,
+                              ),
                         onSettings: _account && _requestPage == null
                             ? () => setState(() => _settings = true)
                             : null,
@@ -536,6 +686,9 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                                 onSpaces: _spaces,
                                 onDossier: _dossier,
                                 onActivity: _activity,
+                                onNotifications: _notifications == null
+                                    ? null
+                                    : _notificationSettings,
                                 onSignOut: () => perform(widget.auth.signOut),
                                 busy: busy,
                                 error: error,
@@ -602,6 +755,16 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             ),
           ),
           bottomNavigationBar: FoundiBottomBar(
+            messagesIcon: _notifications?.repository is MessageReadRepository
+                ? MessageUnreadIcon(
+                    repository:
+                        _notifications!.repository as MessageReadRepository,
+                    uid: widget.user.id,
+                    selected:
+                        _requestPage == 'messages' ||
+                        _requestPage == 'conversation',
+                  )
+                : null,
             accountSelected: _account,
             selectedIndex:
                 _requestPage == 'messages' || _requestPage == 'conversation'

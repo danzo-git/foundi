@@ -356,7 +356,7 @@ void main() {
       expect(r.messageRows, isEmpty);
       r.failSend = false;
       r.commitThenFail = true;
-      await tap(t, find.byKey(const ValueKey('sendMessage')));
+      await tap(t, find.byKey(ValueKey('retry-${r.sendIds.first}')));
       expect(r.messageRows.length, 1);
       expect(find.text('Envoi non confirmé. Réessaie.'), findsOneWidget);
       expect(
@@ -364,11 +364,11 @@ void main() {
             .widget<TextField>(find.byKey(const ValueKey('messageText')))
             .controller!
             .text,
-        'Message fiable',
+        '',
       );
       r.commitThenFail = false;
       r.sendingMessage = Completer<void>();
-      await t.tap(find.byKey(const ValueKey('sendMessage')));
+      await t.tap(find.byKey(ValueKey('retry-${r.sendIds.first}')));
       await t.pump();
       await t.tap(find.byKey(const ValueKey('sendMessage')));
       await t.pump();

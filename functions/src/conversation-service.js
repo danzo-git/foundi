@@ -16,7 +16,7 @@ async function readConversation(tx, uid, id) {
     p && linked(chat,p,proposalOf(chat)) && p.conversationId === id && ['discussing','retained','selected'].includes(p.status);
   return {chat,own,p,writable:!!writable};
 }
-function createConversationService({ store, auth, clock = () => Date.now() }) {
+function createConversationService({ store, auth, clock = () => Date.now(), onSendTiming = () => {} }) {
   async function account(uid) {
     requireUid(uid);
     const a = await auth.getUser(uid);
@@ -93,7 +93,24 @@ function createConversationService({ store, auth, clock = () => Date.now() }) {
     });
   }
   async function send(uid, data) {
+    const started = process.hrtime.bigint();
+    const report = (stage, extra = {}) => {
+      // Never log payloads, participant IDs or tokens, even on validation errors.
+      try { onSendTiming({event:'message_send_server_timing',messageId:idOK(data?.messageId)?data.messageId:undefined,stage,elapsedMs:Number(process.hrtime.bigint()-started)/1e6,...extra}); } catch (_) { /* Metrics cannot affect delivery. */ }
+    };
+    report('S0_handler');
+    try {
+      const result = await sendValidated(uid, data, report);
+      report('S4_committed');
+      return result;
+    } catch (error) {
+      report('S_failed', {code:typeof error.code==='string'?error.code:'unknown'});
+      throw error;
+    }
+  }
+  async function sendValidated(uid, data, report) {
     await account(uid);
+    report('S1_account_validated');
     const type = data?.type ?? 'text';
     const fields = type === 'contact' ? ['conversationId','messageId','type','phoneNumber','consent'] : ['conversationId','messageId','type','text'];
     if (!data || Object.keys(data).some(k => !fields.includes(k)) || !idOK(data.conversationId) || !idOK(data.messageId) ||
@@ -101,9 +118,13 @@ function createConversationService({ store, auth, clock = () => Date.now() }) {
         (type === 'contact' && (data.consent !== true || typeof data.phoneNumber !== 'string' || !/^\+[1-9][0-9]{7,14}$/.test(data.phoneNumber)))) fail('invalid-argument', type === 'contact' ? 'Confirme le numéro international à partager.' : 'Écris un message de 1 à 2000 caractères.');
     const { conversationId, messageId } = data;
     const payload = type === 'text' ? {text:data.text.trim()} : {phoneNumber:data.phoneNumber};
+    report('S2_payload_validated');
+    let attempt = 0;
     return store.transaction(async tx => {
+      attempt++;
       const {chat,writable} = await readConversation(tx,uid,conversationId);
       const existing = await tx.get(`conversations/${conversationId}/messages/${messageId}`);
+      report('S3_transaction_reads', {attempt});
       if (existing) {
         if (existing.senderUid !== uid || (existing.type || 'text') !== type || Object.entries(payload).some(([k,v])=>existing[k]!==v)) fail('already-exists', 'Cet identifiant correspond à un autre message.');
         return { messageId, createdAt: existing.createdAt };

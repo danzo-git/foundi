@@ -57,6 +57,18 @@ test('callable end-to-end: admin catalog → mobile draft → private upload →
   await reviewer.call('reviewProfessionalProfile',{uid:pro.uid,status:'approved',revision:(await profile()).revision});
   assert.equal((await profile()).status,'approved');assert.equal((await pro.call('checkProfessionalAccess')).approved,true);
   const audits=await getDocs(query(collection(reviewer.db,'professionalAudit'),where('uid','==',pro.uid)));assert.equal(audits.size,2);
+  // V9 is driven by real authorized admin journal writes, not a client-side notification.
+  let notifications;
+  for(let attempt=0;attempt<60;attempt++){
+   notifications=await dbAdmin.collection(`users/${pro.uid}/notifications`).where('schemaVersion','==',9).get();
+   if(notifications.size===2)break;
+   await new Promise(resolve=>setTimeout(resolve,500));
+  }
+  assert.deepEqual(notifications.docs.map(d=>d.data().type).sort(),['professional.approved','professional.more_info_requested']);
+  assert.equal((await dbAdmin.doc(`users/${pro.uid}/notifications/professionalDecision`).get()).exists,false);
+  const approval=notifications.docs.find(d=>d.data().type==='professional.approved');
+  assert.deepEqual(await pro.call('resolveNotification',{notificationId:approval.id}),{resourceType:'professional',resourceId:pro.uid});
+  await assert.rejects(reviewer.call('resolveNotification',{notificationId:approval.id}),e=>e.code==='functions/not-found');
   await assert.rejects(setDoc(doc(pro.db,'proposals/forged-'+token),{professionalId:pro.uid}),e=>e.code==='permission-denied');
  }finally{await Promise.all(apps.map(deleteApp));await deleteAdmin(admin);}
 });

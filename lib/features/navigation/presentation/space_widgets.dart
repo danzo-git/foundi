@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/presentation/foundi_logo.dart';
 
 abstract final class FoundiUi {
   static const green = Color(0xFF087D68);
@@ -22,8 +23,9 @@ void showComingSoon(BuildContext context) {
 }
 
 class FoundiBrand extends StatelessWidget {
-  const FoundiBrand({super.key, this.onSettings});
+  const FoundiBrand({super.key, this.onSettings, this.notificationBell});
   final VoidCallback? onSettings;
+  final Widget? notificationBell;
   @override
   Widget build(BuildContext context) => Padding(
     padding: EdgeInsets.fromLTRB(
@@ -34,23 +36,7 @@ class FoundiBrand extends StatelessWidget {
     ),
     child: Row(
       children: [
-        Container(
-          width: 38,
-          height: 38,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: FoundiUi.green,
-            borderRadius: BorderRadius.circular(11),
-          ),
-          child: const Text(
-            'F',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
+        const FoundiLogo(size: 38, decorative: true),
         const SizedBox(width: 10),
         const Expanded(
           child: Text(
@@ -62,6 +48,7 @@ class FoundiBrand extends StatelessWidget {
             ),
           ),
         ),
+        ?notificationBell,
         if (onSettings != null)
           IconButton.filledTonal(
             key: const ValueKey('openSettings'),
@@ -87,10 +74,12 @@ class FoundiBottomBar extends StatelessWidget {
     required this.accountSelected,
     required this.onSelect,
     this.selectedIndex,
+    this.messagesIcon,
   });
   final bool accountSelected;
   final ValueChanged<int> onSelect;
   final int? selectedIndex;
+  final Widget? messagesIcon;
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: const BoxDecoration(
@@ -111,7 +100,7 @@ class FoundiBottomBar extends StatelessWidget {
             ),
             item('Explorer', Icons.search, 1, selectedIndex == 1),
             item('Publier', Icons.add, 2, selectedIndex == 2),
-            item('Messages', Icons.chat_bubble_outline, 3, false),
+            item('Messages', Icons.chat_bubble_outline, 3, selectedIndex == 3),
             item(
               'Compte',
               Icons.account_circle_outlined,
@@ -151,11 +140,13 @@ class FoundiBottomBar extends StatelessWidget {
                   else
                     SizedBox(
                       height: 40,
-                      child: Icon(
-                        icon,
-                        color: selected ? FoundiUi.green : FoundiUi.muted,
-                        size: 23,
-                      ),
+                      child: index == 3 && messagesIcon != null
+                          ? messagesIcon!
+                          : Icon(
+                              icon,
+                              color: selected ? FoundiUi.green : FoundiUi.muted,
+                              size: 23,
+                            ),
                     ),
                   const SizedBox(height: 4),
                   Text(

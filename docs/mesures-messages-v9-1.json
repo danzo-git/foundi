@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-04",
+  "measurementType": "Flutter widget test with virtual time and simulated delayed callable",
+  "realDevice": false,
+  "productionFirebaseMeasured": false,
+  "sampleCount": 10,
+  "pollIntervalMs": 16,
+  "percentileMethod": "nearest-rank",
+  "configuredCallableDelayMs": [8000, 9000, 10000, 8000, 9000, 10000, 8000, 9000, 10000, 8000],
+  "beforeLocalBubble": {
+    "sortedSamplesMs": [8000, 8000, 8000, 8000, 9008, 9008, 9008, 10000, 10000, 10000],
+    "medianMs": 9008,
+    "p95Ms": 10000,
+    "maxMs": 10000
+  },
+  "afterLocalBubble": {
+    "sortedSamplesMs": [16, 16, 16, 16, 16, 16, 16, 16, 16, 16],
+    "medianMs": 16,
+    "p95Ms": 16,
+    "maxMs": 16
+  },
+  "afterSimulatedConfirmation": {
+    "sortedSamplesMs": [8000, 8000, 8000, 8000, 9008, 9008, 9008, 10000, 10000, 10000],
+    "medianMs": 9008,
+    "p95Ms": 10000,
+    "maxMs": 10000
+  },
+  "realDeviceBeforeAfter": null,
+  "realFirebaseConfirmation": null,
+  "secondDeviceVisibility": null,
+  "deployed": false
+}

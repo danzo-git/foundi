@@ -588,13 +588,17 @@ void main() {
       await t.pumpAndSettle();
       await tap(t, find.byKey(const ValueKey('nav-3')));
       await tap(t, find.text('Atelier choisi'));
-      await t.tap(find.byType(Image).first);
+      final privateImages = find.byWidgetPredicate(
+        (widget) => widget is Image && widget.image is MemoryImage,
+      );
+      await t.tap(privateImages.first);
       await t.pumpAndSettle();
       expect(find.byType(PrivateImageViewer), findsOneWidget);
       await auth.signOut();
       await t.pumpAndSettle();
       expect(find.byType(PrivateImageViewer), findsNothing);
-      expect(find.byType(Image), findsNothing);
+      // Public branding assets may remain; private downloaded media must not.
+      expect(privateImages, findsNothing);
       await close(t, r);
       await auth.changes.close();
       await pro.changes.close();

@@ -1,11 +1,11 @@
 {
-    "name": "foundi",
-    "short_name": "foundi",
+    "name": "Foundi",
+    "short_name": "Foundi",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F6F9F7",
+    "theme_color": "#003B2D",
+    "description": "Des services, des professionnels et vos échanges avec Foundi.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -289,7 +289,7 @@ exports.sendProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds
 exports.proposalApproval=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.approval(r.auth?.uid,r.data?.proposalId)));
 
 const {createConversationService}=require('./conversation-service');
-const conversations=createConversationService({store,auth:getAuth()});
+const conversations=createConversationService({store,auth:getAuth(),onSendTiming:entry=>logger.info('message_send_server_timing',entry)});
 exports.selectProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.select(r.auth?.uid,r.data)));
 exports.sendConversationMessage=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.send(r.auth?.uid,r.data)));
 exports.decideProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.decide(r.auth?.uid,r.data)));
@@ -346,3 +346,33 @@ exports.readConversationAttachment=onRequest({...attachmentOptions,cors:true},(r
   res.set('Content-Type',file.contentType);res.set('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.originalName)}`);res.status(200).send(file.bytes);
 }));
 exports.cleanupConversationAttachments=onSchedule({...attachmentOptions,schedule:'every 24 hours'},()=>attachments.cleanup());
+
+// V9 observes durable server-owned events; business operations remain V8.1/V8.2.
+const {onDocumentCreated,onDocumentUpdated}=require('firebase-functions/v2/firestore');
+const {getMessaging}=require('firebase-admin/messaging');
+const {createNotificationService}=require('./notification-service');
+const pushEnabled=defineBoolean('NOTIFICATION_PUSH_ENABLED',{default:false});
+const notifications=createNotificationService({db:getFirestore(),auth:getAuth(),messaging:getMessaging(),logger});
+const eventOptions={region:'europe-west1',maxInstances:3,retry:true,timeoutSeconds:120};
+exports.notifyProfessionalDecision=onDocumentCreated({...eventOptions,document:'professionalAudit/{id}'},e=>e.data && notifications.professional(e.params.id,e.data.data()));
+exports.notifyProposalCreated=onDocumentCreated({...eventOptions,document:'proposals/{id}'},e=>e.data && notifications.proposal(e.params.id,e.data.data()));
+exports.notifyProposalDecision=onDocumentCreated({...eventOptions,document:'userRequests/{uid}/items/{requestId}/decisions/{id}'},e=>e.data && notifications.decision(e.params.uid,e.params.requestId,e.params.id,e.data.data()));
+exports.notifyConversationOpened=onDocumentCreated({...eventOptions,document:'conversations/{id}'},e=>e.data && notifications.conversation(e.params.id,e.data.data()));
+exports.notifyMessageCreated=onDocumentCreated({...eventOptions,document:'conversations/{conversationId}/messages/{id}'},e=>e.data && notifications.message(e.params.conversationId,e.params.id,e.data.data()));
+exports.notifyRequestPublished=onDocumentCreated({...eventOptions,document:'requests/{requestId}'},async e=>{
+  if (!e.data || e.data.data().status!=='published')return;
+  const owner=(await getFirestore().doc(`requestOwnership/${e.params.requestId}`).get()).data();
+  if(owner?.ownerUid)await notifications.enqueueRequest('matched',owner.ownerUid,e.params.requestId,e.data.data(),e.data.data().createdAt);
+});
+exports.notifyRequestClosed=onDocumentUpdated({...eventOptions,document:'userRequests/{uid}/items/{requestId}'},e=>{
+  const before=e.data.before.data(),after=e.data.after.data();
+  if(['published','in_discussion'].includes(before.status)&&after.status==='closed')return notifications.enqueueRequest('closed',e.params.uid,e.params.requestId,after,after.updatedAt);
+});
+exports.countNotificationRead=onDocumentUpdated({...eventOptions,document:'users/{uid}/notifications/{id}'},e=>notifications.read(e.params.uid,e.params.id,e.data.before.data(),e.data.after.data()));
+exports.runNotificationJob=onDocumentCreated({...eventOptions,document:'notificationJobs/{id}'},e=>notifications.processJob(e.params.id));
+exports.deliverNotificationPush=onDocumentCreated({...eventOptions,document:'notificationOutbox/{id}'},e=>pushEnabled.value()?notifications.deliver(e.params.id):undefined);
+exports.drainNotifications=onSchedule({region:'europe-west1',schedule:'every 1 minutes',maxInstances:1,timeoutSeconds:540},()=>notifications.drain({push:pushEnabled.value()}));
+exports.registerNotificationDevice=onCall(proOptions,r=>handle(()=>notifications.register(r.auth?.uid,r.data)));
+exports.unregisterNotificationDevice=onCall(proOptions,r=>handle(()=>notifications.unregister(r.auth?.uid,r.data?.deviceId)));
+exports.resolveNotification=onCall(proOptions,r=>handle(()=>notifications.resolve(r.auth?.uid,r.data?.notificationId)));
+exports.markConversationRead=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>notifications.markConversationRead(r.auth?.uid,r.data)));

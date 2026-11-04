@@ -98,6 +98,7 @@ class FirebaseConversationRepository implements ConversationRepository {
               .map((d) => ConversationMessage.fromMap(d.id, d.data()))
               .toList(),
           fromCache: s.metadata.isFromCache,
+          hasPendingWrites: s.metadata.hasPendingWrites,
         ),
       );
   @override

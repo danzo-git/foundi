@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../domain/auth_repository.dart';
 import '../domain/auth_validators.dart';
+import '../../../core/presentation/foundi_logo.dart';
 
 abstract class AuthActionState<T extends StatefulWidget> extends State<T> {
   bool busy = false;
@@ -39,52 +40,40 @@ class AuthLayout extends StatelessWidget {
     this.onBack,
     this.actions,
     this.footer,
+    this.showBrand = true,
   });
   final String title;
   final List<Widget> children;
   final VoidCallback? onBack;
   final List<Widget>? actions;
   final List<Widget>? footer;
+  final bool showBrand;
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Row(
-        children: [
-          Container(
-            width: 26,
-            height: 26,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: const Color(0xFF087F70),
-              borderRadius: BorderRadius.circular(7),
+    appBar: !showBrand && onBack == null && actions == null
+        ? null
+        : AppBar(
+            title: Row(
+              children: [
+                const FoundiLogo(size: 28, decorative: true),
+                const SizedBox(width: 8),
+                const Text(
+                  'Foundi',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+              ],
             ),
-            child: const Text(
-              'F',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            backgroundColor: Colors.transparent,
+            leading: onBack == null
+                ? null
+                : IconButton(
+                    tooltip: 'Retour',
+                    onPressed: onBack,
+                    icon: const Icon(Icons.arrow_back),
+                  ),
+            actions: actions,
           ),
-          const SizedBox(width: 8),
-          const Text(
-            'Foundi',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-          ),
-        ],
-      ),
-      backgroundColor: Colors.transparent,
-      leading: onBack == null
-          ? null
-          : IconButton(
-              tooltip: 'Retour',
-              onPressed: onBack,
-              icon: const Icon(Icons.arrow_back),
-            ),
-      actions: actions,
-    ),
     body: SafeArea(
       child: Align(
         alignment: Alignment.topCenter,
@@ -99,14 +88,14 @@ class AuthLayout extends StatelessWidget {
                     : 0,
               ),
               child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ...children,
-                    if (footer != null) ...[
-                      const SizedBox(height: 28),
-                      ...footer!,
-                    ],
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ...children,
+                  if (footer != null) ...[
+                    const SizedBox(height: 28),
+                    ...footer!,
                   ],
+                ],
               ),
             ),
           ),

@@ -3,6 +3,7 @@ import '../domain/auth_repository.dart';
 import '../domain/auth_validators.dart';
 import 'auth_widgets.dart';
 import 'password_reset_screen.dart';
+import '../../../core/presentation/foundi_logo.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key, required this.repository, this.onExplore});
@@ -156,6 +157,7 @@ class _AuthScreenState extends AuthActionState<AuthScreen> {
     final registering = _page == 2;
     return AuthLayout(
       title: registering ? 'Créer un compte' : 'Se connecter',
+      showBrand: registering,
       onBack: registering && !busy ? () => _go(1) : null,
       footer: [
         AuthButton(
@@ -176,12 +178,31 @@ class _AuthScreenState extends AuthActionState<AuthScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        OutlinedButton.icon(
-          key: const ValueKey('googleAuth'),
-          onPressed: busy ? null : _google,
-          icon: const Icon(Icons.account_circle_outlined),
-          label: Text(
-            registering ? 'Continuer avec Google' : 'Se connecter avec Google',
+        Center(
+          child: Tooltip(
+            message: 'Continuer avec Google',
+            child: Semantics(
+              label: 'Continuer avec Google',
+              button: true,
+              child: OutlinedButton(
+                key: const ValueKey('googleAuth'),
+                onPressed: busy ? null : _google,
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(56, 56),
+                  maximumSize: const Size(56, 56),
+                  padding: EdgeInsets.zero,
+                  backgroundColor: Colors.white,
+                  side: const BorderSide(color: Color(0xFF747775)),
+                  shape: const CircleBorder(),
+                ),
+                child: Image.asset(
+                  'assets/branding/google-g.png',
+                  width: 24,
+                  height: 24,
+                  excludeFromSemantics: true,
+                ),
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 24),
@@ -189,9 +210,7 @@ class _AuthScreenState extends AuthActionState<AuthScreen> {
           key: const ValueKey('switchAuthMode'),
           onPressed: busy ? null : () => _go(registering ? 0 : 1),
           child: Text(
-            registering
-                ? 'Déjà inscrit ? Se connecter'
-                : 'Tu découvres Foundi ? Créer un compte',
+            registering ? 'Déjà inscrit ? Se connecter' : 'Créer un compte',
           ),
         ),
         if (!registering) ...[
@@ -200,30 +219,33 @@ class _AuthScreenState extends AuthActionState<AuthScreen> {
               onPressed: busy ? null : widget.onExplore,
               child: const Text('Explorer sans compte'),
             ),
-          const Text(
-            'Même connexion pour clients et professionnels.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: Color(0xFF647D75)),
-          ),
-          TextButton(
-            key: const ValueKey('setupPassword'),
-            onPressed: busy ? null : () => _reset(true),
-            child: const Text(
-              'Compte créé avec un code ? Définir mon mot de passe',
-              textAlign: TextAlign.center,
-            ),
-          ),
         ],
       ],
       children: [
-        AuthHeading(
-          title: registering
-              ? 'Faisons connaissance'
-              : 'Heureux de te retrouver',
-          description: registering
-              ? 'Créons ton compte Foundi.'
-              : 'Connecte-toi pour retrouver tes échanges.',
-        ),
+        if (registering)
+          const AuthHeading(
+            title: 'Faisons connaissance',
+            description: 'Créons ton compte Foundi.',
+          )
+        else
+          const Padding(
+            padding: EdgeInsets.only(top: 8, bottom: 32),
+            child: Column(
+              children: [
+                FoundiLogo(size: 80),
+                SizedBox(height: 24),
+                Text(
+                  'Heureux de te retrouver',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 25,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF153F38),
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (registering && _path == 'professional') const OnboardingProgress(1),
         Form(
           key: _form,

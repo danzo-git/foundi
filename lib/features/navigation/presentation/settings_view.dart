@@ -19,11 +19,13 @@ class FoundiSettings extends StatelessWidget {
     required this.onSignOut,
     this.busy = false,
     this.error,
+    this.onNotifications,
   });
   final FoundiUser user;
   final ProfessionalProfile professional;
   final bool professionalSpace, busy;
   final String? error;
+  final VoidCallback? onNotifications;
   final VoidCallback onSpaces, onDossier, onActivity, onSignOut;
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
@@ -85,8 +87,10 @@ class FoundiSettings extends StatelessWidget {
           row(
             Icons.notifications_none,
             'Notifications',
-            'Préférences · Bientôt disponible',
-            () => showComingSoon(context),
+            onNotifications == null
+                ? 'Préférences · Bientôt disponible'
+                : 'Préférences push par catégorie',
+            onNotifications ?? () => showComingSoon(context),
           ),
           row(
             Icons.shield_outlined,

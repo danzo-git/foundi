@@ -70,5 +70,21 @@ test('V8.2 real HTTP uploads and reads: A/B image/PDF/contact/text, C denied, va
   await a.call('manageRequest',{requestId:rid,action:'close'});await b.call('sendConversationMessage',{conversationId:cid,messageId:mid(),type:'contact',phoneNumber:'+2250500000000',consent:true});
   await a.call('decideProposal',{requestId:rid,proposalId:p.id,action:'reject',decisionId:mid()});await assert.rejects(prepare(b,cid,mid(),png,'image','photo.png','image/png'),e=>e.code==='functions/failed-precondition');
   assert.equal((await read(b,cid,pdfId)).status,200);await assert.rejects(b.call('sendConversationMessage',{conversationId:cid,messageId:mid(),text:'Après refus'}),e=>e.code==='functions/failed-precondition');
+  // V9 observes only final persisted V8.2 messages, including rich media and legacy text.
+  const messages=await db.collection(`conversations/${cid}/messages`).get();
+  let notifications;
+  for(let retry=0;retry<80;retry++){
+    const snapshots=await Promise.all([a,b].map(u=>db.collection(`users/${u.uid}/messageInbox`).where('conversationId','==',cid).get()));
+    notifications=snapshots.flatMap(s=>s.docs.map(d=>d.data()));
+   if(notifications.length===messages.size)break;
+   await new Promise(resolve=>setTimeout(resolve,300));
+  }
+  assert.equal(notifications.length,messages.size);
+  for(const message of messages.docs){
+   const eventId=`messages/${cid}/${message.id}`,entries=notifications.filter(n=>n.eventId===eventId);
+   assert.equal(entries.length,1);assert.notEqual(entries[0].recipientUid,message.data().senderUid);
+   assert.ok(!JSON.stringify(entries[0]).includes('2250700000000'));
+  }
+  assert.ok(!notifications.some(n=>n.eventId===`messages/${cid}/${cancelledId}`));
  }finally{stops.forEach(s=>s());await Promise.all(users.map(uid=>auth.deleteUser(uid)));await Promise.all(apps.map(deleteApp));await deleteAdmin(admin);}
 });

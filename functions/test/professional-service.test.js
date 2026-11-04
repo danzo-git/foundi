@@ -118,7 +118,7 @@ test('only a currently authorized reviewer can approve and decisions are audited
   await assert.rejects(c.decide('admin', {}, 'u', 'approved'), fails('permission-denied'));
   await c.decide('admin', { admin: true }, 'u', 'approved');
   assert.deepEqual(await c.requireApproved('u'), { approved: true });
-  assert.equal(c.documents.get('users/u/notifications/professionalDecision').status, 'approved');
+    assert.equal(c.documents.has('users/u/notifications/professionalDecision'), false);
   assert.equal([...c.documents.keys()].filter(k => k.startsWith('professionalAudit/')).length, 1);
 });
 test('revoked reviewer claims and draft approval are refused', async () => {

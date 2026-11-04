@@ -222,7 +222,6 @@ function createProfessionalService({ store, auth, files, clock = () => Date.now(
       }
       const now = clock();
       tx.set(path, { ...profile, status, reviewReason: reason, reviewedAt: now, reviewedBy: adminUid, updatedAt: now, revision: profile.revision + 1 });
-      tx.set(`users/${uid}/notifications/professionalDecision`, { type: 'professionalDecision', status, reason, createdAt: now });
       tx.set(`professionalAudit/${generateId()}`, { uid, adminUid, from: profile.status, to: status, reason, revision: profile.revision, createdAt: now });
       return { status };
     });

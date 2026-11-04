@@ -10,6 +10,9 @@ import 'features/auth/data/firebase_auth_repository.dart';
 import 'firebase_options.dart';
 import 'features/professional/data/firebase_professional_repository.dart';
 import 'features/requests/data/firebase_request_repository.dart';
+import 'features/notifications/data/firebase_notification_repository.dart';
+import 'features/notifications/data/notification_push.dart';
+import 'features/notifications/presentation/notification_views.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +26,8 @@ class _Bootstrap extends StatefulWidget {
 }
 
 class _BootstrapState extends State<_Bootstrap> {
+  final _notificationIntent = ValueNotifier<NotificationIntent?>(null);
+  NotificationPush? _push;
   String? _attachmentEndpointBase;
   late Future<FirebaseAuthRepository> _initialization = _initialize();
 
@@ -77,7 +82,15 @@ class _BootstrapState extends State<_Bootstrap> {
       _attachmentEndpointBase =
           'http://$host:${const int.fromEnvironment('FUNCTIONS_EMULATOR_PORT', defaultValue: 5001)}/$project/europe-west1';
     }
-    return FirebaseAuthRepository();
+    if (!emulated && NotificationPush.supported) {
+      _push = NotificationPush(_notificationIntent);
+      try {
+        await _push!.initialize();
+      } catch (_) {
+        debugPrint('Foundi: push indisponibles, boîte in-app active.');
+      }
+    }
+    return FirebaseAuthRepository(beforeSignOut: _push?.beforeSignOut);
   }
 
   @override
@@ -85,11 +98,16 @@ class _BootstrapState extends State<_Bootstrap> {
     future: _initialization,
     builder: (context, snapshot) {
       if (snapshot.hasData) {
-        return FoundiApp(
-          authRepository: snapshot.requireData,
-          professionalRepository: FirebaseProfessionalRepository(),
-          requestRepository: FirebaseRequestRepository(
-            attachmentEndpointBase: _attachmentEndpointBase,
+        return NotificationScope(
+          repository: FirebaseNotificationRepository(),
+          intent: _notificationIntent,
+          permission: _push,
+          child: FoundiApp(
+            authRepository: snapshot.requireData,
+            professionalRepository: FirebaseProfessionalRepository(),
+            requestRepository: FirebaseRequestRepository(
+              attachmentEndpointBase: _attachmentEndpointBase,
+            ),
           ),
         );
       }

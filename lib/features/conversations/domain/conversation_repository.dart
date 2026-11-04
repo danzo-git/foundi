@@ -97,9 +97,14 @@ class ConversationMessage {
 }
 
 class MessageBatch {
-  const MessageBatch(this.messages, {this.fromCache = false});
+  const MessageBatch(
+    this.messages, {
+    this.fromCache = false,
+    this.hasPendingWrites = false,
+  });
   final List<ConversationMessage> messages;
   final bool fromCache;
+  final bool hasPendingWrites;
 }
 
 abstract interface class ConversationRepository {

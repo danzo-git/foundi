@@ -13,6 +13,7 @@ class FirebaseAuthRepository implements AuthRepository {
     FirebaseAuth? auth,
     FirebaseFunctions? functions,
     FirebaseFirestore? firestore,
+    this.beforeSignOut,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _functions =
            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1'),
@@ -31,6 +32,7 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   final FirebaseAuth _auth;
+  final Future<void> Function()? beforeSignOut;
   final FirebaseFunctions _functions;
   final FirebaseFirestore _firestore;
   final _changes = StreamController<FoundiUser?>.broadcast();
@@ -430,7 +432,8 @@ class FirebaseAuthRepository implements AuthRepository {
   });
   @override
   Future<void> setPreferredMode(String mode) => _safe(() async {
-    if (!['client', 'professional'].contains(mode) || _auth.currentUser == null) {
+    if (!['client', 'professional'].contains(mode) ||
+        _auth.currentUser == null) {
       throw const AuthFailure('Mode indisponible.');
     }
     await _profile(_auth.currentUser!.uid).update({
@@ -441,6 +444,7 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Future<void> signOut() => _pauseSession(() async {
+    await beforeSignOut?.call();
     await _auth.signOut();
     if (!kIsWeb && _googleInitialization != null) {
       try {

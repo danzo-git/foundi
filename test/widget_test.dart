@@ -359,6 +359,17 @@ Future<void> verify(WidgetTester t) async {
 
 Future<void> capture(WidgetTester t, int page) async {
   if (!const bool.fromEnvironment('V3_CAPTURE')) return;
+  // Native image decoding completes outside the test's fake clock.
+  await t.runAsync(() async {
+    final context = t.element(find.byKey(const ValueKey('capture')));
+    await Future.wait([
+      precacheImage(
+        const AssetImage('assets/branding/foundi-mark.png'),
+        context,
+      ),
+      precacheImage(const AssetImage('assets/branding/google-g.png'), context),
+    ]);
+  });
   await t.pumpAndSettle();
   final boundary = t.renderObject<RenderRepaintBoundary>(
     find.byKey(const ValueKey('capture')),

@@ -42,7 +42,30 @@ service cloud.firestore {
           'fullName', 'phone', 'profession', 'registrationConfirmed', 'registrationPath',
           'preferredMode', 'termsVersion', 'termsAcceptedAt', 'updatedAt'
         ]);
-      match /notifications/{id} { allow get, list: if owner(uid); allow write: if false; }
+      match /notifications/{id} {
+        allow get: if owner(uid);
+        allow list: if owner(uid) && request.query.limit != null && request.query.limit <= 100;
+        allow create, delete: if false;
+        allow update: if owner(uid) && resource.data.get('schemaVersion', 0) == 9
+          && resource.data.recipientUid == uid && resource.data.readAt == null
+          && request.resource.data.readAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']);
+      }
+      match /notificationState/{id} { allow get: if owner(uid); allow list, write: if false; }
+      match /messageState/{id} { allow get: if owner(uid) && id == 'inbox'; allow list, write: if false; }
+      match /messageReads/{id} { allow get: if owner(uid); allow list, write: if false; }
+      match /messageInbox/{id} { allow read, write: if false; }
+      match /devices/{id} { allow read, write: if false; }
+      match /notificationPreferences/{id} {
+        allow get: if owner(uid) && id == 'push';
+        allow create, update: if owner(uid) && id == 'push'
+          && request.resource.data.keys().hasOnly(['messages','proposals','opportunities','account','messagePreview'])
+          && request.resource.data.keys().hasAll(['messages','proposals','opportunities','account'])
+          && request.resource.data.messages is bool && request.resource.data.proposals is bool
+          && request.resource.data.opportunities is bool && request.resource.data.account is bool
+          && request.resource.data.get('messagePreview', false) is bool;
+        allow list, delete: if false;
+      }
     }
     match /professionalProfiles/{uid} {
       allow get: if owner(uid) || admin();
