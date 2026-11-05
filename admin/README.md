@@ -13,7 +13,7 @@ Application Flutter Web séparée, connectée au projet existant `foundi-7c837`.
 - Décisions transactionnelles : motif obligatoire pour refus/correction, contrôle de révision, notification privée, audit immuable `professionalAudit`. `needs_changes` autorise la correction puis une nouvelle soumission.
 - Le claim `admin: true` remplace `professionalReviewer` pour les décisions. Les anciens reviewers doivent être explicitement autorisés par un opérateur. Aucun compte n'est migré automatiquement.
 - Documents : téléchargement authentifié via callable avec vérification du claim actuel dans Auth ; ni URL signée ni token public. Téléchargement en mémoire puis fichier local, image/PDF uniquement.
-- Les propositions restent intégralement interdites côté Firestore. Le produit existant ne possède pas encore de fonction de publication de propositions. Sa future implémentation devra vérifier `approved` dans la transaction de publication ; `checkProfessionalAccess` seul ne suffit pas.
+- Les [propositions privées](../docs/propositions-v7.md) passent par Cloud Functions. Le serveur vérifie le statut `approved` lors de l’envoi et les règles Firestore restreignent la lecture aux personnes concernées.
 
 ## Lancement
 
