@@ -15,10 +15,14 @@ async function main(){
   fs.writeFileSync(envPath,preserved+`\nATTACHMENT_SCAN_HOST=127.0.0.1\nATTACHMENT_SCAN_PORT=${fixture.port}\nATTACHMENT_REQUIRE_SCAN=${required}\n`);
   const cli=process.env.FIREBASE_CLI_JS||path.join(process.env.APPDATA,'npm/node_modules/firebase-tools/lib/bin/firebase.js');
   const onlyRules=process.argv.includes('--rules-only');
-  const v91Only=process.argv.includes('--v91-only'),v9Only=process.argv.includes('--v9-only'),config=v91Only?'firebase.v91.emulators.json':v9Only?'firebase.v9.emulators.json':'firebase.v82.emulators.json';
+  const v92Only=process.argv.includes('--v92-only'),v91Only=process.argv.includes('--v91-only'),v9Only=process.argv.includes('--v9-only'),config=v92Only?'firebase.v92.emulators.json':v91Only?'firebase.v91.emulators.json':v9Only?'firebase.v9.emulators.json':'firebase.v82.emulators.json';
   const testCommand=onlyRules?'npm.cmd --prefix functions run test:rules':process.argv.includes('--v9-only')?'npm.cmd --prefix functions run test:v9:emulated':'npm.cmd --prefix functions run test:emulated';
-  child=spawn(process.execPath,[cli,'emulators:exec',...(onlyRules?[]:[v91Only?'--inspect-functions=14999':v9Only?'--inspect-functions=13999':'--inspect-functions=12999']),'--config',config,'--project','demo-foundi','--only',onlyRules?'firestore,storage':'auth,firestore,storage,functions',testCommand],
-   {cwd:root,stdio:'inherit',env:{...process.env,JAVA_TOOL_OPTIONS:'-Xmx512m',NODE_OPTIONS:'--max-old-space-size=384',FUNCTIONS_DISCOVERY_TIMEOUT:'120',FUNCTIONS_EMULATOR_HOST:v91Only?'127.0.0.1:1423':v9Only?'127.0.0.1:1323':'127.0.0.1:1223',V82_TEST_REQUIRE_SCAN:String(required),NO_PROXY:'127.0.0.1,localhost,::1'}});
+  child=spawn(process.execPath,[cli,'emulators:exec',...(onlyRules?[]:[v92Only?'--inspect-functions=15999':v91Only?'--inspect-functions=14999':v9Only?'--inspect-functions=13999':'--inspect-functions=12999']),'--config',config,'--project','demo-foundi','--only',onlyRules?'firestore,storage':'auth,firestore,storage,functions',testCommand],
+   {cwd:root,stdio:'inherit',env:{...process.env,
+     // The installed CLI/SDK support file discovery. Avoid a flaky localhost
+     // discovery server on Windows for this local-only test configuration.
+     ...(v92Only?{FIREBASE_FUNCTIONS_DISCOVERY_OUTPUT_PATH:'true'}:{}),
+     JAVA_TOOL_OPTIONS:'-Xmx512m',NODE_OPTIONS:'--max-old-space-size=384',FUNCTIONS_DISCOVERY_TIMEOUT:'120',FUNCTIONS_EMULATOR_HOST:v92Only?'127.0.0.1:1523':v91Only?'127.0.0.1:1423':v9Only?'127.0.0.1:1323':'127.0.0.1:1223',V82_TEST_REQUIRE_SCAN:String(required),NO_PROXY:'127.0.0.1,localhost,::1'}});
   process.exitCode=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',code=>resolve(code??1));});
  }finally{
   if(fixture)await fixture.close();if(existed)fs.writeFileSync(envPath,original);else if(fs.existsSync(envPath))fs.unlinkSync(envPath);fs.unlinkSync(backupPath);

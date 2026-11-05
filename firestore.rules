@@ -114,6 +114,9 @@ service cloud.firestore {
     match /authEmailRateLimits/{limit} {
       allow read, write: if false;
     }
+    match /requestPublicationLimits/{uid} {
+      allow read, write: if false;
+    }
     match /{document=**} {
       allow read, write: if false;
     }

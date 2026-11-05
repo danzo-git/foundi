@@ -60,7 +60,10 @@ test('V8.1 A01-A10/A12: one client, three pros, multi-chat live, real transactio
   await a.call('manageRequest',{requestId:rid,action:'close'});assert.equal((await db.doc('conversations/'+held).get()).data().status,'active');await a.call('sendConversationMessage',message(held,'Après clôture volontaire'));
   await assert.rejects(d.call('sendProposal',{requestId:rid,proposal}),e=>e.code==='functions/failed-precondition');await assert.rejects(getDoc(doc(d.db,'requests/'+rid)),e=>e.code==='permission-denied');
   await a.call('manageRequest',{requestId:rid,action:'delete'});for(const id of [pb.id,pc.id]){assert.equal((await db.doc('conversations/'+id).get()).data().status,'read_only');await assert.rejects(a.call('sendConversationMessage',message(id,'Après suppression')),e=>e.code==='functions/failed-precondition');}
-  const lifecycle=createRequestService({auth,store}),offers=createProposalService({auth,store}),raceRid=db.collection('requests').doc().id;
+  // This scenario creates a second request: advance its injected clock through
+  // the publication cooldown while retaining the real Firestore transactions.
+  const firstPublication=(await db.doc(`userRequests/${a.uid}/items/${rid}`).get()).data().createdAt;
+  const lifecycle=createRequestService({auth,store,clock:()=>Math.max(Date.now(),firstPublication+60000)}),offers=createProposalService({auth,store}),raceRid=db.collection('requests').doc().id;
   await lifecycle.publish(a.uid,raceRid,{title:'Concurrence clôture',description:'Demande locale pour tester les transactions concurrentes.',categoryId:'c',specialtyId:'s',zoneId:'z',budget:null});
   const beforeClose=await offers.send(b.uid,raceRid,proposal);
   const repeated=await Promise.all([service.select(a.uid,{requestId:raceRid,proposalId:beforeClose.id}),service.select(a.uid,{requestId:raceRid,proposalId:beforeClose.id})]);assert.equal(repeated[0].conversationId,repeated[1].conversationId);

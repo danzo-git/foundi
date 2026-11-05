@@ -217,6 +217,12 @@ class FirebaseRequestRepository
       return FoundiRequest.fromMap(result.data['id'] as String, result.data);
     } on FirebaseFunctionsException catch (e) {
       throw AuthFailure(switch (e.code) {
+        'resource-exhausted' =>
+          'Tu as atteint la limite de publication. Réessaie plus tard.',
+        'failed-precondition'
+            when e.message ==
+                'Vérifie ton adresse e-mail avant de publier une demande.' =>
+          '${e.message} Termine la vérification dans Foundi avec le code reçu par e-mail, puis réessaie.',
         'invalid-argument' ||
         'failed-precondition' ||
         'already-exists' => e.message ?? 'Vérifie ta demande.',

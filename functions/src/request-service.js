@@ -6,6 +6,35 @@ const fail = (code, message) => { throw new OtpError(code, message); };
 
 const idPattern = /^[a-zA-Z0-9_-]{1,80}$/;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const REQUEST_PUBLICATION_LIMITS = Object.freeze({
+  minimumIntervalMs: 60 * 1000,
+  dailyWindowMs: DAY_MS,
+  dailyMaximum: 5,
+  weeklyWindowMs: 7 * DAY_MS,
+  weeklyMaximum: 20,
+});
+
+function checkPublicationLimit(saved, now) {
+  const limits = REQUEST_PUBLICATION_LIMITS;
+  const timestamps = saved == null ? [] : saved.createdAtMs;
+  // This is server-owned data. Fail closed if its shape is ever corrupted.
+  if (!Array.isArray(timestamps) || timestamps.some(t => !Number.isSafeInteger(t) || t < 0)) {
+    fail('failed-precondition', 'La protection des publications est temporairement indisponible. Réessaie plus tard.');
+  }
+  const recent = timestamps.filter(t => t > now - limits.weeklyWindowMs).sort((a, b) => a - b);
+  if (recent.length && now - recent[recent.length - 1] < limits.minimumIntervalMs) {
+    fail('resource-exhausted', `Attends ${Math.ceil(limits.minimumIntervalMs / 1000)} secondes entre deux nouvelles demandes.`);
+  }
+  if (recent.filter(t => t > now - limits.dailyWindowMs).length >= limits.dailyMaximum) {
+    fail('resource-exhausted', `Tu as atteint la limite de ${limits.dailyMaximum} nouvelles demandes sur ${limits.dailyWindowMs / (60 * 60 * 1000)} heures. Réessaie plus tard.`);
+  }
+  if (recent.length >= limits.weeklyMaximum) {
+    fail('resource-exhausted', `Tu as atteint la limite de ${limits.weeklyMaximum} nouvelles demandes sur ${limits.weeklyWindowMs / DAY_MS} jours. Réessaie plus tard.`);
+  }
+  return [...recent, now];
+}
+
 function text(value, min, max) {
 
   if (typeof value !== 'string' || value.trim().length < min || value.trim().length > max) {
@@ -51,8 +80,7 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
     const account = await auth.getUser(uid);
 
     if (account.disabled) fail('permission-denied', 'Ce compte n’est pas disponible.');
-
-    const value = requestInput(input);
+    if (account.emailVerified !== true) fail('failed-precondition', 'Vérifie ton adresse e-mail avant de publier une demande.');
 
     return store.transaction(async tx => {
 
@@ -63,6 +91,8 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
       // A retry after a lost response returns the actual saved content.
 
       if (existing) return { id: requestId, ...existing };
+
+      const value = requestInput(input);
 
       const publicPath = `requests/${requestId}`;
 
@@ -102,14 +132,20 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
 
       // Explicit public projection: no UID, account identity, contact or internal metadata.
 
+      const quotaPath = `requestPublicationLimits/${uid}`;
+      const quota = await tx.get(quotaPath);
+      const now = clock();
+      const createdAtMs = checkPublicationLimit(quota, now);
+
       const published = { ...value, categoryLabel: category.label, specialtyLabel: specialty?.label || '',
 
-        zoneLabel: labels.join(' › '), status: 'published', createdAt: clock() };
+        zoneLabel: labels.join(' › '), status: 'published', createdAt: now };
 
       tx.set(publicPath, published);
 
       tx.set(ownPath, published);
       tx.set(`requestOwnership/${requestId}`, { ownerUid: uid });
+      tx.set(quotaPath, { schemaVersion: 92, createdAtMs });
 
       return { id: requestId, ...published };
 
@@ -193,4 +229,4 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
 
 }
 
-module.exports = { createRequestService };
+module.exports = { createRequestService, REQUEST_PUBLICATION_LIMITS };

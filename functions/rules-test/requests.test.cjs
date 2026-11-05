@@ -33,6 +33,7 @@ before(async () => {
     await setDoc(doc(db, 'requests/hidden'), { ...published, status: 'draft' });
 
     await setDoc(doc(db, 'userRequests/owner/items/public'), published);
+    await setDoc(doc(db, 'requestPublicationLimits/owner'), { schemaVersion: 92, createdAtMs: [1234] });
 
     await setDoc(doc(db, 'users/owner'), { email: 'private@example.test', phone: '+2250100000000' });
 
@@ -45,6 +46,20 @@ before(async () => {
 after(async () => { if (env) await env.cleanup(); });
 
 const check = (name, fn) => test(name, { skip: !enabled }, fn);
+
+check('V9.2 publication quotas are server-only even for their owner or an admin client', async () => {
+  for (const c of [env.unauthenticatedContext(), env.authenticatedContext('owner'), env.authenticatedContext('other'), env.authenticatedContext('admin', {admin:true})]) {
+    const db = c.firestore();
+    for (const uid of ['owner', 'other']) {
+      const ref = doc(db, `requestPublicationLimits/${uid}`);
+      await assertFails(getDoc(ref));
+      await assertFails(setDoc(ref, {schemaVersion:92,createdAtMs:[]}));
+      await assertFails(deleteDoc(ref));
+    }
+    await assertFails(updateDoc(doc(db, 'requestPublicationLimits/owner'), {createdAtMs:[]}));
+    await assertFails(getDocs(query(collection(db, 'requestPublicationLimits'), limit(10))));
+  }
+});
 
 check('anonymous public feed requires published filter and a bounded query', async () => {
 
