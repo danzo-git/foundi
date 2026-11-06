@@ -73,10 +73,11 @@ class FoundiBottomBar extends StatelessWidget {
     super.key,
     required this.accountSelected,
     required this.onSelect,
+    this.professionalSpace = false,
     this.selectedIndex,
     this.messagesIcon,
   });
-  final bool accountSelected;
+  final bool accountSelected, professionalSpace;
   final ValueChanged<int> onSelect;
   final int? selectedIndex;
   final Widget? messagesIcon;
@@ -99,7 +100,12 @@ class FoundiBottomBar extends StatelessWidget {
               selectedIndex == null ? !accountSelected : selectedIndex == 0,
             ),
             item('Explorer', Icons.search, 1, selectedIndex == 1),
-            item('Publier', Icons.add, 2, selectedIndex == 2),
+            item(
+              professionalSpace ? 'Client' : 'Publier',
+              professionalSpace ? Icons.swap_horiz : Icons.add,
+              2,
+              selectedIndex == 2,
+            ),
             item('Messages', Icons.chat_bubble_outline, 3, selectedIndex == 3),
             item(
               'Compte',

@@ -451,7 +451,7 @@ class _ExplorerViewState extends State<ExplorerView> {
               onPressed: () => _mode(false),
               child: const Text('Voir toutes les demandes'),
             ),
-          if (!_forMe && _filters.isEmpty)
+          if (!_forMe && _filters.isEmpty && !widget.professionalSpace)
             FilledButton(
               onPressed: widget.onPublish,
               child: const Text('Publier une demande'),

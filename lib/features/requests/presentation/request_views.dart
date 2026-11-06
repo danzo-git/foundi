@@ -225,7 +225,7 @@ class RequestListView extends StatefulWidget {
   final ValueChanged<FoundiRequest>? onProposals;
   final ValueChanged<String>? onConversation;
   final ValueChanged<FoundiRequest> onOpen;
-  final VoidCallback onPublish;
+  final VoidCallback? onPublish;
   @override
   State<RequestListView> createState() => _RequestListViewState();
 }
@@ -407,15 +407,17 @@ class _RequestListViewState extends State<RequestListView> {
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: FoundiUi.muted, height: 1.5),
                   ),
-                  const SizedBox(height: 45),
-                  FilledButton(
-                    onPressed: widget.onPublish,
-                    child: Text(
-                      personal
-                          ? 'Publier ma première demande'
-                          : 'Publier une demande',
+                  if (widget.onPublish != null) ...[
+                    const SizedBox(height: 45),
+                    FilledButton(
+                      onPressed: widget.onPublish,
+                      child: Text(
+                        personal
+                            ? 'Publier ma première demande'
+                            : 'Publier une demande',
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               );
             }

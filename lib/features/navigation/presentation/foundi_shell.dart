@@ -237,6 +237,10 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
   }
 
   void _publish() {
+    if (professionalSpace) {
+      _spaces();
+      return;
+    }
     final repository = widget.requestRepository;
     final catalog = widget.catalogRepository;
     if (repository == null || catalog == null) {
@@ -263,7 +267,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             repository: widget.requestRepository!,
             uid: _requestPage == 'mine' ? widget.user.id : null,
             onOpen: (r) => _openRequest(r, _requestPage!),
-            onPublish: _publish,
+            onPublish: professionalSpace ? null : _publish,
             onProposals: _proposals == null
                 ? null
                 : (r) {
@@ -558,7 +562,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
       _showRequests('explore');
       return;
     }
-    if (index == 2 && widget.requestRepository != null) {
+    if (index == 2) {
       _publish();
       return;
     }
@@ -755,6 +759,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             ),
           ),
           bottomNavigationBar: FoundiBottomBar(
+            professionalSpace: professionalSpace,
             messagesIcon: _notifications?.repository is MessageReadRepository
                 ? MessageUnreadIcon(
                     repository:

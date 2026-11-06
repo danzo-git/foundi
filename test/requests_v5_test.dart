@@ -170,8 +170,22 @@ Future<void> essentials(WidgetTester t) async {
   await fill(t, 'requestTitle', 'Mon besoin de test');
 }
 
+Future<void> confirmSpace(WidgetTester t, String label) async {
+  await fixtures.tap(t, find.text(label));
+  await fixtures.tap(t, find.byKey(const ValueKey('confirmSpace')));
+}
+
 Future<void> preview(WidgetTester t) async {
-  await fixtures.tap(t, find.byKey(const ValueKey('nav-2')));
+  final action = find.byKey(const ValueKey('nav-2'));
+  expect(
+    find.descendant(of: action, matching: find.text('Publier')),
+    findsOneWidget,
+  );
+  expect(
+    find.descendant(of: action, matching: find.byIcon(Icons.add)),
+    findsOneWidget,
+  );
+  await fixtures.tap(t, action);
   await essentials(t);
   await capture(t, '01-informations');
   await fixtures.tap(t, find.text('Continuer'));
@@ -212,11 +226,16 @@ void main() {
     },
   );
   for (final professional in [false, true]) {
+    final accountType = professional ? 'approved professional' : 'client';
     testWidgets(
-      'V5 publishes in ${professional ? 'professional' : 'client'} space and reaches personal list and detail',
+      'V5 $accountType publishes in Client space and reaches personal list and detail',
       (t) async {
         final repository = FakeRequests();
         await runFlow(t, repository, (auth, pro) async {
+          if (professional) {
+            await fixtures.tap(t, find.byKey(const ValueKey('nav-2')));
+            await confirmSpace(t, 'Espace client');
+          }
           await preview(t);
           await fixtures.tap(t, find.text('Modifier'));
           expect(
@@ -372,6 +391,107 @@ void main() {
       });
     },
   );
+  testWidgets('An approved professional publishes only from Client space', (
+    t,
+  ) async {
+    final repository = FakeRequests();
+    await runFlow(t, repository, (auth, pro) async {
+      final action = find.byKey(const ValueKey('nav-2'));
+      final clientHome = find.byKey(const ValueKey('clientHome'));
+      final professionalHome = find.byKey(const ValueKey('professionalHome'));
+      final selector = find.text('Choisir mon espace');
+      final title = find.byKey(const ValueKey('requestTitle'));
+
+      expect(professionalHome, findsOneWidget);
+      expect(find.text('Une idée en tête ?'), findsNothing);
+      expect(find.text('Publier'), findsNothing);
+      expect(
+        find.descendant(of: action, matching: find.text('Client')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: action, matching: find.byIcon(Icons.swap_horiz)),
+        findsOneWidget,
+      );
+      for (var index = 0; index < 5; index++) {
+        expect(find.byKey(ValueKey('nav-$index')), findsOneWidget);
+      }
+
+      await fixtures.tap(t, find.byKey(const ValueKey('nav-1')));
+      expect(
+        find.text('Aucune demande publiée pour le moment'),
+        findsOneWidget,
+      );
+      expect(find.text('Publier une demande'), findsNothing);
+      await fixtures.tap(t, find.byKey(const ValueKey('nav-4')));
+      expect(find.text('Publier'), findsNothing);
+      await fixtures.tap(t, find.text('Mes demandes'));
+      expect(find.text('Aucune demande pour le moment'), findsOneWidget);
+      expect(find.text('Publier ma première demande'), findsNothing);
+
+      await fixtures.tap(t, action);
+      expect(selector, findsOneWidget);
+      expect(title, findsNothing);
+      await t.binding.handlePopRoute();
+      await t.pumpAndSettle();
+      expect(selector, findsNothing);
+      expect(find.text('Aucune demande pour le moment'), findsOneWidget);
+
+      await fixtures.tap(t, action);
+      await confirmSpace(t, 'Espace client');
+      expect(clientHome, findsOneWidget);
+      expect(title, findsNothing);
+      expect(repository.publishIds, isEmpty);
+      await fixtures.tap(t, action);
+      expect(title, findsOneWidget);
+      await fill(t, 'requestTitle', 'Brouillon conservé');
+
+      await fixtures.tap(t, find.byKey(const ValueKey('nav-0')));
+      await fixtures.tap(t, find.byKey(const ValueKey('homeSpaceSelector')));
+      await confirmSpace(t, 'Espace professionnel');
+      expect(professionalHome, findsOneWidget);
+      await fixtures.tap(t, action);
+      await confirmSpace(t, 'Espace client');
+      expect(title, findsNothing);
+      await fixtures.tap(t, find.text('Une idée en tête ?'));
+      expect(
+        t.widget<TextFormField>(title).controller!.text,
+        'Brouillon conservé',
+      );
+      await preview(t);
+      await fixtures.tap(t, find.text('Publier ma demande'));
+      expect(repository.publishIds, hasLength(1));
+
+      await fixtures.tap(t, find.byKey(const ValueKey('nav-0')));
+      await fixtures.tap(t, find.byKey(const ValueKey('homeSpaceSelector')));
+      await confirmSpace(t, 'Espace professionnel');
+      await fixtures.tap(t, find.byKey(const ValueKey('nav-4')));
+      await fixtures.tap(t, find.text('Mes demandes'));
+      expect(find.text('Mon besoin de test'), findsOneWidget);
+      await fixtures.tap(t, find.byKey(const ValueKey('nav-0')));
+      pro.emit(const ProfessionalProfile(status: ProfessionalStatus.suspended));
+      await t.pumpAndSettle();
+      expect(clientHome, findsOneWidget);
+      expect(find.text('Publier'), findsOneWidget);
+      expect(auth.signOuts, 0);
+      expect(auth.modeWrites, 0);
+    }, professional: true);
+  });
+
+  testWidgets('Space selector remains usable at 320px and large text', (
+    t,
+  ) async {
+    await runFlow(t, FakeRequests(), (auth, pro) async {
+      t.view.physicalSize = const Size(320, 568);
+      t.platformDispatcher.textScaleFactorTestValue = 1.8;
+      await t.pumpAndSettle();
+      await fixtures.tap(t, find.byKey(const ValueKey('nav-2')));
+      await confirmSpace(t, 'Espace client');
+      expect(find.byKey(const ValueKey('clientHome')), findsOneWidget);
+      expect(t.takeException(), isNull);
+    }, professional: true);
+  });
+
   testWidgets('V5 remains usable at 320px and large text', (t) async {
     await runFlow(t, FakeRequests(), (auth, pro) async {
       t.view.physicalSize = const Size(320, 568);
