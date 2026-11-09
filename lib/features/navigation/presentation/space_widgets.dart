@@ -68,103 +68,148 @@ class FoundiBrand extends StatelessWidget {
   );
 }
 
-class FoundiBottomBar extends StatelessWidget {
-  const FoundiBottomBar({
+class FoundiSpaceLabel extends StatelessWidget {
+  const FoundiSpaceLabel({
     super.key,
-    required this.accountSelected,
-    required this.onSelect,
-    this.professionalSpace = false,
-    this.selectedIndex,
-    this.messagesIcon,
+    required this.professional,
+    this.onSelect,
   });
-  final bool accountSelected, professionalSpace;
-  final ValueChanged<int> onSelect;
-  final int? selectedIndex;
-  final Widget? messagesIcon;
+
+  final bool professional;
+  final VoidCallback? onSelect;
+
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(
-      color: Colors.white,
-      border: Border(top: BorderSide(color: FoundiUi.line)),
-    ),
-    child: SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        child: Row(
-          children: [
-            item(
-              'Accueil',
-              Icons.home_outlined,
-              0,
-              selectedIndex == null ? !accountSelected : selectedIndex == 0,
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
+      child: Material(
+        color: FoundiUi.tint,
+        borderRadius: BorderRadius.circular(24),
+        child: InkWell(
+          key: onSelect == null ? null : const ValueKey('spaceSelector'),
+          onTap: onSelect,
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  professional ? Icons.work_outline : Icons.person_outline,
+                  size: 18,
+                  color: FoundiUi.green,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    professional ? 'Espace Professionnel' : 'Espace Client',
+                    style: const TextStyle(
+                      color: FoundiUi.ink,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (onSelect != null) ...[
+                  const SizedBox(width: 4),
+                  const Icon(Icons.expand_more, size: 18, color: FoundiUi.ink),
+                ],
+              ],
             ),
-            item('Explorer', Icons.search, 1, selectedIndex == 1),
-            item(
-              professionalSpace ? 'Client' : 'Publier',
-              professionalSpace ? Icons.swap_horiz : Icons.add,
-              2,
-              selectedIndex == 2,
-            ),
-            item('Messages', Icons.chat_bubble_outline, 3, selectedIndex == 3),
-            item(
-              'Compte',
-              Icons.account_circle_outlined,
-              4,
-              selectedIndex == null ? accountSelected : selectedIndex == 4,
-            ),
-          ],
+          ),
         ),
       ),
     ),
   );
-  Widget item(String label, IconData icon, int index, bool selected) =>
-      Expanded(
-        child: Semantics(
-          selected: selected,
-          button: true,
-          label: label,
+}
+
+class FoundiBottomBar extends StatelessWidget {
+  const FoundiBottomBar({
+    super.key,
+    required this.selectedIndex,
+    required this.onSelect,
+    this.professionalSpace = false,
+    this.guest = false,
+    this.messagesIcon,
+  });
+
+  final bool professionalSpace, guest;
+  final ValueChanged<int> onSelect;
+  final int selectedIndex;
+  final Widget? messagesIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final destinations = [
+      if (professionalSpace) ...[
+        ('Explorer', Icons.search),
+        ('Mes propositions', Icons.send_outlined),
+      ] else if (guest) ...[
+        ('Explorer', Icons.search),
+        ('Publier', Icons.add),
+      ] else ...[
+        ('Mes demandes', Icons.assignment_outlined),
+        ('Explorer', Icons.search),
+      ],
+      ('Messages', Icons.chat_bubble_outline),
+      ('Compte', Icons.person_outline),
+    ];
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: FoundiUi.line)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final (index, (label, icon)) in destinations.indexed)
+                _item(label, icon, index),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _item(String label, IconData icon, int index) {
+    final selected = index == selectedIndex;
+    final color = selected ? FoundiUi.green : FoundiUi.ink;
+    return Expanded(
+      child: Semantics(
+        selected: selected,
+        button: true,
+        child: Material(
+          color: selected ? FoundiUi.soft : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
           child: InkWell(
             key: ValueKey('nav-$index'),
             onTap: () => onSelect(index),
             borderRadius: BorderRadius.circular(14),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (index == 2)
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: const BoxDecoration(
-                        color: FoundiUi.green,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(icon, color: Colors.white, size: 28),
-                    )
-                  else
-                    SizedBox(
-                      height: 40,
-                      child: index == 3 && messagesIcon != null
+                  SizedBox(
+                    height: 32,
+                    child: Center(
+                      child: index == 2 && messagesIcon != null
                           ? messagesIcon!
-                          : Icon(
-                              icon,
-                              color: selected ? FoundiUi.green : FoundiUi.muted,
-                              size: 23,
-                            ),
+                          : Icon(icon, color: color, size: 24),
                     ),
-                  const SizedBox(height: 4),
+                  ),
+                  const SizedBox(height: 2),
                   Text(
                     label,
+                    textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 10,
-                      color: selected || index == 2
-                          ? FoundiUi.green
-                          : FoundiUi.muted,
-                      fontWeight: selected || index == 2
-                          ? FontWeight.w600
-                          : FontWeight.w400,
+                      fontSize: 11,
+                      color: color,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     ),
                   ),
                 ],
@@ -172,7 +217,9 @@ class FoundiBottomBar extends StatelessWidget {
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 class FoundiPanel extends StatelessWidget {
@@ -200,41 +247,6 @@ class FoundiPanel extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       child: Padding(padding: padding, child: child),
-    ),
-  );
-}
-
-class ComingSoonCard extends StatelessWidget {
-  const ComingSoonCard({
-    super.key,
-    required this.title,
-    this.subtitle = 'Bientôt disponible',
-  });
-  final String title, subtitle;
-  @override
-  Widget build(BuildContext context) => FoundiPanel(
-    onTap: () => showComingSoon(context),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: FoundiUi.ink,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          subtitle,
-          style: const TextStyle(
-            fontSize: 12,
-            color: FoundiUi.muted,
-            height: 1.4,
-          ),
-        ),
-      ],
     ),
   );
 }

@@ -15,10 +15,8 @@ class ExplorerView extends StatefulWidget {
     this.profile = const ProfessionalProfile(),
     this.professionalSpace = false,
     this.initialForMe = false,
-    this.entryVersion = 0,
     this.onProfile,
   });
-  final int entryVersion;
   final RequestRepository repository;
   final ProfessionalRepository? catalog;
   final ProfessionalProfile profile;
@@ -68,8 +66,7 @@ class _ExplorerViewState extends State<ExplorerView> {
     if (!_eligible && _forMe) {
       _forMe = false;
       _load(reset: true);
-    } else if (oldWidget.initialForMe != widget.initialForMe ||
-        oldWidget.entryVersion != widget.entryVersion) {
+    } else if (oldWidget.initialForMe != widget.initialForMe) {
       _forMe = _eligible && widget.initialForMe;
       _load(reset: true);
     } else if (oldWidget.profile != widget.profile && _forMe) {
@@ -341,39 +338,42 @@ class _ExplorerViewState extends State<ExplorerView> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
       children: [
-        const RequestHeading(
+        RequestHeading(
           'Explorer les demandes',
-          subtitle: 'Les besoins publiés par la communauté.',
+          subtitle: _eligible
+              ? 'Découvrez les besoins publiés par les clients.'
+              : 'Les besoins publiés par la communauté.',
         ),
         if (_eligible) ...[
-          Wrap(
-            spacing: 8,
-            children: [
-              ChoiceChip(
-                label: const Text('Tout Explorer'),
-                selected: !_forMe,
-                onSelected: (_) => _mode(false),
-              ),
+          const FoundiActionBanner.professional(),
+          const SizedBox(height: 12),
+        ],
+        Wrap(
+          spacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (_eligible) ...[
               ChoiceChip(
                 label: const Text('Pour moi'),
                 selected: _forMe,
                 onSelected: (_) => _mode(true),
               ),
+              ChoiceChip(
+                label: const Text('Toutes'),
+                selected: !_forMe,
+                onSelected: (_) => _mode(false),
+              ),
             ],
-          ),
-          const SizedBox(height: 16),
-        ],
-        if (_forMe) ...[
-          const RequestNotice(
-            'Pour moi activé',
-            'Catégories, spécialités et zones de ton profil professionnel approuvé.',
-          ),
-          const SizedBox(height: 16),
-        ],
-        OutlinedButton.icon(
-          onPressed: _busy ? null : _showFilters,
-          icon: const Icon(Icons.tune),
-          label: const Text('Filtres'),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _showFilters,
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 44),
+                shape: const StadiumBorder(),
+              ),
+              icon: const Icon(Icons.tune),
+              label: const Text('Filtres'),
+            ),
+          ],
         ),
         if (!_filters.isEmpty)
           Wrap(
@@ -421,14 +421,18 @@ class _ExplorerViewState extends State<ExplorerView> {
               onPressed: widget.onProfile,
               child: const Text('Voir mon profil professionnel'),
             ),
-        ] else if (!_busy && _error == null && _items.isEmpty) ...[
-          const SizedBox(height: 36),
-          const CircleAvatar(
-            radius: 55,
-            backgroundColor: FoundiUi.tint,
-            child: Icon(Icons.search, size: 45, color: FoundiUi.green),
+          OutlinedButton(
+            onPressed: () => _mode(false),
+            child: const Text('Voir toutes les demandes'),
           ),
-          const SizedBox(height: 24),
+        ] else if (!_busy && _error == null && _items.isEmpty) ...[
+          const SizedBox(height: 20),
+          const CircleAvatar(
+            radius: 32,
+            backgroundColor: FoundiUi.tint,
+            child: Icon(Icons.search, size: 30, color: FoundiUi.green),
+          ),
+          const SizedBox(height: 14),
           Text(
             _filters.isEmpty && !_forMe
                 ? 'Aucune demande publiée pour le moment'

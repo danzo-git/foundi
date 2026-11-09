@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foundi/app.dart';
+import 'package:foundi/features/requests/domain/request_repository.dart';
 import 'package:foundi/features/auth/domain/auth_repository.dart';
 import 'package:foundi/features/professional/domain/professional_repository.dart';
 
@@ -299,15 +300,20 @@ Future<void> flow(
   WidgetTester t,
   FakeAuth a,
   FakePro p,
-  Future<void> Function() body,
-) async {
+  Future<void> Function() body, {
+  RequestRepository? requests,
+}) async {
   t.view.physicalSize = const Size(430, 932);
   t.view.devicePixelRatio = 1;
   try {
     await t.pumpWidget(
       RepaintBoundary(
         key: const ValueKey('capture'),
-        child: FoundiApp(authRepository: a, professionalRepository: p),
+        child: FoundiApp(
+          authRepository: a,
+          professionalRepository: p,
+          requestRepository: requests,
+        ),
       ),
     );
     await t.pumpAndSettle();
@@ -579,6 +585,7 @@ void main() {
         const ProfessionalDocument('identity', 'identite.pdf', true),
       ];
       await flow(t, FakeAuth(user: account()), p, () async {
+        await tap(t, find.byKey(const ValueKey('nav-3')));
         expect(find.text('Dossier à compléter'), findsOneWidget);
         await capture(t, 6);
         await tap(t, find.text('Reprendre mon dossier'));
@@ -601,6 +608,7 @@ void main() {
         profile: const ProfessionalProfile(status: ProfessionalStatus.draft),
       );
       await flow(t, FakeAuth(user: account()), p, () async {
+        await tap(t, find.byKey(const ValueKey('nav-3')));
         await tap(t, find.text('Reprendre mon dossier'));
         await fill(t, 'businessName', 'Mon activité');
         await t.pump(const Duration(seconds: 1));
@@ -625,6 +633,7 @@ void main() {
         profile: const ProfessionalProfile(status: ProfessionalStatus.draft),
       )..failSave = true;
       await flow(t, FakeAuth(user: account()), p, () async {
+        await tap(t, find.byKey(const ValueKey('nav-3')));
         await tap(t, find.text('Reprendre mon dossier'));
         await fill(t, 'businessName', 'Mon activité');
         await tap(t, find.text('Enregistrer et terminer plus tard'));
@@ -652,6 +661,7 @@ void main() {
         const ProfessionalDocument('qualification', 'qualification.pdf', true),
       ];
       await flow(t, FakeAuth(user: account()), p, () async {
+        await tap(t, find.byKey(const ValueKey('nav-3')));
         await tap(t, find.text('Reprendre mon dossier'));
         expect(find.text('Vérifie ton profil'), findsOneWidget);
         await tap(t, find.byIcon(Icons.arrow_back));
@@ -688,7 +698,7 @@ void main() {
     (t) async {
       final a = FakeAuth(user: account());
       await flow(t, a, FakePro(), () async {
-        await tap(t, find.byKey(const ValueKey('nav-4')));
+        await tap(t, find.byKey(const ValueKey('nav-3')));
         await tap(t, find.text('Devenir professionnel'));
         expect(find.text('Parlons de ton activité'), findsOneWidget);
         expect(a.registrations, 0);
@@ -711,6 +721,7 @@ void main() {
         const ProfessionalDocument('qualification', 'pro.pdf', true),
       ];
       await flow(t, FakeAuth(user: account()), p, () async {
+        await tap(t, find.byKey(const ValueKey('nav-3')));
         await tap(t, find.text('Reprendre mon dossier'));
         await tap(t, find.byKey(const ValueKey('certifyProfile')));
         await tap(t, find.text('Soumettre mon dossier'));
@@ -719,9 +730,9 @@ void main() {
         expect(p.profile.approved, false);
         await tap(t, find.text('Suivre mon dossier  ›'));
         expect(find.text('Vérification en attente'), findsOneWidget);
-        await tap(t, find.text('Retour à l’accueil'));
+        await tap(t, find.text('Retour à mon espace'));
         expect(find.byKey(const ValueKey('nav-0')), findsOneWidget);
-        expect(find.byKey(const ValueKey('homeSpaceSelector')), findsNothing);
+        expect(find.byKey(const ValueKey('spaceSelector')), findsNothing);
       });
     },
   );
@@ -735,19 +746,19 @@ void main() {
       await flow(t, a, p, () async {
         p.emit(const ProfessionalProfile(status: ProfessionalStatus.approved));
         await t.pumpAndSettle();
-        await tap(t, find.byKey(const ValueKey('nav-4')));
+        await tap(t, find.byKey(const ValueKey('nav-3')));
         expect(find.text('Professionnel vérifié'), findsOneWidget);
         await tap(t, find.text('Changer d’espace  ›'));
         await tap(t, find.text('Espace professionnel'));
         await tap(t, find.byKey(const ValueKey('confirmSpace')));
-        expect(find.byKey(const ValueKey('professionalHome')), findsOneWidget);
+        expect(find.text('Espace Professionnel'), findsOneWidget);
         expect(a.modeWrites, 0);
         expect(p.accessChecks, 0);
         expect(a.user!.profile.preferredMode, 'client');
-        await tap(t, find.byKey(const ValueKey('homeSpaceSelector')));
+        await tap(t, find.byKey(const ValueKey('spaceSelector')));
         await tap(t, find.text('Espace client'));
         await tap(t, find.byKey(const ValueKey('confirmSpace')));
-        expect(find.byKey(const ValueKey('clientHome')), findsOneWidget);
+        expect(find.text('Espace Client'), findsOneWidget);
         expect(a.user!.id, 'uid');
         expect(a.signOuts, 0);
       });
@@ -763,13 +774,13 @@ void main() {
         user: account(data: profile.copyWith(preferredMode: 'professional')),
       );
       await flow(t, a, p, () async {
-        expect(find.byKey(const ValueKey('professionalHome')), findsOneWidget);
+        expect(find.text('Espace Professionnel'), findsOneWidget);
         p.emit(const ProfessionalProfile(status: ProfessionalStatus.suspended));
         await t.pumpAndSettle();
-        expect(find.byKey(const ValueKey('professionalHome')), findsNothing);
-        expect(find.byKey(const ValueKey('clientHome')), findsOneWidget);
-        expect(find.byKey(const ValueKey('homeSpaceSelector')), findsNothing);
-        await tap(t, find.byKey(const ValueKey('nav-4')));
+        expect(find.text('Espace Professionnel'), findsNothing);
+        expect(find.text('Espace Client'), findsOneWidget);
+        expect(find.byKey(const ValueKey('spaceSelector')), findsNothing);
+        await tap(t, find.byKey(const ValueKey('nav-3')));
         expect(
           t.widget<Text>(find.byKey(const ValueKey('currentSpace'))).data,
           'Client',
@@ -785,6 +796,7 @@ void main() {
         profile: const ProfessionalProfile(status: ProfessionalStatus.draft),
       )..references = const ProfessionalCatalog();
       await flow(t, FakeAuth(user: account()), p, () async {
+        await tap(t, find.byKey(const ValueKey('nav-3')));
         await tap(t, find.text('Reprendre mon dossier'));
         expect(find.textContaining('sont en préparation'), findsOneWidget);
         expect(
@@ -811,6 +823,7 @@ void main() {
         ),
       );
       await flow(t, FakeAuth(user: account()), p, () async {
+        await tap(t, find.byKey(const ValueKey('nav-3')));
         expect(find.text('Document illisible'), findsOneWidget);
         await tap(t, find.text('Reprendre mon dossier'));
         expect(find.byKey(const ValueKey('businessName')), findsOneWidget);

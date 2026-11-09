@@ -586,7 +586,7 @@ void main() {
         ),
       );
       await t.pumpAndSettle();
-      await tap(t, find.byKey(const ValueKey('nav-3')));
+      await tap(t, find.byKey(const ValueKey('nav-2')));
       await tap(t, find.text('Atelier choisi'));
       final privateImages = find.byWidgetPredicate(
         (widget) => widget is Image && widget.image is MemoryImage,

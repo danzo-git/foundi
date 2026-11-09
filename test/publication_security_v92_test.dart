@@ -156,11 +156,11 @@ void main() {
       );
       await requests.runFlow(t, repository, (auth, pro) async {
         await requests.preview(t);
-        await fixtures.tap(t, find.byKey(const ValueKey('publishRequest')));
+        await requests.tapForm(t, find.byKey(const ValueKey('publishRequest')));
         expect(find.textContaining(emailMessage), findsOneWidget);
         expect(find.textContaining('code reçu par e-mail'), findsOneWidget);
         expect(repository.items, isEmpty);
-        await fixtures.tap(t, find.text('Modifier'));
+        await requests.tapForm(t, find.text('Modifier'));
         expect(
           t
               .widget<TextFormField>(find.byKey(const ValueKey('requestTitle')))
@@ -168,7 +168,6 @@ void main() {
               .text,
           'Mon besoin de test',
         );
-        await fixtures.tap(t, find.text('Continuer'));
         expect(
           t
               .widget<TextFormField>(
@@ -187,16 +186,17 @@ void main() {
               .text,
           '100 000',
         );
-        await fixtures.tap(t, find.text('Prévisualiser ma demande'));
+        await requests.tapForm(t, find.text('Vérifier ma demande'));
         functions.failure = FunctionsFailure(code: 'resource-exhausted');
-        await fixtures.tap(t, find.byKey(const ValueKey('publishRequest')));
+        await requests.tapForm(t, find.byKey(const ValueKey('publishRequest')));
         expect(find.text(quotaMessage), findsOneWidget);
         await fixtures.tap(t, find.byKey(const ValueKey('nav-1')));
-        await fixtures.tap(t, find.byKey(const ValueKey('nav-2')));
+        await fixtures.tap(t, find.byKey(const ValueKey('nav-0')));
+        await fixtures.tap(t, find.byKey(const ValueKey('openPublication')));
         expect(find.text(quotaMessage), findsOneWidget);
         expect(repository.ids, 1);
         functions.failure = null;
-        await fixtures.tap(t, find.byKey(const ValueKey('publishRequest')));
+        await requests.tapForm(t, find.byKey(const ValueKey('publishRequest')));
         expect(find.text('C’est publié !'), findsOneWidget);
         expect(repository.items.length, 1);
         expect(repository.publishIds, ['request-1', 'request-1', 'request-1']);

@@ -232,8 +232,6 @@ void main() {
         ),
       );
       await t.pumpAndSettle();
-      await tap(t, find.byKey(const ValueKey('nav-4')));
-      await tap(t, find.text('Mes demandes'));
       await tap(t, find.text('Voir les propositions reçues (1)'));
       await tap(t, find.text(request.title));
       r.failSelection = true;
@@ -263,7 +261,7 @@ void main() {
       r.events.add(null);
       await t.pumpAndSettle();
       expect(find.text('Bonjour depuis le professionnel'), findsOneWidget);
-      await tap(t, find.byKey(const ValueKey('nav-3')));
+      await tap(t, find.byKey(const ValueKey('nav-2')));
       expect(find.text('Vos échanges'), findsOneWidget);
       expect(find.text('Mes clients'), findsNothing);
       await tap(t, find.text('Atelier choisi'));

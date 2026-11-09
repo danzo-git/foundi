@@ -114,19 +114,14 @@ void main() {
       find.byKey(const ValueKey('requestTitle')),
       'Titre corrigé',
     );
-    await t.tap(find.text('Continuer'));
-    await t.pumpAndSettle();
     expect(find.text(sample.description), findsOneWidget);
     expect(find.text('15000'), findsOneWidget);
-    await t.tap(find.text('Prévisualiser ma demande'));
-    await t.pumpAndSettle();
+    await tapForm(t, find.text('Vérifier ma demande'));
     r.fail = true;
-    await t.tap(find.text('Enregistrer les modifications'));
-    await t.pumpAndSettle();
+    await tapForm(t, find.text('Enregistrer les modifications'));
     expect(saved, false);
     r.fail = false;
-    await t.tap(find.text('Enregistrer les modifications'));
-    await t.pumpAndSettle();
+    await tapForm(t, find.text('Enregistrer les modifications'));
     expect(saved, true);
     expect(r.lastId, sample.id);
     expect(r.lastRevision, 123);
@@ -137,6 +132,42 @@ void main() {
     await pro.changes.close();
     await pro.docChanges.close();
   });
+  testWidgets(
+    'edition keeps the draft across tabs and confirms a destructive exit',
+    (t) async {
+      final repository = ManagedRequests()..items.add(sample);
+      await runFlow(t, repository, (auth, pro) async {
+        Future<void> openEditor() async {
+          final menu = find.byType(PopupMenuButton<String>);
+          await t.scrollUntilVisible(menu, 140);
+          await t.pumpAndSettle();
+          await fixtures.tap(t, menu);
+          await fixtures.tap(t, find.text('Modifier'));
+        }
+
+        await openEditor();
+        const description = 'Une modification en cours de saisie.';
+        await fill(t, 'requestDescription', description);
+        await fixtures.tap(t, find.byKey(const ValueKey('nav-1')));
+        await fixtures.tap(t, find.byKey(const ValueKey('nav-0')));
+        await openEditor();
+        expect(find.text(description), findsOneWidget);
+        await t.binding.handlePopRoute();
+        await t.pumpAndSettle();
+        expect(find.text('Quitter la modification ?'), findsOneWidget);
+        await fixtures.tap(t, find.text('Continuer la saisie'));
+        expect(find.text(description), findsOneWidget);
+        await t.binding.handlePopRoute();
+        await t.pumpAndSettle();
+        await fixtures.tap(t, find.text('Quitter'));
+        expect(find.byKey(const ValueKey('requestDescription')), findsNothing);
+        await openEditor();
+        expect(find.text(sample.description), findsOneWidget);
+        expect(repository.actions, isEmpty);
+        expect(repository.publishIds, isEmpty);
+      });
+    },
+  );
   testWidgets('close and delete require confirmation and hide deleted cards', (
     t,
   ) async {

@@ -140,7 +140,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      await t.tap(find.byKey(const ValueKey('nav-3')));
+      await t.tap(find.byKey(const ValueKey('nav-2')));
       await t.pumpAndSettle();
       expect(inbox.conversationReads, isEmpty);
       expect(badgeText('5'), findsOneWidget);

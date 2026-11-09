@@ -434,8 +434,10 @@ class ProposalDetailView extends StatefulWidget {
     required this.id,
     required this.onBack,
     this.actionsBuilder,
+    this.professionalProfileAction,
   });
   final Widget Function(Proposal)? actionsBuilder;
+  final VoidCallback? Function(Proposal)? professionalProfileAction;
   final ProposalRepository repository;
   final String id;
   final VoidCallback onBack;
@@ -476,6 +478,7 @@ class _ProposalDetailViewState extends State<ProposalDetailView> {
             return const Center(child: CircularProgressIndicator());
           }
           final p = s.requireData!;
+          final openProfile = widget.professionalProfileAction?.call(p);
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -508,6 +511,15 @@ class _ProposalDetailViewState extends State<ProposalDetailView> {
                   style: const TextStyle(color: FoundiUi.muted, fontSize: 12),
                 ),
               ),
+              if (openProfile != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: openProfile,
+                    icon: const Icon(Icons.person_outline),
+                    label: const Text('Voir le profil professionnel'),
+                  ),
+                ),
               const SizedBox(height: 20),
               FoundiPanel(
                 child: Column(

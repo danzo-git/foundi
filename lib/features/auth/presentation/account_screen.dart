@@ -21,6 +21,7 @@ class AccountScreen extends StatelessWidget {
     this.onRequests,
     this.onSentProposals,
     this.onReceivedProposals,
+    this.onShowcase,
   });
   final FoundiUser user;
   final ProfessionalProfile professional;
@@ -29,7 +30,8 @@ class AccountScreen extends StatelessWidget {
   final VoidCallback? onPublish,
       onRequests,
       onSentProposals,
-      onReceivedProposals;
+      onReceivedProposals,
+      onShowcase;
   @override
   Widget build(BuildContext context) {
     final personalName = user.profile.fullName.isNotEmpty
@@ -153,6 +155,24 @@ class AccountScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 22),
+          if (approved && onShowcase != null) ...[
+            FoundiPanel(
+              onTap: onShowcase,
+              color: FoundiUi.soft,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              child: const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  Icons.collections_outlined,
+                  color: FoundiUi.green,
+                ),
+                title: Text('Mon profil professionnel'),
+                subtitle: Text('Présentation, photos et aperçu client'),
+                trailing: Icon(Icons.chevron_right),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (hasDossier && !approved) ...[
             FoundiPanel(
               color: const Color(0xFFFFF0D8),
@@ -185,9 +205,13 @@ class AccountScreen extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 20),
-                  const Text(
-                    'Suivre mon dossier  ›',
-                    style: TextStyle(
+                  Text(
+                    professional.status == ProfessionalStatus.draft ||
+                            professional.status ==
+                                ProfessionalStatus.needsChanges
+                        ? 'Reprendre mon dossier'
+                        : 'Suivre mon dossier  ›',
+                    style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: FoundiUi.green,

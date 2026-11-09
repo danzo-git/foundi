@@ -20,6 +20,7 @@ const { createOtpService, OtpError } = require("./otp-service");
 const { changeRegistrationEmail } = require("./account-service");
 
 const { createProfessionalService } = require("./professional-service");
+const { createProfessionalShowcaseService } = require('./professional-showcase-service');
 
 
 
@@ -195,6 +196,12 @@ const professional = createProfessionalService({
 });
 
 const proOptions = { region: 'europe-west1', maxInstances: 3, concurrency: 4, timeoutSeconds: 120, memory: '256MiB' };
+
+const showcase = createProfessionalShowcaseService({ store, auth: getAuth() });
+exports.readProfessionalShowcase = onCall(proOptions, r =>
+  handle(() => showcase.read(r.auth?.uid, r.data?.proposalId)));
+exports.saveProfessionalShowcase = onCall({ ...proOptions, concurrency: 1, memory: '512MiB' }, r =>
+  handle(() => showcase.save(r.auth?.uid, r.data)));
 
 exports.startProfessionalProfile = onCall(proOptions, r => handle(() => professional.ensureDraft(r.auth?.uid)));
 

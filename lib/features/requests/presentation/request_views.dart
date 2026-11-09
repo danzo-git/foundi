@@ -9,13 +9,20 @@ const requestPrivacy =
     'Le texte est visible publiquement. Évite les numéros de téléphone, e-mails et adresses exactes.';
 
 class RequestHeading extends StatelessWidget {
-  const RequestHeading(this.title, {super.key, this.subtitle, this.onBack});
+  const RequestHeading(
+    this.title, {
+    super.key,
+    this.subtitle,
+    this.onBack,
+    this.bottomSpacing = 22,
+  });
   final String title;
   final String? subtitle;
   final VoidCallback? onBack;
+  final double bottomSpacing;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 22),
+    padding: EdgeInsets.only(bottom: bottomSpacing),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -57,6 +64,186 @@ class RequestHeading extends StatelessWidget {
         ],
       ],
     ),
+  );
+}
+
+class FoundiActionBanner extends StatelessWidget {
+  const FoundiActionBanner.client({super.key, required this.onPublish});
+
+  const FoundiActionBanner.professional({super.key}) : onPublish = null;
+
+  final VoidCallback? onPublish;
+
+  @override
+  Widget build(BuildContext context) {
+    final publish = onPublish;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.bottomLeft,
+            end: Alignment.topRight,
+            colors: [Color(0xFF065746), FoundiUi.green, Color(0xFF109468)],
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -36,
+              bottom: -88,
+              child: Container(
+                width: 200,
+                height: 180,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: FoundiUi.tint.withValues(alpha: .12),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final showArt =
+                      constraints.maxWidth >= 230 &&
+                      MediaQuery.textScalerOf(context).scale(16) <= 22;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        publish != null
+                            ? 'Un besoin ?'
+                            : 'Opportunités pour vous',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 23,
+                          height: 1.15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              publish != null
+                                  ? 'Publiez votre demande et recevez des propositions de professionnels vérifiés.'
+                                  : 'Découvrez des demandes qui correspondent à vos compétences et à vos zones d’intervention.',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                height: 1.35,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          if (showArt) ...[
+                            const SizedBox(width: 8),
+                            ExcludeSemantics(
+                              child: _BannerIllustration(
+                                checklist: publish != null,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (publish != null) ...[
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          key: const ValueKey('openPublication'),
+                          onPressed: publish,
+                          style: FilledButton.styleFrom(
+                            foregroundColor: FoundiUi.green,
+                            backgroundColor: Colors.white,
+                            shape: const StadiumBorder(),
+                          ),
+                          child: const Wrap(
+                            alignment: WrapAlignment.center,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 6,
+                            children: [
+                              Icon(Icons.add, size: 21),
+                              Text(
+                                'Publier une demande',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BannerIllustration extends StatelessWidget {
+  const _BannerIllustration({required this.checklist});
+
+  final bool checklist;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 76,
+    height: 72,
+    child: checklist
+        ? Transform.rotate(
+            angle: -.18,
+            child: const Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(Icons.assignment, color: Color(0xFF4DE1A6), size: 74),
+                Positioned(
+                  top: 18,
+                  child: Icon(
+                    Icons.checklist_rounded,
+                    color: Colors.white,
+                    size: 44,
+                  ),
+                ),
+              ],
+            ),
+          )
+        : Stack(
+            alignment: Alignment.center,
+            children: [
+              for (final (size, color) in const [
+                (58.0, Color(0xFFFF8733)),
+                (46.0, Color(0xFFFFF2DB)),
+                (34.0, Color(0xFFFF8733)),
+                (24.0, Color(0xFFFFF2DB)),
+                (13.0, Color(0xFFFF8733)),
+              ])
+                Container(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              Positioned(
+                top: 3,
+                right: 5,
+                child: Transform.rotate(
+                  angle: -.8,
+                  child: const Icon(
+                    Icons.arrow_right_alt,
+                    color: Color(0xFFFFD35A),
+                    size: 40,
+                  ),
+                ),
+              ),
+            ],
+          ),
   );
 }
 
@@ -214,6 +401,7 @@ class RequestListView extends StatefulWidget {
     required this.repository,
     required this.onOpen,
     required this.onPublish,
+    this.showPublicationBanner = false,
     this.uid,
     this.onEdit,
     this.onProposals,
@@ -226,6 +414,7 @@ class RequestListView extends StatefulWidget {
   final ValueChanged<String>? onConversation;
   final ValueChanged<FoundiRequest> onOpen;
   final VoidCallback? onPublish;
+  final bool showPublicationBanner;
   @override
   State<RequestListView> createState() => _RequestListViewState();
 }
@@ -304,15 +493,22 @@ class _RequestListViewState extends State<RequestListView> {
   @override
   Widget build(BuildContext context) {
     final personal = widget.uid != null;
+    final publish = widget.onPublish;
+    final showBanner =
+        personal && widget.showPublicationBanner && publish != null;
     return ListView(
       padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
       children: [
         RequestHeading(
           personal ? 'Mes demandes' : 'Explorer les demandes',
           subtitle: personal
-              ? 'Retrouve les besoins que tu as publiés.'
+              ? 'Suivez vos demandes et les propositions des professionnels.'
               : 'Les besoins publiés par la communauté.',
         ),
+        if (showBanner) ...[
+          FoundiActionBanner.client(onPublish: publish),
+          const SizedBox(height: 14),
+        ],
         if (personal) ...[
           if (_busy) const LinearProgressIndicator(),
           AuthNotice(_error),
@@ -378,17 +574,17 @@ class _RequestListViewState extends State<RequestListView> {
             if (requests.isEmpty) {
               return Column(
                 children: [
-                  const SizedBox(height: 55),
+                  const SizedBox(height: 16),
                   const CircleAvatar(
-                    radius: 70,
+                    radius: 32,
                     backgroundColor: FoundiUi.tint,
                     child: Icon(
                       Icons.description_outlined,
-                      size: 60,
+                      size: 30,
                       color: FoundiUi.green,
                     ),
                   ),
-                  const SizedBox(height: 35),
+                  const SizedBox(height: 14),
                   Text(
                     personal
                         ? 'Aucune demande pour le moment'
@@ -402,12 +598,14 @@ class _RequestListViewState extends State<RequestListView> {
                   const SizedBox(height: 12),
                   Text(
                     personal
-                        ? 'Ta première demande apparaîtra ici dès sa publication.'
+                        ? (showBanner
+                              ? 'Utilise la bannière pour publier ta première demande.'
+                              : 'Ta première demande apparaîtra ici dès sa publication.')
                         : 'Les prochains besoins publiés apparaîtront ici.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: FoundiUi.muted, height: 1.5),
                   ),
-                  if (widget.onPublish != null) ...[
+                  if (!showBanner && publish != null) ...[
                     const SizedBox(height: 45),
                     FilledButton(
                       onPressed: widget.onPublish,
@@ -570,27 +768,29 @@ class RequestPreview extends StatelessWidget {
           request.description,
           style: const TextStyle(fontSize: 14, height: 1.6),
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 16),
-          child: Divider(color: FoundiUi.line),
-        ),
-        const Text(
-          'BUDGET SOUHAITÉ',
-          style: TextStyle(
-            fontSize: 11,
-            color: FoundiUi.muted,
-            fontWeight: FontWeight.w600,
+        if (request.budget != null) ...[
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(color: FoundiUi.line),
           ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          request.budgetLabel,
-          style: const TextStyle(
-            fontSize: 20,
-            color: FoundiUi.green,
-            fontWeight: FontWeight.bold,
+          const Text(
+            'BUDGET SOUHAITÉ',
+            style: TextStyle(
+              fontSize: 11,
+              color: FoundiUi.muted,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
+          const SizedBox(height: 8),
+          Text(
+            request.budgetLabel,
+            style: const TextStyle(
+              fontSize: 20,
+              color: FoundiUi.green,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ],
     ),
   );
@@ -838,12 +1038,12 @@ class _GuestRequestsState extends State<GuestRequests> {
         ),
       ),
       bottomNavigationBar: FoundiBottomBar(
-        accountSelected: false,
-        selectedIndex: 1,
+        guest: true,
+        selectedIndex: 0,
         onSelect: (i) {
-          if (i == 0 || i == 1) {
+          if (i == 0) {
             setState(() => _detail = null);
-          } else if (i == 3) {
+          } else if (i == 2) {
             showComingSoon(context);
           } else {
             widget.onAuthenticate();

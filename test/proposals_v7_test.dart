@@ -192,6 +192,16 @@ void main() {
       expect(find.text('Détail de la proposition'), findsOneWidget);
       expect(find.text('Professionnel actuellement approuvé'), findsOneWidget);
       expect(find.text('Accepter'), findsNothing);
+      await fixtures.tap(t, find.byKey(const ValueKey('nav-0')));
+      await fixtures.tap(t, find.byKey(const ValueKey('spaceSelector')));
+      await tap(t, 'Espace professionnel');
+      await fixtures.tap(t, find.byKey(const ValueKey('confirmSpace')));
+      await fixtures.tap(t, find.byKey(const ValueKey('nav-1')));
+      await tap(t, request.title);
+      expect(find.text('Détail de la proposition'), findsOneWidget);
+      await t.binding.handlePopRoute();
+      await t.pumpAndSettle();
+      expect(find.text(request.title), findsOneWidget);
       await t.pumpWidget(const SizedBox());
       await repo.changes.close();
       await auth.changes.close();
@@ -217,9 +227,6 @@ void main() {
         ),
       );
       await t.pumpAndSettle();
-      await t.tap(find.byKey(const ValueKey('nav-4')));
-      await t.pumpAndSettle();
-      await tap(t, 'Mes demandes');
       await tap(t, 'Voir les propositions reçues (1)');
       expect(find.text('Propositions reçues'), findsOneWidget);
       await tap(t, request.title);

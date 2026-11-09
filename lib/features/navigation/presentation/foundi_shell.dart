@@ -7,6 +7,8 @@ import '../../auth/domain/auth_repository.dart';
 import '../../auth/presentation/account_screen.dart';
 import '../../auth/presentation/auth_widgets.dart';
 import '../../professional/domain/professional_repository.dart';
+import '../../professional/domain/professional_showcase.dart';
+import '../../professional/presentation/professional_showcase_screen.dart';
 import '../../professional/presentation/professional_status_label.dart';
 import 'settings_view.dart';
 import '../../requests/presentation/explorer_view.dart';
@@ -109,6 +111,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           }
           _openProposal(target.id, 'sentProposals');
         case 'requestProposals':
+          _receivedReturn = 'mine';
           _receivedRequestId = target.id;
           _showRequests('receivedProposals');
         case 'opportunity':
@@ -180,9 +183,10 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
   late bool _professional =
       widget.professional.approved &&
       widget.user.profile.preferredMode == 'professional';
-  bool _account = false, _settings = false, _switched = false;
+  bool _settings = false;
   BuildContext? _selectorContext;
   FoundiRequest? _editing, _proposalRequest;
+  GlobalKey<RequestComposerState>? _editKey;
   String? _proposalId, _receivedRequestId, _conversationId;
   String _conversationReturn = 'messages';
   ConversationRepository? get _conversations =>
@@ -206,29 +210,43 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
     _showRequests('proposal-detail');
   }
 
-  String? _requestPage, _requestId;
+  String? _page, _requestId;
+  String get _landing => professionalSpace ? 'explore' : 'mine';
+  String get _requestPage => _page ?? _landing;
   String _requestReturn = 'explore';
-  bool _hasExplorer = false, _explorerStartForMe = false;
-  int _explorerEntryVersion = 0;
+  String _receivedReturn = 'mine';
+  String _publicationReturn = 'mine';
+  bool _hasExplorer = false;
   bool _hasPublication = false;
   bool _publicationComplete = false;
   int _publicationVersion = 0;
+
+  String? get _backPage => switch (_requestPage) {
+    'conversation' => _conversationReturn,
+    'proposal-detail' => _proposalDetailReturn,
+    'detail' => _requestReturn,
+    'receivedProposals' => _receivedReturn,
+    'sentProposals' when !professionalSpace => 'account',
+    _ => null,
+  };
+
+  int _tabFor(String page) => switch (page) {
+    'explore' => professionalSpace ? 0 : 1,
+    'sentProposals' => professionalSpace ? 1 : 3,
+    'messages' || 'conversation' => 2,
+    'account' => 3,
+    'mine' || 'edit' => professionalSpace ? 3 : 0,
+    'detail' || 'proposal-compose' => _tabFor(_requestReturn),
+    'receivedProposals' => _tabFor(_receivedReturn),
+    'proposal-detail' => _tabFor(_proposalDetailReturn),
+    'publish' => _tabFor(_publicationReturn),
+    _ => 0,
+  };
+
   void _showRequests(String? page) => setState(() {
-    if (page == 'explore' || page == 'opportunities') {
-      _hasExplorer = true;
-      if (page == 'opportunities') {
-        _explorerStartForMe = true;
-        _explorerEntryVersion++;
-      }
-      page = 'explore';
-    }
-    _requestPage = page;
+    _hasExplorer = _hasExplorer || _requestPage == 'explore';
+    _page = page;
     _settings = false;
-    _account =
-        page == 'mine' ||
-        page == 'sentProposals' ||
-        page == 'receivedProposals' ||
-        page == 'proposal-detail';
   });
   void _openRequest(FoundiRequest request, String from) {
     _requestId = request.id;
@@ -252,35 +270,54 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
       _publicationComplete = false;
     }
     _hasPublication = true;
+    _publicationReturn = _requestPage;
     _showRequests('publish');
   }
 
-  Widget _requestBody(Widget home) => Stack(
+  Future<void> _startEdit(FoundiRequest request) async {
+    if (_editing?.id != request.id) {
+      final previous = _editKey?.currentState;
+      if (previous != null && !await previous.confirmDiscard()) return;
+      if (!mounted || _requestPage != 'mine') return;
+      _editing = request;
+      _editKey = GlobalKey<RequestComposerState>();
+    }
+    _showRequests('edit');
+  }
+
+  void _finishEdit() {
+    setState(() {
+      _editing = null;
+      _editKey = null;
+      if (_requestPage == 'edit') _page = 'mine';
+    });
+  }
+
+  Widget _requestBody() => Stack(
     fit: StackFit.expand,
     children: [
       Offstage(
         offstage: _requestPage == 'publish',
         child: switch (_requestPage) {
-          'explore' => const SizedBox.shrink(),
-          'mine' => RequestListView(
-            key: ValueKey(_requestPage),
+          'explore' when widget.requestRepository != null =>
+            const SizedBox.shrink(),
+          'mine' when widget.requestRepository != null => RequestListView(
             repository: widget.requestRepository!,
-            uid: _requestPage == 'mine' ? widget.user.id : null,
-            onOpen: (r) => _openRequest(r, _requestPage!),
+            uid: widget.user.id,
+            onOpen: (r) => _openRequest(r, 'mine'),
             onPublish: professionalSpace ? null : _publish,
+            showPublicationBanner: true,
             onProposals: _proposals == null
                 ? null
                 : (r) {
+                    _receivedReturn = 'mine';
                     _receivedRequestId = r.id;
                     _showRequests('receivedProposals');
                   },
             onConversation: _conversations == null
                 ? null
                 : (id) => _openConversation(id, 'mine'),
-            onEdit: (r) {
-              _editing = r;
-              _showRequests('edit');
-            },
+            onEdit: widget.catalogRepository == null ? null : _startEdit,
           ),
           'messages' => ConversationListView(
             repository: _conversations!,
@@ -312,7 +349,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             repository: _proposals!,
             uid: widget.user.id,
             received: false,
-            onBack: () => _showRequests(null),
+            onBack: () => _showRequests(professionalSpace ? null : 'account'),
             onOpen: (id) => _openProposal(id, 'sentProposals'),
           ),
           'receivedProposals' => ProposalListView(
@@ -321,13 +358,18 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             uid: widget.user.id,
             received: true,
             requestId: _receivedRequestId,
-            onBack: () => _showRequests('mine'),
+            onBack: () => _showRequests(_receivedReturn),
             onOpen: (id) => _openProposal(id, 'receivedProposals'),
           ),
           'proposal-detail' => ProposalDetailView(
             key: ValueKey(_proposalId),
             repository: _proposals!,
             id: _proposalId!,
+            professionalProfileAction: _showcaseRepository == null
+                ? null
+                : (proposal) => proposal.clientUid == widget.user.id
+                      ? () => _openShowcase(proposalId: proposal.id)
+                      : null,
             actionsBuilder: _conversations == null
                 ? null
                 : (p) => SelectionPanel(
@@ -341,15 +383,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                   ),
             onBack: () => _showRequests(_proposalDetailReturn),
           ),
-          'edit' => RequestComposer(
-            key: ValueKey('edit-${_editing!.id}'),
-            repository: widget.requestRepository!,
-            catalog: widget.catalogRepository!,
-            initial: _editing,
-            onExit: () => _showRequests('mine'),
-            onMine: () => _showRequests('mine'),
-            onOpen: (r) => _openRequest(r, 'mine'),
-          ),
+          'edit' => const SizedBox.shrink(),
           'detail' => RequestDetailView(
             key: ValueKey(_requestId),
             repository: widget.requestRepository!,
@@ -370,10 +404,26 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                   ),
             onBack: () => _showRequests(_requestReturn),
           ),
-          _ => home,
+          'account' => _accountBody(),
+          'publish' => const SizedBox.shrink(),
+          _ => ListView(
+            padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+            children: [
+              RequestHeading(
+                _requestPage == 'mine'
+                    ? 'Mes demandes'
+                    : 'Explorer les demandes',
+              ),
+              const RequestNotice(
+                'Demandes indisponibles',
+                'Le service de demandes est indisponible.',
+              ),
+            ],
+          ),
         },
       ),
-      if (_hasExplorer)
+      if (widget.requestRepository != null &&
+          (_hasExplorer || _requestPage == 'explore'))
         Offstage(
           key: const ValueKey('explorerHost'),
           offstage: _requestPage != 'explore',
@@ -382,11 +432,25 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             catalog: widget.catalogRepository,
             profile: widget.professional,
             professionalSpace: professionalSpace,
-            initialForMe: _explorerStartForMe,
-            entryVersion: _explorerEntryVersion,
+            initialForMe: professionalSpace,
             onOpen: (r) => _openRequest(r, 'explore'),
             onPublish: _publish,
             onProfile: _activity,
+          ),
+        ),
+      if (_editing != null)
+        Offstage(
+          key: const ValueKey('editionHost'),
+          offstage: _requestPage != 'edit',
+          child: RequestComposer(
+            key: _editKey,
+            repository: widget.requestRepository!,
+            catalog: widget.catalogRepository!,
+            initial: _editing,
+            active: _requestPage == 'edit' && widget.active,
+            onExit: _finishEdit,
+            onMine: _finishEdit,
+            onOpen: (r) => _openRequest(r, 'mine'),
           ),
         ),
       if (_hasPublication)
@@ -399,7 +463,9 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             catalog: widget.catalogRepository!,
             active: _requestPage == 'publish' && widget.active,
             onPublished: () => _publicationComplete = true,
-            onExit: () => _showRequests(null),
+            onExit: () => _showRequests(
+              _publicationComplete ? 'mine' : _publicationReturn,
+            ),
             onMine: () {
               _hasPublication = false;
               _showRequests('mine');
@@ -422,6 +488,10 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
       );
     }
     if (!widget.professional.approved) {
+      if (_professional) {
+        _page = null;
+        _settings = false;
+      }
       _professional = false;
       if (oldWidget.professional.approved && _selectorContext != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -527,13 +597,11 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
       );
       return;
     }
-    setState(() {
-      _switched = _switched || result != _professional;
+    if (result != professionalSpace) {
+      _hasExplorer = _hasExplorer || _requestPage == 'explore';
       _professional = result;
-      _account = false;
-      _settings = false;
-      _requestPage = null;
-    });
+      _showRequests(null);
+    }
   }
 
   void _activity() {
@@ -553,29 +621,102 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
     );
   }
 
+  ProfessionalShowcaseRepository? get _showcaseRepository {
+    final repository = widget.professionalRepository;
+    return repository is ProfessionalShowcaseRepository
+        ? repository as ProfessionalShowcaseRepository
+        : null;
+  }
+
+  void _openShowcase({String? proposalId}) {
+    final repository = _showcaseRepository;
+    if (repository == null ||
+        (proposalId == null && !widget.professional.approved)) {
+      return;
+    }
+    final navigator = Navigator.of(context);
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProfessionalShowcaseScreen(
+          repository: repository,
+          proposalId: proposalId,
+          businessName: widget.professional.activity.businessName,
+          onPersonal: proposalId != null
+              ? null
+              : () {
+                  if (!mounted) return;
+                  final user = widget.auth.currentUser;
+                  if (user?.id != widget.user.id) return;
+                  navigator.push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          ProfileScreen(user: user!, repository: widget.auth),
+                    ),
+                  );
+                },
+        ),
+      ),
+    );
+  }
+
   void _navigate(int index) {
-    if (index == 3 && _conversations != null) {
-      _showRequests('messages');
-      return;
-    }
-    if (widget.requestRepository != null && index == 1) {
-      _showRequests('explore');
-      return;
-    }
-    if (index == 2) {
-      _publish();
-      return;
-    }
-    if (index != 0 && index != 4) {
+    final page = switch (index) {
+      0 => _landing,
+      1 => professionalSpace ? 'sentProposals' : 'explore',
+      2 => 'messages',
+      3 => 'account',
+      _ => throw ArgumentError.value(index),
+    };
+    if ((page == 'messages' && _conversations == null) ||
+        (page == 'sentProposals' && _proposals == null)) {
       showComingSoon(context);
       return;
     }
-    setState(() {
-      _account = index == 4;
-      _settings = false;
-      _requestPage = null;
-    });
+    _showRequests(page);
   }
+
+  Widget _accountBody() => _settings
+      ? FoundiSettings(
+          user: widget.auth.currentUser ?? widget.user,
+          professional: widget.professional,
+          professionalSpace: professionalSpace,
+          onSpaces: _spaces,
+          onDossier: _dossier,
+          onActivity: _activity,
+          onNotifications: _notifications == null
+              ? null
+              : _notificationSettings,
+          onSignOut: () => perform(widget.auth.signOut),
+          busy: busy,
+          error: error,
+        )
+      : AccountScreen(
+          onSentProposals:
+              _proposals != null &&
+                  widget.professional.status != ProfessionalStatus.none
+              ? () => _showRequests('sentProposals')
+              : null,
+          onReceivedProposals: _proposals == null
+              ? null
+              : () {
+                  _receivedReturn = 'account';
+                  _receivedRequestId = null;
+                  _showRequests('receivedProposals');
+                },
+          user: widget.user,
+          professional: widget.professional,
+          professionalSpace: professionalSpace,
+          onSpaces: _spaces,
+          onDossier: _dossier,
+          onActivity: _activity,
+          onPublish: widget.requestRepository == null ? null : _publish,
+          onShowcase: _showcaseRepository == null
+              ? null
+              : () => _openShowcase(),
+          onRequests: widget.requestRepository == null
+              ? null
+              : () => _showRequests('mine'),
+        );
 
   @override
   Widget build(BuildContext context) => AuthScope(
@@ -595,34 +736,21 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
         ),
       ),
       child: PopScope(
-        canPop:
-            !widget.active || (!_settings && !_account && _requestPage == null),
+        canPop: !widget.active || _requestPage == _landing,
         onPopInvokedWithResult: (didPop, _) {
-          if (!didPop && widget.active) {
-            if (_requestPage == 'publish' ||
-                _requestPage == 'edit' ||
-                _requestPage == 'proposal-compose') {
-              return;
-            }
-            if (_requestPage != null) {
-              _showRequests(
-                _requestPage == 'conversation'
-                    ? _conversationReturn
-                    : _requestPage == 'proposal-detail'
-                    ? _proposalDetailReturn
-                    : _requestPage == 'detail'
-                    ? _requestReturn
-                    : null,
-              );
-              return;
-            }
-            setState(() {
-              if (_settings) {
-                _settings = false;
-              } else {
-                _account = false;
-              }
-            });
+          if (didPop || !widget.active || _requestPage == _landing) return;
+          // The active form handles its own steps and in-flight submissions.
+          if (const {
+            'publish',
+            'edit',
+            'proposal-compose',
+          }.contains(_requestPage)) {
+            return;
+          }
+          if (_settings) {
+            setState(() => _settings = false);
+          } else {
+            _showRequests(_backPage);
           }
         },
         child: Scaffold(
@@ -676,83 +804,16 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                                 uid: widget.user.id,
                                 onOpen: _inbox,
                               ),
-                        onSettings: _account && _requestPage == null
+                        onSettings: _requestPage == 'account'
                             ? () => setState(() => _settings = true)
                             : null,
                       ),
-                    Expanded(
-                      child: _requestBody(
-                        _settings
-                            ? FoundiSettings(
-                                user: widget.auth.currentUser ?? widget.user,
-                                professional: widget.professional,
-                                professionalSpace: professionalSpace,
-                                onSpaces: _spaces,
-                                onDossier: _dossier,
-                                onActivity: _activity,
-                                onNotifications: _notifications == null
-                                    ? null
-                                    : _notificationSettings,
-                                onSignOut: () => perform(widget.auth.signOut),
-                                busy: busy,
-                                error: error,
-                              )
-                            : _account
-                            ? AccountScreen(
-                                onSentProposals:
-                                    _proposals != null &&
-                                        widget.professional.status !=
-                                            ProfessionalStatus.none
-                                    ? () => _showRequests('sentProposals')
-                                    : null,
-                                onReceivedProposals: _proposals == null
-                                    ? null
-                                    : () {
-                                        _receivedRequestId = null;
-                                        _showRequests('receivedProposals');
-                                      },
-                                user: widget.user,
-                                professional: widget.professional,
-                                professionalSpace: professionalSpace,
-                                onSpaces: _spaces,
-                                onDossier: _dossier,
-                                onActivity: _activity,
-                                onPublish: widget.requestRepository == null
-                                    ? null
-                                    : _publish,
-                                onRequests: widget.requestRepository == null
-                                    ? null
-                                    : () => _showRequests('mine'),
-                              )
-                            : FoundiHome(
-                                onSentProposals:
-                                    professionalSpace && _proposals != null
-                                    ? () => _showRequests('sentProposals')
-                                    : null,
-                                onOpportunities:
-                                    professionalSpace &&
-                                        widget.requestRepository
-                                            is OpportunityRepository
-                                    ? () => _showRequests('opportunities')
-                                    : null,
-                                user: widget.user,
-                                profile: widget.professional,
-                                professionalSpace: professionalSpace,
-                                switched: _switched,
-                                onSpaces: _spaces,
-                                onDossier: _dossier,
-                                onPublish: widget.requestRepository == null
-                                    ? null
-                                    : _publish,
-                                onRequests: widget.requestRepository == null
-                                    ? null
-                                    : () => _showRequests('mine'),
-                                onExplore: widget.requestRepository == null
-                                    ? null
-                                    : () => _showRequests('explore'),
-                              ),
+                    if (_requestPage == _landing)
+                      FoundiSpaceLabel(
+                        professional: professionalSpace,
+                        onSelect: widget.professional.approved ? _spaces : null,
                       ),
-                    ),
+                    Expanded(child: _requestBody()),
                   ],
                 ),
               ),
@@ -770,346 +831,13 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                         _requestPage == 'conversation',
                   )
                 : null,
-            accountSelected: _account,
-            selectedIndex:
-                _requestPage == 'messages' || _requestPage == 'conversation'
-                ? 3
-                : _requestPage == 'publish'
-                ? 2
-                : _requestPage == 'proposal-compose' ||
-                      _requestPage == 'explore' ||
-                      (_requestPage == 'detail' && _requestReturn == 'explore')
-                ? 1
-                : _requestPage == 'mine' ||
-                      _account ||
-                      (_requestPage == 'detail' && _requestReturn == 'mine')
-                ? 4
-                : 0,
+            selectedIndex: _tabFor(_requestPage),
             onSelect: _navigate,
           ),
         ),
       ),
     ),
   );
-}
-
-class FoundiHome extends StatelessWidget {
-  const FoundiHome({
-    super.key,
-    this.onOpportunities,
-    this.onSentProposals,
-    required this.user,
-    required this.profile,
-    required this.professionalSpace,
-    required this.onSpaces,
-    required this.onDossier,
-    this.switched = false,
-    this.onPublish,
-    this.onRequests,
-    this.onExplore,
-  });
-  final VoidCallback? onOpportunities, onSentProposals;
-  final FoundiUser user;
-  final ProfessionalProfile profile;
-  final bool professionalSpace, switched;
-  final VoidCallback onSpaces, onDossier;
-  final VoidCallback? onPublish, onRequests, onExplore;
-  @override
-  Widget build(BuildContext context) {
-    final personal = user.profile.fullName.isNotEmpty
-        ? user.profile.fullName
-        : user.displayName ?? '';
-    final name = professionalSpace && profile.activity.businessName.isNotEmpty
-        ? profile.activity.businessName
-        : personal.trim().split(RegExp(r'\s+')).first;
-    return SingleChildScrollView(
-      key: ValueKey(professionalSpace ? 'professionalHome' : 'clientHome'),
-      padding: const EdgeInsets.fromLTRB(22, 2, 22, 30),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (profile.approved)
-            Material(
-              color: const Color(0xFFE7F0EC),
-              borderRadius: BorderRadius.circular(24),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                key: const ValueKey('homeSpaceSelector'),
-                onTap: onSpaces,
-                child: Padding(
-                  padding: const EdgeInsets.all(3),
-                  child: Row(
-                    children: [
-                      for (final pro in [false, true])
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: professionalSpace == pro
-                                  ? Colors.white
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              pro ? 'Professionnel' : 'Client',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: professionalSpace == pro
-                                    ? FoundiUi.ink
-                                    : FoundiUi.muted,
-                                fontWeight: professionalSpace == pro
-                                    ? FontWeight.w600
-                                    : FontWeight.normal,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          else
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: FoundiUi.tint,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Text(
-                  'ESPACE CLIENT',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: FoundiUi.green,
-                  ),
-                ),
-              ),
-            ),
-          const SizedBox(height: 20),
-          Text(
-            !professionalSpace && profile.approved && switched
-                ? 'Bienvenue côté client'
-                : name.isEmpty
-                ? 'Bonjour !'
-                : 'Bonjour, $name${professionalSpace ? '' : ' 👋'}',
-            style: TextStyle(
-              height: 1.2,
-              fontSize: professionalSpace || profile.approved ? 23 : 26,
-              fontFamilyFallback: const ['Noto Color Emoji'],
-              fontWeight: FontWeight.bold,
-              color: FoundiUi.ink,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            professionalSpace
-                ? 'Ton espace professionnel prend forme.'
-                : 'Que recherches-tu aujourd’hui ?',
-            style: const TextStyle(fontSize: 13, color: FoundiUi.muted),
-          ),
-          const SizedBox(height: 30),
-          if (professionalSpace) ...[
-            if (onSentProposals != null) ...[
-              FoundiPanel(
-                onTap: onSentProposals,
-                child: const Text('Mes propositions  ›'),
-              ),
-              const SizedBox(height: 16),
-            ],
-            const FutureOverview(professional: true),
-            const SizedBox(height: 32),
-            const Text(
-              'Modules professionnels',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: FoundiUi.ink,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Wrap(
-              spacing: 10,
-              children: [
-                for (final label in ['Pour moi', 'Groupes'])
-                  ActionChip(
-                    label: Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: label == 'Pour moi'
-                            ? Colors.white
-                            : FoundiUi.ink,
-                      ),
-                    ),
-                    backgroundColor: label == 'Pour moi'
-                        ? FoundiUi.green
-                        : const Color(0xFFE7F0EC),
-                    side: BorderSide.none,
-                    shape: const StadiumBorder(),
-                    onPressed: label == 'Pour moi' && onOpportunities != null
-                        ? onOpportunities
-                        : () => showComingSoon(context),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            if (onOpportunities != null)
-              FoundiPanel(
-                onTap: onOpportunities,
-                child: const Text('Opportunités pour moi  ›'),
-              )
-            else
-              const ComingSoonCard(title: 'Opportunités à venir'),
-            const SizedBox(height: 12),
-            const ComingSoonCard(title: 'Demandes groupées à venir'),
-          ] else if (profile.approved && switched) ...[
-            FoundiPanel(
-              color: FoundiUi.soft,
-              onTap: onPublish ?? () => showComingSoon(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Une idée en tête ?',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: FoundiUi.ink,
-                    ),
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    onPublish == null
-                        ? 'Exprime ton besoin. La publication sera bientôt disponible.'
-                        : 'Exprime ton besoin et publie-le sur Foundi.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: FoundiUi.muted,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              onRequests == null ? 'Mes demandes (à venir)' : 'Mes demandes',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: FoundiUi.ink,
-              ),
-            ),
-            const SizedBox(height: 20),
-            if (onRequests == null)
-              const ComingSoonCard(title: 'Suivi des demandes')
-            else
-              FoundiPanel(
-                onTap: onRequests,
-                child: const Text('Consulter mes demandes  ›'),
-              ),
-          ] else ...[
-            FoundiPanel(
-              color: FoundiUi.soft,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 26),
-              onTap: () => showComingSoon(context),
-              child: const Row(
-                children: [
-                  Icon(Icons.search, size: 18, color: FoundiUi.muted),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Rechercher un service ou un produit',
-                      style: TextStyle(fontSize: 13, color: FoundiUi.muted),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 32),
-            const Text(
-              'Découvrir Foundi',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: FoundiUi.ink,
-              ),
-            ),
-            const SizedBox(height: 20),
-            if (onExplore == null)
-              const ComingSoonCard(title: 'Explorer les demandes')
-            else
-              FoundiPanel(
-                onTap: onExplore,
-                child: const Text('Explorer les demandes  ›'),
-              ),
-            const SizedBox(height: 12),
-            if (onRequests == null)
-              const ComingSoonCard(title: 'Mes demandes')
-            else
-              FoundiPanel(
-                onTap: onRequests,
-                child: const Text('Mes demandes  ›'),
-              ),
-          ],
-          if (profile.status != ProfessionalStatus.none &&
-              !profile.approved) ...[
-            const SizedBox(height: 20),
-            FoundiPanel(
-              color: const Color(0xFFFFF0D8),
-              onTap: onDossier,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    professionalStatusLabel(profile.status),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: FoundiUi.ink,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  if (profile.reviewReason.isNotEmpty)
-                    Text(
-                      profile.reviewReason,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: FoundiUi.muted,
-                      ),
-                    ),
-                  Text(
-                    profile.status == ProfessionalStatus.draft ||
-                            profile.status == ProfessionalStatus.needsChanges
-                        ? 'Reprendre mon dossier'
-                        : 'Suivre mon dossier  ›',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: FoundiUi.green,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 40),
-          if (!professionalSpace)
-            const Text(
-              'Retrouve ton compte et ton activité depuis Compte.',
-              style: TextStyle(fontSize: 12, color: FoundiUi.muted),
-            ),
-        ],
-      ),
-    );
-  }
 }
 
 class ProfessionalActivityView extends StatefulWidget {

@@ -138,7 +138,10 @@ class _ProfessionalGateState extends AuthActionState<ProfessionalGate> {
       title: 'Statut du dossier',
       onBack: () => _show('auto'),
       footer: [
-        AuthButton(label: 'Retour à l’accueil', onPressed: () => _show('auto')),
+        AuthButton(
+          label: 'Retour à mon espace',
+          onPressed: () => _show('auto'),
+        ),
       ],
       children: [
         AuthHeading(

@@ -150,6 +150,9 @@ void main() {
       }
       expect(find.text('Explorer les demandes'), findsOneWidget);
       expect(find.text('Pour moi'), pro ? findsOneWidget : findsNothing);
+      if (pro) {
+        await fixtures.tap(t, find.widgetWithText(ChoiceChip, 'Toutes'));
+      }
       expect(find.text('Demande closed'), findsNothing);
       expect(find.text('Demande deleted'), findsNothing);
       await t.tap(find.text('Filtres'));

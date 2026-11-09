@@ -4,8 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../domain/professional_repository.dart';
+import '../domain/professional_showcase.dart';
 
-class FirebaseProfessionalRepository implements ProfessionalRepository {
+class FirebaseProfessionalRepository
+    implements ProfessionalRepository, ProfessionalShowcaseRepository {
   FirebaseProfessionalRepository({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
@@ -52,13 +54,13 @@ class FirebaseProfessionalRepository implements ProfessionalRepository {
     }
   }
 
-  Future<void> _call(
+  Future<Object?> _invoke(
     String name, [
     Map<String, dynamic>? data,
     int retries = 0,
   ]) async {
     try {
-      await _functions
+      final result = await _functions
           .httpsCallable(
             name,
             options: HttpsCallableOptions(
@@ -66,6 +68,7 @@ class FirebaseProfessionalRepository implements ProfessionalRepository {
             ),
           )
           .call(data);
+      return result.data;
     } on FirebaseFunctionsException catch (e) {
       // Only retry operations that can safely save the same input again after
       // a temporary failure or a lost server response.
@@ -77,7 +80,7 @@ class FirebaseProfessionalRepository implements ProfessionalRepository {
             'unknown',
           ].contains(e.code)) {
         await Future<void>.delayed(const Duration(seconds: 1));
-        return _call(name, data, retries - 1);
+        return _invoke(name, data, retries - 1);
       }
       throw AuthFailure(switch (e.code) {
         'failed-precondition' ||
@@ -87,9 +90,39 @@ class FirebaseProfessionalRepository implements ProfessionalRepository {
           'Tu ne disposes pas des droits nécessaires pour cette action.',
         'unauthenticated' => 'Reconnecte-toi pour continuer.',
         _ =>
-          'Impossible d’enregistrer le dossier. Vérifie ta connexion puis réessaie.',
+          'L’opération n’a pas été confirmée. Vérifie ta connexion puis réessaie.',
       });
     }
+  }
+
+  Future<void> _call(
+    String name, [
+    Map<String, dynamic>? data,
+    int retries = 0,
+  ]) async {
+    await _invoke(name, data, retries);
+  }
+
+  @override
+  Future<ProfessionalShowcase?> readShowcase({String? proposalId}) async {
+    final data = await _invoke('readProfessionalShowcase', {
+      'proposalId': ?proposalId,
+    });
+    return data == null
+        ? null
+        : ProfessionalShowcase.fromMap(Map<String, dynamic>.from(data as Map));
+  }
+
+  @override
+  Future<ProfessionalShowcase> saveShowcase(
+    ProfessionalShowcase profile,
+  ) async {
+    final data = await _invoke(
+      'saveProfessionalShowcase',
+      profile.toSaveMap(),
+      1,
+    );
+    return ProfessionalShowcase.fromMap(Map<String, dynamic>.from(data as Map));
   }
 
   @override
