@@ -1,6 +1,10 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    match /requestPhotos/{allPaths=**} {
+      // Only authenticated server endpoints can read or write these objects.
+      allow read, write: if false;
+    }
     match /conversations/{conversationId}/{allPaths=**} {
       // Upload AND read use authenticated server endpoints with participant checks.
       // Firebase object GET can mint a permanent download token, so SDK reads are denied too.

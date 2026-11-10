@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../auth/domain/auth_repository.dart';
 import '../../auth/presentation/auth_widgets.dart';
 import '../../navigation/presentation/space_widgets.dart';
 import '../../professional/domain/professional_repository.dart';
 import '../domain/request_repository.dart';
+import '../domain/request_photo_repository.dart';
+import 'request_photos.dart';
 import 'request_views.dart';
 
 class RequestComposer extends StatefulWidget {
@@ -17,6 +20,7 @@ class RequestComposer extends StatefulWidget {
     this.active = true,
     this.onPublished,
     this.initial,
+    this.photoPicker = pickRequestPhotos,
   });
   final FoundiRequest? initial;
   final RequestRepository repository;
@@ -25,6 +29,7 @@ class RequestComposer extends StatefulWidget {
   final ValueChanged<FoundiRequest> onOpen;
   final bool active;
   final VoidCallback? onPublished;
+  final RequestPhotoPicker photoPicker;
 
   @override
   RequestComposerState createState() => RequestComposerState();
@@ -46,6 +51,57 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
   late RequestDraft _reviewedDraft;
   late FoundiRequest _preview;
   FoundiRequest? _published;
+  final _selectedPhotos = <LocalRequestPhoto>[];
+  final _attemptedPhotos = <String>{};
+  final _discardedPhotos = <String>{};
+  String? _photoError;
+  bool _pickingPhotos = false;
+
+  RequestPhotoRepository? get _photoRepository {
+    final repository = widget.repository;
+    return repository is RequestPhotoRepository
+        ? repository as RequestPhotoRepository
+        : null;
+  }
+
+  Future<void> _pickPhotos() async {
+    if (_pickingPhotos) return;
+    setState(() {
+      _pickingPhotos = true;
+      _photoError = null;
+    });
+    FocusScope.of(context).unfocus();
+    try {
+      final selections = await widget.photoPicker();
+      if (selections.length + _selectedPhotos.length > maxRequestPhotos) {
+        throw const AuthFailure(
+          'Tu peux ajouter jusqu’à trois photos. Retire-en une ou réduis ta sélection.',
+        );
+      }
+      final photos = <LocalRequestPhoto>[];
+      for (final selection in selections) {
+        photos.add(await validateRequestPhoto(selection));
+      }
+      if (mounted) setState(() => _selectedPhotos.addAll(photos));
+    } on AuthFailure catch (failure) {
+      if (mounted) setState(() => _photoError = failure.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _photoError =
+              'Impossible d’accéder aux photos. Vérifie les autorisations puis réessaie.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _pickingPhotos = false);
+    }
+  }
+
+  void _removePhoto(LocalRequestPhoto photo) => setState(() {
+    _selectedPhotos.remove(photo);
+    if (_attemptedPhotos.remove(photo.id)) _discardedPhotos.add(photo.id);
+    _photoError = null;
+  });
 
   @override
   void initState() {
@@ -181,6 +237,7 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
           .trim(),
       description: _description.text.trim(),
       budget: RequestDraft.parseBudget(_budget.text),
+      photoIds: List.unmodifiable(_selectedPhotos.map((photo) => photo.id)),
     );
     if (!_referencesValid(catalog, draft)) return;
     final specialty = category!.specialties
@@ -208,6 +265,23 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
 
   Future<void> _publish() async {
     final ok = await perform(() async {
+      final repository = _photoRepository;
+      if (widget.initial == null && repository != null) {
+        if (_discardedPhotos.isNotEmpty) {
+          await repository.discardRequestPhotos(_id, _discardedPhotos.toList());
+          _discardedPhotos.clear();
+        }
+        for (final (index, photo) in _selectedPhotos.indexed) {
+          _attemptedPhotos.add(photo.id);
+          try {
+            if (await repository.uploadRequestPhoto(_id, photo)) break;
+          } on AuthFailure catch (failure) {
+            throw AuthFailure(
+              'Photo ${index + 1}. ${failure.message} Tu peux la retirer depuis Modifier.',
+            );
+          }
+        }
+      }
       _published = widget.initial == null
           ? await widget.repository.publish(_id, _reviewedDraft)
           : await (widget.repository as RequestManagementRepository).manage(
@@ -340,6 +414,15 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
             },
           ),
           const SizedBox(height: 8),
+          if (widget.initial == null && _photoRepository != null)
+            _photoInput()
+          else if (widget.initial?.photoIds.isNotEmpty == true)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Les photos publiées restent associées à ta demande.',
+              ),
+            ),
           references,
           if (catalog != null) ...[
             if ((_categoryId != null && category == null) ||
@@ -463,13 +546,47 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
           const SizedBox(height: 14),
           FilledButton(
             key: const ValueKey('verifyRequest'),
-            onPressed: catalog == null ? null : () => _verify(catalog),
+            onPressed: catalog == null || _pickingPhotos
+                ? null
+                : () => _verify(catalog),
             child: const Text('Vérifier ma demande'),
           ),
         ],
       ),
     );
   }
+
+  Widget _photoInput() => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+          onPressed:
+              _pickingPhotos || _selectedPhotos.length >= maxRequestPhotos
+              ? null
+              : _pickPhotos,
+          icon: const Icon(Icons.add_photo_alternate_outlined),
+          label: const Text('Ajouter des photos (facultatif)'),
+        ),
+        Text(
+          'Jusqu’à 3 photos · ${_selectedPhotos.length}/3',
+          style: const TextStyle(color: FoundiUi.muted, fontSize: 12),
+        ),
+        if (_pickingPhotos)
+          const LinearProgressIndicator(semanticsLabel: 'Lecture des photos'),
+        AuthNotice(_photoError),
+        if (_selectedPhotos.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          LocalRequestPhotos(
+            photos: _selectedPhotos,
+            onRemove: _pickingPhotos ? null : _removePhoto,
+          ),
+        ],
+      ],
+    ),
+  );
 
   Widget _review(ProfessionalCatalog? catalog, Widget references) {
     final valid = catalog != null && _referencesValid(catalog, _reviewedDraft);
@@ -480,10 +597,21 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
           widget.initial == null
               ? 'Vérifie avant publication'
               : 'Vérifie tes modifications',
-          subtitle: 'Voici ce qui sera visible, même sans compte Foundi.',
+          subtitle: _selectedPhotos.isEmpty
+              ? 'Voici ce qui sera visible, même sans compte Foundi.'
+              : 'Le texte sera public. Tes photos seront visibles par toi et les professionnels autorisés.',
           bottomSpacing: 16,
         ),
         RequestPreview(_preview),
+        if (_selectedPhotos.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          const Text(
+            'Photos de la demande',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          LocalRequestPhotos(photos: _selectedPhotos),
+        ],
         const SizedBox(height: 12),
         const Text(
           requestPrivacy,
@@ -496,6 +624,8 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
             'Une sélection n’est plus disponible. Modifie ta demande avant de continuer.',
           ),
         AuthNotice(error),
+        if (busy && _selectedPhotos.isNotEmpty)
+          const Text('Envoi des photos et publication…'),
         FilledButton(
           key: const ValueKey('publishRequest'),
           onPressed: busy || !valid ? null : _publish,

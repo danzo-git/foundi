@@ -41,6 +41,7 @@ class FakeRequests implements RequestRepository {
       status: 'published',
       createdAt: DateTime(2026, 10, 29),
       budget: draft.budget,
+      photoIds: draft.photoIds,
     );
     items.insert(0, request);
     changes.add(null);

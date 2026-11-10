@@ -6,9 +6,11 @@ class RequestDraft {
     required this.title,
     required this.description,
     this.budget,
+    this.photoIds = const [],
   });
   final String categoryId, specialtyId, zoneId, title, description;
   final int? budget;
+  final List<String> photoIds;
   Map<String, dynamic> toMap() => {
     'categoryId': categoryId,
     'specialtyId': specialtyId,
@@ -16,6 +18,7 @@ class RequestDraft {
     'title': title.trim(),
     'description': description.trim(),
     'budget': budget,
+    if (photoIds.isNotEmpty) 'photoIds': photoIds,
   };
   static int? parseBudget(String text) {
     final value = text.trim().replaceAll(RegExp(r'[ \u00a0\u202f]'), '');
@@ -47,6 +50,7 @@ class FoundiRequest {
     this.categoryId = '',
     this.specialtyId = '',
     this.zoneId = '',
+    this.photoIds = const [],
   });
   final String categoryId, specialtyId, zoneId;
   final String id,
@@ -62,6 +66,7 @@ class FoundiRequest {
   final String? retainedProposalId, retainedProfessionalName;
   final DateTime? createdAt;
   final int? budget;
+  final List<String> photoIds;
   String get category => [
     categoryLabel,
     if (specialtyLabel.isNotEmpty) specialtyLabel,
@@ -99,6 +104,9 @@ class FoundiRequest {
               )
             : null,
         budget: (data['budget'] as num?)?.toInt(),
+        photoIds:
+            (data['photoIds'] as List?)?.whereType<String>().take(3).toList() ??
+            const [],
       );
 }
 

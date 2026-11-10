@@ -1,6 +1,7 @@
 const { OtpError, requireUid } = require('./auth-validation');
 
 const { activeZones } = require('./catalog-service');
+const { photoIds: validatePhotoIds } = require('./request-photo-service');
 
 const fail = (code, message) => { throw new OtpError(code, message); };
 
@@ -69,7 +70,7 @@ function requestInput(input) {
 
 }
 
-function createRequestService({ store, auth, clock = () => Date.now() }) {
+function createRequestService({ store, auth, photos, clock = () => Date.now() }) {
 
   async function publish(uid, requestId, input) {
 
@@ -93,6 +94,7 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
       if (existing) return { id: requestId, ...existing };
 
       const value = requestInput(input);
+      const photoIds = input.photoIds === undefined ? [] : validatePhotoIds(input.photoIds);
 
       const publicPath = `requests/${requestId}`;
 
@@ -136,10 +138,15 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
       const quota = await tx.get(quotaPath);
       const now = clock();
       const createdAtMs = checkPublicationLimit(quota, now);
+      if (photoIds.length) {
+        if (!photos) fail('failed-precondition', 'Les photos sont indisponibles.');
+        await photos.link(tx, uid, requestId, photoIds, now);
+      }
 
       const published = { ...value, categoryLabel: category.label, specialtyLabel: specialty?.label || '',
 
-        zoneLabel: labels.join(' › '), status: 'published', createdAt: now };
+        zoneLabel: labels.join(' › '), status: 'published', createdAt: now,
+        ...(photoIds.length ? { photoIds } : {}) };
 
       tx.set(publicPath, published);
 
@@ -207,6 +214,9 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
       }
 
       const saved = { ...existing, ...changed, status: value ? 'published' : target, updatedAt: Math.max(clock(), (existing.updatedAt ?? existing.createdAt) + 1) };
+      if (action === 'delete' && existing.photoIds?.length && photos) {
+        await photos.scheduleDelete(tx, uid, requestId, existing.photoIds);
+      }
 
       tx.set(path, saved);
       for (const {id, ...conversation} of conversations) {
@@ -217,6 +227,7 @@ function createRequestService({ store, auth, clock = () => Date.now() }) {
       }
 
       const publicFields = ['title','description','categoryId','categoryLabel','specialtyId','specialtyLabel','zoneId','zoneLabel','budget','status','createdAt','updatedAt'];
+      if (saved.photoIds?.length && action !== 'delete') publicFields.push('photoIds');
       tx.set(`requests/${requestId}`, Object.fromEntries(publicFields.map(key => [key, saved[key]])));
 
       return { id: requestId, ...saved };

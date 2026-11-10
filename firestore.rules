@@ -89,6 +89,9 @@ service cloud.firestore {
       allow write: if false;
     }
     match /requestOwnership/{id} { allow read, write: if false; }
+    match /requestPhotoDrafts/{id} { allow read, write: if false; }
+    match /requestPhotoFiles/{id} { allow read, write: if false; }
+    match /requestPhotoLimits/{id} { allow read, write: if false; }
     match /proposals/{id} {
       function party() { return request.auth != null && (resource.data.professionalUid == request.auth.uid || resource.data.clientUid == request.auth.uid); }
       allow get: if party();

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../../auth/presentation/auth_widgets.dart';
 import '../../navigation/presentation/space_widgets.dart';
 import '../domain/request_repository.dart';
+import '../domain/request_photo_repository.dart';
+import 'request_photos.dart';
 
 const requestPrivacy =
     'Le texte est visible publiquement. Évite les numéros de téléphone, e-mails et adresses exactes.';
@@ -907,11 +909,13 @@ class RequestDetailView extends StatefulWidget {
     required this.id,
     required this.onBack,
     this.actionsBuilder,
+    this.canReadPhotos = true,
   });
   final Widget Function(FoundiRequest)? actionsBuilder;
   final RequestRepository repository;
   final String id;
   final VoidCallback onBack;
+  final bool canReadPhotos;
   @override
   State<RequestDetailView> createState() => _RequestDetailViewState();
 }
@@ -950,14 +954,28 @@ class _RequestDetailViewState extends State<RequestDetailView> {
           if (!s.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
+          final request = s.requireData!;
+          final repository = widget.repository;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              RequestContent(s.requireData!),
+              RequestContent(request),
+              if (request.photoIds.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                PublishedRequestPhotos(
+                  requestId: request.id,
+                  photoIds: request.photoIds,
+                  repository:
+                      widget.canReadPhotos &&
+                          repository is RequestPhotoRepository
+                      ? repository as RequestPhotoRepository
+                      : null,
+                ),
+              ],
               if (widget.actionsBuilder != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 24),
-                  child: widget.actionsBuilder!(s.requireData!),
+                  child: widget.actionsBuilder!(request),
                 ),
               const SizedBox(height: 24),
               const RequestNotice(
@@ -1027,6 +1045,7 @@ class _GuestRequestsState extends State<GuestRequests> {
                           key: ValueKey(_detail),
                           repository: widget.repository,
                           id: _detail!,
+                          canReadPhotos: false,
                           onBack: () => setState(() => _detail = null),
                         ),
                     ],

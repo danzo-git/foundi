@@ -9,10 +9,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../domain/request_repository.dart';
+import '../domain/request_photo_repository.dart';
+import 'firebase_request_photo_repository.dart';
 
 class FirebaseRequestRepository
     implements
         RequestRepository,
+        RequestPhotoRepository,
         RequestManagementRepository,
         OpportunityRepository,
         ExplorerRepository,
@@ -29,6 +32,19 @@ class FirebaseRequestRepository
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
   final String? attachmentEndpointBase;
+  late final _photos = FirebaseRequestPhotoRepository(
+    _functions,
+    endpointBase: attachmentEndpointBase,
+  );
+  @override
+  Future<bool> uploadRequestPhoto(String requestId, LocalRequestPhoto photo) =>
+      _photos.uploadRequestPhoto(requestId, photo);
+  @override
+  Future<void> discardRequestPhotos(String requestId, List<String> photoIds) =>
+      _photos.discardRequestPhotos(requestId, photoIds);
+  @override
+  Future<Uint8List> readRequestPhoto(String requestId, String photoId) =>
+      _photos.readRequestPhoto(requestId, photoId);
   late final RichConversationRepository _rich =
       FirebaseRichConversationRepository(
         _functions,

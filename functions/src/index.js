@@ -50,6 +50,7 @@ const store = {
     conversationsForRequest: async (id) => (await transaction.get(getFirestore().collection('conversations').where('requestId', '==', id))).docs.map(d => ({ id: d.id, ...d.data() })),
 
     set: (path, value) => transaction.set(getFirestore().doc(path), value),
+    delete: (path) => transaction.delete(getFirestore().doc(path)),
 
   })),
 
@@ -250,8 +251,52 @@ exports.updateProfessionalCatalog = onCall(proOptions, r => handle(() => catalog
 
 
 const { createRequestService } = require('./request-service');
+const { createRequestPhotoService } = require('./request-photo-service');
 
-const requests = createRequestService({ store, auth: getAuth() });
+const requestPhotos = createRequestPhotoService({
+  auth: getAuth(),
+  store: {
+    ...store,
+    expiredRequestPhotos: async (now, size) =>
+      (await getFirestore().collection('requestPhotoFiles')
+        .where('deleteAt', '<=', now).orderBy('deleteAt').limit(size).get())
+        .docs.map((doc) => doc.ref.path),
+  },
+  files: {
+    async save(path, bytes, sha256) {
+      const file = getStorage().bucket().file(path);
+      try {
+        await file.save(bytes, {
+          resumable: false, contentType: 'image/webp', timeout: 60000,
+          preconditionOpts: { ifGenerationMatch: 0 },
+          metadata: { cacheControl: 'private, no-store', metadata: { sha256 } },
+        });
+      } catch (error) {
+        if (Number(error.code) !== 412) throw error;
+      }
+      const [metadata] = await file.getMetadata();
+      if (metadata.metadata?.firebaseStorageDownloadTokens || metadata.metadata?.sha256 !== sha256 ||
+          metadata.contentType !== 'image/webp' || Number(metadata.size) !== bytes.length) {
+        throw new OtpError('failed-precondition', 'Photo indisponible.');
+      }
+      return String(metadata.generation);
+    },
+    async read(path, generation) {
+      const file = getStorage().bucket().file(path, { generation });
+      const [metadata] = await file.getMetadata();
+      if (metadata.metadata?.firebaseStorageDownloadTokens || metadata.contentType !== 'image/webp') {
+        throw new OtpError('not-found', 'Cette photo est indisponible.');
+      }
+      return (await file.download())[0];
+    },
+    remove: (path) => getStorage().bucket().file(path).delete({ ignoreNotFound: true }),
+  },
+});
+const requestPhotoOptions = {
+  region: 'europe-west1', maxInstances: 3, concurrency: 1,
+  timeoutSeconds: 120, memory: '512MiB',
+};
+const requests = createRequestService({ store, auth: getAuth(), photos: requestPhotos });
 
 exports.publishRequest = onCall({ region: 'europe-west1', maxInstances: 3, timeoutSeconds: 60 },
 
@@ -328,7 +373,7 @@ const attachments=createAttachmentService({auth:getAuth(),store:{...store,
 const attachmentOptions={region:'europe-west1',maxInstances:3,concurrency:2,timeoutSeconds:120,memory:'512MiB'};
 exports.prepareConversationAttachment=onCall(attachmentOptions,r=>handle(()=>attachments.prepare(r.auth?.uid,r.data)));
 exports.cancelConversationAttachment=onCall(attachmentOptions,r=>handle(()=>attachments.cancel(r.auth?.uid,r.data?.conversationId,r.data?.messageId)));
-async function attachmentHttp(req,res,operation){
+async function authenticatedMediaHttp(req,res,operation){
   res.set('Cache-Control','private, no-store');res.set('X-Content-Type-Options','nosniff');
   try{
     const token=/^Bearer (\S+)$/.exec(req.get('authorization')||'');
@@ -338,21 +383,44 @@ async function attachmentHttp(req,res,operation){
   }catch(e){
     const codes={'unauthenticated':401,'permission-denied':403,'invalid-argument':400,'not-found':404,'already-exists':409,'failed-precondition':409,'resource-exhausted':429};
     const known=e instanceof OtpError;const code=known?e.code:'unavailable';
-    if(!known)logger.warn('Attachment operation unavailable.',{code:String(e.code||'internal')});
+    if(!known)logger.warn('Media operation unavailable.',{code:String(e.code||'internal')});
     if(!res.headersSent)res.status(codes[code]||503).json({error:{code,message:known?e.message:'Fichier indisponible. Réessaie plus tard.'}});
   }
 }
-exports.uploadConversationAttachment=onRequest({...attachmentOptions,cors:true},(req,res)=>attachmentHttp(req,res,async uid=>{
+exports.uploadConversationAttachment=onRequest({...attachmentOptions,cors:true},(req,res)=>authenticatedMediaHttp(req,res,async uid=>{
   if(req.method!=='POST')throw new OtpError('invalid-argument','Méthode invalide.');
   const result=await attachments.upload(uid,req.get('x-conversation-id'),req.get('x-message-id'),req.rawBody);
   res.status(result.state==='ready'?200:202).json(result);
 }));
-exports.readConversationAttachment=onRequest({...attachmentOptions,cors:true},(req,res)=>attachmentHttp(req,res,async uid=>{
+exports.readConversationAttachment=onRequest({...attachmentOptions,cors:true},(req,res)=>authenticatedMediaHttp(req,res,async uid=>{
   if(req.method!=='GET')throw new OtpError('invalid-argument','Méthode invalide.');
   const file=await attachments.read(uid,req.query.conversationId,req.query.messageId);
   res.set('Content-Type',file.contentType);res.set('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.originalName)}`);res.status(200).send(file.bytes);
 }));
 exports.cleanupConversationAttachments=onSchedule({...attachmentOptions,schedule:'every 24 hours'},()=>attachments.cleanup());
+
+exports.uploadRequestPhoto = onRequest({ ...requestPhotoOptions, cors: true }, (req, res) =>
+  authenticatedMediaHttp(req, res, async (uid) => {
+    if (req.method !== 'POST') throw new OtpError('invalid-argument', 'Méthode invalide.');
+    const result = await requestPhotos.upload(
+      uid, req.query.requestId, req.query.photoId, req.rawBody, req.get('content-type'),
+    );
+    res.status(200).json(result);
+  }));
+exports.readRequestPhoto = onRequest({ ...requestPhotoOptions, cors: true }, (req, res) =>
+  authenticatedMediaHttp(req, res, async (uid) => {
+    if (req.method !== 'GET') throw new OtpError('invalid-argument', 'Méthode invalide.');
+    const bytes = await requestPhotos.read(uid, req.query.requestId, req.query.photoId);
+    res.set('Content-Type', 'image/webp').status(200).send(bytes);
+  }));
+exports.discardRequestPhotos = onCall(requestPhotoOptions, (r) =>
+  handle(() => requestPhotos.discard(r.auth?.uid, r.data?.requestId, r.data?.photoIds)));
+exports.cleanupRequestPhotos = onSchedule({
+  ...requestPhotoOptions, concurrency: 1, maxInstances: 1, timeoutSeconds: 540, schedule: 'every 60 minutes',
+}, async () => {
+  const result = await requestPhotos.cleanup();
+  if (result.failed) logger.warn('Request photo cleanup deferred.', result);
+});
 
 // V9 observes durable server-owned events; business operations remain V8.1/V8.2.
 const {onDocumentCreated,onDocumentUpdated}=require('firebase-functions/v2/firestore');
