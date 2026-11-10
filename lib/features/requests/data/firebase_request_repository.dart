@@ -10,11 +10,14 @@ import 'package:cloud_functions/cloud_functions.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../domain/request_repository.dart';
 import '../domain/request_photo_repository.dart';
+import '../domain/request_interaction_repository.dart';
+import 'firebase_request_interaction_repository.dart';
 import 'firebase_request_photo_repository.dart';
 
 class FirebaseRequestRepository
     implements
         RequestRepository,
+        RequestInteractionSource,
         RequestPhotoRepository,
         RequestManagementRepository,
         OpportunityRepository,
@@ -31,6 +34,11 @@ class FirebaseRequestRepository
            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
+  @override
+  late final interactions = FirebaseRequestInteractionRepository(
+    _db,
+    _functions,
+  );
   final String? attachmentEndpointBase;
   late final _photos = FirebaseRequestPhotoRepository(
     _functions,

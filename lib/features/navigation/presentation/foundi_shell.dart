@@ -14,6 +14,8 @@ import 'settings_view.dart';
 import '../../requests/presentation/explorer_view.dart';
 import 'space_widgets.dart';
 import '../../requests/domain/request_repository.dart';
+import '../../requests/domain/request_interaction_repository.dart';
+import '../../requests/presentation/request_action_bar.dart';
 import '../../requests/presentation/request_composer.dart';
 import '../../requests/presentation/request_views.dart';
 import '../../notifications/presentation/notification_views.dart';
@@ -114,6 +116,20 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           _receivedReturn = 'mine';
           _receivedRequestId = target.id;
           _showRequests('receivedProposals');
+        case 'recommendation':
+          final repository = widget.requestRepository?.interactionRepository;
+          if (repository == null) {
+            _notificationUnavailable();
+            return;
+          }
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => ProfessionalShowcaseScreen.recommended(
+                loadRecommended: () =>
+                    repository.readRequestRecommendation(target.id),
+              ),
+            ),
+          );
         case 'opportunity':
           if (!widget.professional.approved ||
               widget.requestRepository == null) {
@@ -214,6 +230,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
   String get _landing => professionalSpace ? 'explore' : 'mine';
   String get _requestPage => _page ?? _landing;
   String _requestReturn = 'explore';
+  String _composeReturn = 'detail';
   String _receivedReturn = 'mine';
   String _publicationReturn = 'mine';
   bool _hasExplorer = false;
@@ -253,6 +270,50 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
     _requestReturn = from;
     _showRequests('detail');
   }
+
+  Widget? _proposalAction(
+    FoundiRequest request,
+    String from, {
+    bool compact = false,
+  }) {
+    final repository = _proposals;
+    if (repository == null) return null;
+    return ProposalAction(
+      key: ValueKey('action-${request.id}'),
+      repository: repository,
+      request: request,
+      approved: widget.professional.approved,
+      compact: compact,
+      ownRequest:
+          from == 'mine' || (from == 'detail' && _requestReturn == 'mine'),
+      emphasized: professionalSpace,
+      onCompose: () {
+        if (!widget.active || _requestPage != from) return;
+        if (from != 'detail') {
+          _requestId = request.id;
+          _requestReturn = from;
+        }
+        _proposalRequest = request;
+        _composeReturn = from;
+        _showRequests('proposal-compose');
+      },
+      onOpen: (id) {
+        if (widget.active && _requestPage == from) _openProposal(id, from);
+      },
+      onProfile:
+          widget.professional.status == ProfessionalStatus.none && compact
+          ? null
+          : _dossier,
+    );
+  }
+
+  Widget _requestActions(FoundiRequest request, String from) =>
+      RequestActionBar(
+        request: request,
+        uid: widget.user.id,
+        repository: widget.requestRepository!.interactionRepository!,
+        reply: _proposalAction(request, from, compact: true),
+      );
 
   void _publish() {
     if (professionalSpace) {
@@ -305,6 +366,10 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             repository: widget.requestRepository!,
             uid: widget.user.id,
             onOpen: (r) => _openRequest(r, 'mine'),
+            footerBuilder:
+                widget.requestRepository?.interactionRepository == null
+                ? null
+                : (r) => _requestActions(r, 'mine'),
             onPublish: professionalSpace ? null : _publish,
             showPublicationBanner: true,
             onProposals: _proposals == null
@@ -341,7 +406,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           'proposal-compose' => ProposalComposer(
             repository: _proposals!,
             request: _proposalRequest!,
-            onBack: () => _showRequests('detail'),
+            onBack: () => _showRequests(_composeReturn),
             onSent: () => _showRequests('sentProposals'),
           ),
           'sentProposals' => ProposalListView(
@@ -388,20 +453,12 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             key: ValueKey(_requestId),
             repository: widget.requestRepository!,
             id: _requestId!,
-            actionsBuilder: _proposals == null
+            actionsBuilder:
+                widget.requestRepository?.interactionRepository != null
+                ? (r) => _requestActions(r, 'detail')
+                : _proposals == null
                 ? null
-                : (r) => ProposalAction(
-                    key: ValueKey('action-${r.id}'),
-                    repository: _proposals!,
-                    request: r,
-                    approved: widget.professional.approved,
-                    onCompose: () {
-                      _proposalRequest = r;
-                      _showRequests('proposal-compose');
-                    },
-                    onOpen: (id) => _openProposal(id, 'detail'),
-                    onProfile: _dossier,
-                  ),
+                : (r) => _proposalAction(r, 'detail')!,
             onBack: () => _showRequests(_requestReturn),
           ),
           'account' => _accountBody(),
@@ -436,6 +493,10 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             onOpen: (r) => _openRequest(r, 'explore'),
             onPublish: _publish,
             onProfile: _activity,
+            footerBuilder:
+                widget.requestRepository?.interactionRepository == null
+                ? null
+                : (r) => _requestActions(r, 'explore'),
           ),
         ),
       if (_editing != null)

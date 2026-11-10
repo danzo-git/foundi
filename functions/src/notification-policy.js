@@ -18,6 +18,7 @@ const catalog = Object.freeze({
   'professional.more_info_requested': ['account', 'Dossier à compléter', 'Consulte le suivi de ton dossier professionnel.'],
   'professional.suspended': ['account', 'Statut professionnel mis à jour', 'Consulte le suivi de ton dossier professionnel.'],
   'proposal.created': ['proposals', 'Nouvelle proposition', 'Un professionnel a répondu à ta demande.'],
+  'request.recommended': ['proposals', 'Professionnel recommandé', 'Un professionnel vérifié a été recommandé pour ta demande.'],
   'proposal.retained': ['proposals', 'Proposition retenue', 'Le client a retenu ta proposition.'],
   'proposal.rejected': ['proposals', 'Proposition refusée', 'Le client a décliné ta proposition.'],
   'conversation.opened': ['messages', 'Discussion ouverte', 'Un client souhaite discuter de ta proposition.'],

@@ -13,13 +13,22 @@ import '../domain/professional_showcase.dart';
 class ProfessionalShowcaseScreen extends StatefulWidget {
   const ProfessionalShowcaseScreen({
     super.key,
-    required this.repository,
+    required ProfessionalShowcaseRepository this.repository,
     this.proposalId,
     this.businessName = '',
     this.onPersonal,
-  });
+  }) : loadRecommended = null;
 
-  final ProfessionalShowcaseRepository repository;
+  const ProfessionalShowcaseScreen.recommended({
+    super.key,
+    required Future<ProfessionalShowcase> Function() this.loadRecommended,
+  }) : repository = null,
+       proposalId = null,
+       businessName = '',
+       onPersonal = null;
+
+  final ProfessionalShowcaseRepository? repository;
+  final Future<ProfessionalShowcase> Function()? loadRecommended;
   final String? proposalId;
   final String businessName;
   final VoidCallback? onPersonal;
@@ -31,17 +40,18 @@ class ProfessionalShowcaseScreen extends StatefulWidget {
 
 class _ProfessionalShowcaseScreenState
     extends State<ProfessionalShowcaseScreen> {
-  bool get _own => widget.proposalId == null;
+  bool get _own => widget.proposalId == null && widget.loadRecommended == null;
   late Future<ProfessionalShowcase?> _profile = _load();
 
   Future<ProfessionalShowcase?> _load() =>
-      widget.repository.readShowcase(proposalId: widget.proposalId);
+      widget.loadRecommended?.call() ??
+      widget.repository!.readShowcase(proposalId: widget.proposalId);
 
   Future<void> _edit(ProfessionalShowcase? profile) async {
     final saved = await Navigator.of(context).push<ProfessionalShowcase>(
       MaterialPageRoute(
         builder: (_) => _ShowcaseEditor(
-          repository: widget.repository,
+          repository: widget.repository!,
           initial: profile ?? ProfessionalShowcase(name: widget.businessName),
           onPersonal: widget.onPersonal,
         ),

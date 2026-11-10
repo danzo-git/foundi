@@ -89,6 +89,19 @@ service cloud.firestore {
       allow write: if false;
     }
     match /requestOwnership/{id} { allow read, write: if false; }
+    match /requestEngagement/{id} {
+      function published() {
+        return get(/databases/$(database)/documents/requests/$(id)).data.status == 'published';
+      }
+      allow get: if published();
+      allow list, write: if false;
+      match /likes/{uid} {
+        allow get: if owner(uid) && published();
+        allow list, write: if false;
+      }
+    }
+    match /requestRecommendations/{id} { allow read, write: if false; }
+    match /requestInteractionLimits/{id} { allow read, write: if false; }
     match /requestPhotoDrafts/{id} { allow read, write: if false; }
     match /requestPhotoFiles/{id} { allow read, write: if false; }
     match /requestPhotoLimits/{id} { allow read, write: if false; }

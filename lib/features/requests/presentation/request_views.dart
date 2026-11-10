@@ -6,6 +6,8 @@ import '../../navigation/presentation/space_widgets.dart';
 import '../domain/request_repository.dart';
 import '../domain/request_photo_repository.dart';
 import 'request_photos.dart';
+import '../domain/request_interaction_repository.dart';
+import 'request_action_bar.dart';
 
 const requestPrivacy =
     'Le texte est visible publiquement. Évite les numéros de téléphone, e-mails et adresses exactes.';
@@ -324,71 +326,96 @@ class RequestCard extends StatelessWidget {
     this.onTap,
     this.showStatus = false,
     this.actions,
+    this.footer,
   });
   final FoundiRequest request;
   final VoidCallback? onTap;
   final bool showStatus;
   final Widget? actions;
+  final Widget? footer;
   @override
-  Widget build(BuildContext context) => FoundiPanel(
-    onTap: onTap,
-    padding: const EdgeInsets.all(17),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ?actions,
-            RequestTag(request.categoryLabel),
-            if (showStatus) RequestTag(request.statusLabel),
-          ],
-        ),
-        const SizedBox(height: 14),
-        Text(
-          request.title,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: FoundiUi.ink,
+  Widget build(BuildContext context) {
+    const padding = EdgeInsets.all(17);
+    final actionBar = footer;
+    if (actionBar == null) {
+      return FoundiPanel(onTap: onTap, padding: padding, child: _content());
+    }
+    return FoundiPanel(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: padding.copyWith(bottom: 8),
+              child: _content(),
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          request.budget == null
-              ? request.budgetLabel
-              : 'Budget : ${request.budgetLabel}',
-          style: const TextStyle(fontSize: 12, color: FoundiUi.muted),
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            const Icon(
-              Icons.location_on_outlined,
-              size: 17,
-              color: FoundiUi.green,
-            ),
-            const SizedBox(width: 5),
-            Expanded(
-              child: Text(
-                request.zoneLabel,
-                style: const TextStyle(fontSize: 12, color: FoundiUi.muted),
-              ),
-            ),
-            if (onTap != null)
-              const Icon(Icons.chevron_right, size: 18, color: FoundiUi.muted),
-          ],
-        ),
-        if (request.createdAt != null) ...[
-          const SizedBox(height: 10),
-          Text(
-            requestDate(request.createdAt!),
-            style: const TextStyle(fontSize: 11, color: FoundiUi.muted),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+            child: actionBar,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _content() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          ?actions,
+          RequestTag(request.categoryLabel),
+          if (showStatus) RequestTag(request.statusLabel),
+        ],
+      ),
+      const SizedBox(height: 14),
+      Text(
+        request.title,
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: FoundiUi.ink,
+        ),
+      ),
+      const SizedBox(height: 10),
+      Text(
+        request.budget == null
+            ? request.budgetLabel
+            : 'Budget : ${request.budgetLabel}',
+        style: const TextStyle(fontSize: 12, color: FoundiUi.muted),
+      ),
+      const SizedBox(height: 14),
+      Row(
+        children: [
+          const Icon(
+            Icons.location_on_outlined,
+            size: 17,
+            color: FoundiUi.green,
+          ),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              request.zoneLabel,
+              style: const TextStyle(fontSize: 12, color: FoundiUi.muted),
+            ),
+          ),
+          if (onTap != null)
+            const Icon(Icons.chevron_right, size: 18, color: FoundiUi.muted),
+        ],
+      ),
+      if (request.createdAt != null) ...[
+        const SizedBox(height: 10),
+        Text(
+          requestDate(request.createdAt!),
+          style: const TextStyle(fontSize: 11, color: FoundiUi.muted),
+        ),
       ],
-    ),
+    ],
   );
 }
 
@@ -408,6 +435,7 @@ class RequestListView extends StatefulWidget {
     this.onEdit,
     this.onProposals,
     this.onConversation,
+    this.footerBuilder,
   });
   final RequestRepository repository;
   final String? uid;
@@ -417,6 +445,7 @@ class RequestListView extends StatefulWidget {
   final ValueChanged<FoundiRequest> onOpen;
   final VoidCallback? onPublish;
   final bool showPublicationBanner;
+  final Widget Function(FoundiRequest)? footerBuilder;
   @override
   State<RequestListView> createState() => _RequestListViewState();
 }
@@ -639,6 +668,8 @@ class _RequestListViewState extends State<RequestListView> {
                 for (final request in requests) ...[
                   RequestCard(
                     request,
+                    key: ValueKey(request.id),
+                    footer: widget.footerBuilder?.call(request),
                     showStatus: personal,
                     actions:
                         personal &&
@@ -1012,6 +1043,11 @@ class GuestRequests extends StatefulWidget {
 
 class _GuestRequestsState extends State<GuestRequests> {
   String? _detail;
+  Widget _actions(FoundiRequest request) => RequestActionBar(
+    request: request,
+    repository: widget.repository.interactionRepository!,
+    onAuthenticate: widget.onAuthenticate,
+  );
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: _detail == null,
@@ -1038,6 +1074,10 @@ class _GuestRequestsState extends State<GuestRequests> {
                           catalog: widget.catalog,
                           onOpen: (r) => setState(() => _detail = r.id),
                           onPublish: widget.onAuthenticate,
+                          footerBuilder:
+                              widget.repository.interactionRepository == null
+                              ? null
+                              : _actions,
                         ),
                       ),
                       if (_detail != null)
@@ -1046,6 +1086,10 @@ class _GuestRequestsState extends State<GuestRequests> {
                           repository: widget.repository,
                           id: _detail!,
                           canReadPhotos: false,
+                          actionsBuilder:
+                              widget.repository.interactionRepository == null
+                              ? null
+                              : _actions,
                           onBack: () => setState(() => _detail = null),
                         ),
                     ],

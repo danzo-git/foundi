@@ -340,6 +340,30 @@ exports.proposalAccess=onCall({region:'europe-west1',maxInstances:3,timeoutSecon
 exports.sendProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.send(r.auth?.uid,r.data?.requestId,r.data?.proposal)));
 exports.proposalApproval=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.approval(r.auth?.uid,r.data?.proposalId)));
 
+const { createRequestInteractionService } = require('./request-interaction-service');
+const requestInteractions = createRequestInteractionService({
+  auth: getAuth(),
+  ownerForRequest: proposals.owner,
+  store: {
+    ...store,
+    get: async (path) => (await getFirestore().doc(path).get()).data(),
+    async approvedPage(cursor, size) {
+      let query = getFirestore().collection('professionalProfiles').where('status', '==', 'approved')
+        .orderBy('__name__').select('status', 'businessName', 'categoryIds', 'specialtyIds', 'zoneIds');
+      if (cursor) query = query.startAfter(getFirestore().doc(`professionalProfiles/${cursor}`));
+      return (await query.limit(size).get()).docs.map((doc) => ({ id: doc.id, profile: doc.data() }));
+    },
+  },
+});
+exports.setRequestLike = onCall(proOptions, (r) => handle(() =>
+  requestInteractions.setLike(r.auth?.uid, r.data?.requestId, r.data?.liked)));
+exports.searchRecommendationProfessionals = onCall(proOptions, (r) => handle(() =>
+  requestInteractions.search(r.auth?.uid, r.data?.requestId, r.data?.query, r.data?.cursor)));
+exports.recommendRequestProfessional = onCall(proOptions, (r) => handle(() =>
+  requestInteractions.recommend(r.auth?.uid, r.data?.requestId, r.data?.professionalId)));
+exports.readRequestRecommendation = onCall(proOptions, (r) => handle(() =>
+  requestInteractions.readRecommendation(r.auth?.uid, r.data?.recommendationId)));
+
 const {createConversationService}=require('./conversation-service');
 const conversations=createConversationService({store,auth:getAuth(),onSendTiming:entry=>logger.info('message_send_server_timing',entry)});
 exports.selectProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>conversations.select(r.auth?.uid,r.data)));
@@ -431,6 +455,8 @@ const notifications=createNotificationService({db:getFirestore(),auth:getAuth(),
 const eventOptions={region:'europe-west1',maxInstances:3,retry:true,timeoutSeconds:120};
 exports.notifyProfessionalDecision=onDocumentCreated({...eventOptions,document:'professionalAudit/{id}'},e=>e.data && notifications.professional(e.params.id,e.data.data()));
 exports.notifyProposalCreated=onDocumentCreated({...eventOptions,document:'proposals/{id}'},e=>e.data && notifications.proposal(e.params.id,e.data.data()));
+exports.notifyRequestRecommendation = onDocumentCreated({ ...eventOptions, document: 'requestRecommendations/{id}' },
+  (e) => e.data && notifications.recommendation(e.params.id, e.data.data()));
 exports.notifyProposalDecision=onDocumentCreated({...eventOptions,document:'userRequests/{uid}/items/{requestId}/decisions/{id}'},e=>e.data && notifications.decision(e.params.uid,e.params.requestId,e.params.id,e.data.data()));
 exports.notifyConversationOpened=onDocumentCreated({...eventOptions,document:'conversations/{id}'},e=>e.data && notifications.conversation(e.params.id,e.data.data()));
 exports.notifyMessageCreated=onDocumentCreated({...eventOptions,document:'conversations/{conversationId}/messages/{id}'},e=>e.data && notifications.message(e.params.conversationId,e.params.id,e.data.data()));

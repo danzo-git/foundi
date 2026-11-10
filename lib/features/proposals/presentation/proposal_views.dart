@@ -3,6 +3,7 @@ import '../../auth/domain/auth_repository.dart';
 import '../../auth/presentation/auth_widgets.dart';
 import '../../navigation/presentation/space_widgets.dart';
 import '../../requests/domain/request_repository.dart';
+import '../../requests/presentation/request_action_bar.dart';
 import '../../requests/presentation/request_views.dart';
 import '../domain/proposal_repository.dart';
 
@@ -15,6 +16,9 @@ class ProposalAction extends StatefulWidget {
     required this.onCompose,
     required this.onOpen,
     this.onProfile,
+    this.compact = false,
+    this.ownRequest = false,
+    this.emphasized = false,
   });
   final ProposalRepository repository;
   final FoundiRequest request;
@@ -22,27 +26,108 @@ class ProposalAction extends StatefulWidget {
   final VoidCallback onCompose;
   final ValueChanged<String> onOpen;
   final VoidCallback? onProfile;
+  final bool compact, ownRequest, emphasized;
   @override
   State<ProposalAction> createState() => _ProposalActionState();
 }
 
 class _ProposalActionState extends State<ProposalAction> {
-  late Future<ProposalAccess>? _access = widget.approved
+  late Future<ProposalAccess>? _access = widget.approved && !widget.compact
       ? widget.repository.proposalAccess(widget.request.id)
       : null;
+  bool _checking = false;
   @override
   void didUpdateWidget(ProposalAction oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.approved != widget.approved ||
+    if (oldWidget.compact != widget.compact ||
+        oldWidget.approved != widget.approved ||
         oldWidget.request.id != widget.request.id) {
-      _access = widget.approved
+      _access = widget.approved && !widget.compact
           ? widget.repository.proposalAccess(widget.request.id)
           : null;
     }
   }
 
+  Future<void> _reply() async {
+    if (_checking) return;
+    if (!widget.approved) {
+      final onProfile = widget.onProfile;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Accès professionnel requis'),
+          content: const Text(
+            'Seuls les professionnels dont le dossier est approuvé peuvent envoyer une proposition.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Fermer'),
+            ),
+            if (onProfile != null)
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  onProfile();
+                },
+                child: const Text('Voir la vérification professionnelle'),
+              ),
+          ],
+        ),
+      );
+      return;
+    }
+    setState(() => _checking = true);
+    final id = widget.request.id;
+    try {
+      final access = await widget.repository.proposalAccess(id);
+      if (!mounted ||
+          widget.request.id != id ||
+          !widget.approved ||
+          widget.request.status != 'published' ||
+          widget.ownRequest) {
+        return;
+      }
+      if (access.proposalId case final proposalId?) {
+        widget.onOpen(proposalId);
+      } else if (access.canSend) {
+        widget.onCompose();
+      } else {
+        requestActionMessage(
+          context,
+          'Cette demande ne reçoit plus de propositions.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        requestActionMessage(
+          context,
+          error is AuthFailure
+              ? error.message
+              : 'Impossible de vérifier le droit d’envoi. Réessaie.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.compact) {
+      return RequestActionButton(
+        icon: Icons.chat_bubble_outline,
+        label: 'Répondre',
+        busy: _checking,
+        emphasized: widget.emphasized && widget.approved,
+        onPressed:
+            _checking ||
+                widget.ownRequest ||
+                widget.request.status != 'published'
+            ? null
+            : _reply,
+      );
+    }
     if (!widget.approved) {
       return Column(
         children: [

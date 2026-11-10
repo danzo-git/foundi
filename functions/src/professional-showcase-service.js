@@ -65,7 +65,7 @@ async function preparePhoto(input) {
   fail('invalid-argument', 'Cette image ne peut pas être traitée. Choisis une autre photo.');
 }
 
-function projection(profile) {
+function showcaseProjection(profile) {
   if (!profile) return null;
   const photo = (item) => item ? { id: item.id, base64: item.base64 } : null;
   return {
@@ -107,7 +107,7 @@ function createProfessionalShowcaseService({ store, auth }) {
         if (proposalId !== undefined) return null;
         fail('permission-denied', 'Ton dossier professionnel doit être approuvé.');
       }
-      return projection(await tx.get(pathFor(professionalUid)));
+      return showcaseProjection(await tx.get(pathFor(professionalUid)));
     });
   }
 
@@ -144,12 +144,12 @@ function createProfessionalShowcaseService({ store, auth }) {
     // Check approval and revision before doing CPU-intensive work, then recheck
     // in the commit transaction in case either changed during image processing.
     const previous = await store.transaction(current);
-    if (previous?.mutation === mutation) return projection(previous);
+    if (previous?.mutation === mutation) return showcaseProjection(previous);
     const prepared = [];
     for (const item of [portrait, cover, ...gallery]) prepared.push(await preparePhoto(item));
     return store.transaction(async (tx) => {
       const previous = await current(tx);
-      if (previous?.mutation === mutation) return projection(previous);
+      if (previous?.mutation === mutation) return showcaseProjection(previous);
       const existing = [previous?.portrait, previous?.cover, ...(previous?.gallery ?? [])];
       const photos = prepared.map((item) => {
         if (!item || item.base64) return item;
@@ -166,11 +166,11 @@ function createProfessionalShowcaseService({ store, auth }) {
         gallery: photos.slice(2),
       };
       tx.set(path, next);
-      return projection(next);
+      return showcaseProjection(next);
     });
   }
 
   return { read, save };
 }
 
-module.exports = { createProfessionalShowcaseService };
+module.exports = { createProfessionalShowcaseService, showcaseProjection };

@@ -16,6 +16,7 @@ class ExplorerView extends StatefulWidget {
     this.professionalSpace = false,
     this.initialForMe = false,
     this.onProfile,
+    this.footerBuilder,
   });
   final RequestRepository repository;
   final ProfessionalRepository? catalog;
@@ -24,6 +25,7 @@ class ExplorerView extends StatefulWidget {
   final ValueChanged<FoundiRequest> onOpen;
   final VoidCallback onPublish;
   final VoidCallback? onProfile;
+  final Widget Function(FoundiRequest)? footerBuilder;
   @override
   State<ExplorerView> createState() => _ExplorerViewState();
 }
@@ -474,7 +476,12 @@ class _ExplorerViewState extends State<ExplorerView> {
         for (final request in _items)
           Padding(
             padding: const EdgeInsets.only(bottom: 14),
-            child: RequestCard(request, onTap: () => widget.onOpen(request)),
+            child: RequestCard(
+              request,
+              key: ValueKey(request.id),
+              onTap: () => widget.onOpen(request),
+              footer: widget.footerBuilder?.call(request),
+            ),
           ),
         if (!_busy && _cursor != null)
           OutlinedButton(

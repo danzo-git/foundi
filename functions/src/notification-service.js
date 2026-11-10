@@ -48,6 +48,21 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     return emit({eventId:`proposals/${id}/created`,type:'proposal.created',recipientUid:value.clientUid,
       actorUid:value.professionalUid,resourceType:'requestProposals',resourceId:value.requestId,requestId:value.requestId,proposalId:id,occurredAt:value.createdAt});
   }
+  async function availableRecommendation(uid, value) {
+    if (value?.ownerUid !== uid || ![value.requestId, value.professionalUid].every(internalId)) return false;
+    const [own, professional] = await Promise.all([
+      doc(`userRequests/${uid}/items/${value.requestId}`).get(),
+      doc(`professionalProfiles/${value.professionalUid}`).get(),
+    ]);
+    return own.exists && own.data().status !== 'deleted' && professional.data()?.status === 'approved' &&
+      await active(value.professionalUid);
+  }
+  async function recommendation(id, value) {
+    if (!await availableRecommendation(value.ownerUid, value)) return false;
+    return emit({ eventId: `requestRecommendations/${id}`, type: 'request.recommended', recipientUid: value.ownerUid,
+      actorUid: value.actorUid, resourceType: 'recommendation', resourceId: id, requestId: value.requestId,
+      occurredAt: value.createdAt });
+  }
   async function decision(uid, requestId, id, audit) {
     const type = decisionType(audit);
     if (!type || audit.actorUid !== uid || audit.requestId !== requestId) return;
@@ -233,6 +248,11 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       case 'requestProposals':
         if(!(await doc(`userRequests/${uid}/items/${resourceId}`).get()).exists)return unavailable();
         break;
+      case 'recommendation': {
+        const value = (await doc(`requestRecommendations/${resourceId}`).get()).data();
+        if (!await availableRecommendation(uid, value)) return unavailable();
+        break;
+      }
       case 'participatedRequest': {
         // A closed public request cannot be read. Use the recipient's private proposal/history.
         const p=await db.collection('proposals').where('requestId','==',resourceId).where('professionalUid','==',uid).limit(1).get();
@@ -347,6 +367,6 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       logger.info('notification_drain',{jobs:jobs.size,pushes:pushes.size});
     }
   }
-  return {emit,professional,proposal,decision,conversation,message,read,markConversationRead,excludeLegacyMessage,enqueueRequest,processJob,register,unregister,resolve,deliver,drain};
+  return {emit,professional,proposal,recommendation,decision,conversation,message,read,markConversationRead,excludeLegacyMessage,enqueueRequest,processJob,register,unregister,resolve,deliver,drain};
 }
 module.exports={createNotificationService,PAGE};

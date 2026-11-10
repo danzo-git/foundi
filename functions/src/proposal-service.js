@@ -67,6 +67,6 @@ function createProposalService({store,auth,clock=()=>Date.now()}) {
     const profile=await store.get(`professionalProfiles/${saved.professionalUid}`);
     return {approved:profile?.status==='approved'};
   }
-  return {access,send,approval};
+  return {access,send,approval,owner};
 }
 module.exports={createProposalService,proposalId};
