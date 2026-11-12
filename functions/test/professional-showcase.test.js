@@ -66,7 +66,7 @@ test('only the approved owner and the receiving client can read the explicit pro
     fullName: 'private-name', status: 'approved',
   });
   assert.equal(saved.revision, 1);
-  assert.deepEqual(await f.read('client', 'offer'), saved);
+  assert.deepEqual(await f.read('client', 'offer'), {...saved,professionalId:'pro',requestActivity:null});
   assert.equal(JSON.stringify(saved).includes('private'), false);
   assert.equal(JSON.stringify(f.documents.get(showcasePath)).includes('private'), false);
   assert.equal(f.documents.has('professionalProfiles/other/showcase/profile'), false);
@@ -74,6 +74,19 @@ test('only the approved owner and the receiving client can read the explicit pro
   assert.equal(await f.read('client', 'offer'), null);
   await assert.rejects(f.read('pro'), fails('permission-denied'));
   await assert.rejects(f.save('pro', { ...initial, revision: 1 }), fails('permission-denied'));
+});
+
+test('client profile reads derive locked request activity from the approved dossier, not showcase text', async()=>{
+  const f=fixture();
+  f.documents.get('professionalProfiles/pro').categoryIds=['auto'];
+  f.documents.get('professionalProfiles/pro').specialtyIds=['import'];
+  f.documents.set('referenceData/professionalOnboarding',{enabled:true,categories:[{id:'auto',label:'Automobile',specialties:[{id:'import',label:'Importation'}]}]});
+  const saved=await f.save('pro',{...initial,trade:'Métier libre',requestActivity:{categoryId:'forged'}});
+  const profile=await f.read('client','offer');
+  assert.deepEqual(profile.requestActivity,{categoryId:'auto',categoryLabel:'Automobile',specialtyId:'import',specialtyLabel:'Importation'});
+  assert.equal(profile.professionalId,'pro');
+  assert.equal(saved.requestActivity,undefined);
+  assert.equal(f.documents.get(showcasePath).requestActivity,undefined);
 });
 
 test('photos are sanitized, retained by reference, and replaced atomically with idempotent retries', async () => {
@@ -101,7 +114,7 @@ test('photos are sanitized, retained by reference, and replaced atomically with 
   assert.deepEqual(success.portrait, saved.portrait);
   assert.equal(success.cover, null);
   assert.deepEqual(success.gallery, []);
-  assert.deepEqual(await f.read('client', 'offer'), success);
+  assert.deepEqual(await f.read('client', 'offer'), {...success,professionalId:'pro',requestActivity:null});
 });
 
 test('invalid contacts, over-cap galleries and malformed or foreign photos do not change the record', async () => {

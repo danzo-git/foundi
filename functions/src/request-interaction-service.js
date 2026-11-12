@@ -2,6 +2,7 @@ const { OtpError, requireUid } = require('./auth-validation');
 const { key, internalId } = require('./notification-policy');
 const { activeZones } = require('./catalog-service');
 const { showcaseProjection } = require('./professional-showcase-service');
+const { directRequestActivity } = require('./direct-request-context');
 
 const dayMs = 86400000;
 const pageSize = 24;
@@ -76,7 +77,7 @@ function createRequestInteractionService({ store, auth, ownerForRequest, clock =
       const next = likeCount + (liked ? 1 : -1);
       if (!Number.isSafeInteger(next) || next < 0) fail('failed-precondition', 'Compteur indisponible.');
       tx.set(budget.path, budget.value);
-      tx.set(aggregate, { likeCount: next });
+      tx.set(aggregate, { ...count, likeCount: next });
       if (liked) tx.set(marker, { createdAt: now });
       else tx.delete(marker);
       return { liked, likeCount: next };
@@ -167,13 +168,13 @@ function createRequestInteractionService({ store, auth, ownerForRequest, clock =
       if (!own || own.status === 'deleted' || !entry || !await isActive(rec.professionalUid)) {
         fail('not-found', 'Ce professionnel n’est plus disponible.');
       }
-      return showcaseProjection(showcase) ?? {
+      return { ...(showcaseProjection(showcase) ?? {
         revision: 0, name: entry.name, trade: [...entry.categories, ...entry.specialties].join(' · '),
         area: entry.zones.join(' · '), bio: '', gallery: [],
-      };
+      }), professionalId: rec.professionalUid, requestActivity: directRequestActivity(profile, catalog) };
     });
   }
   return { setLike, search, recommend, readRecommendation };
 }
 
-module.exports = { createRequestInteractionService };
+module.exports = { createRequestInteractionService, directoryEntry };

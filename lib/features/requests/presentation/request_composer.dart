@@ -20,9 +20,13 @@ class RequestComposer extends StatefulWidget {
     this.active = true,
     this.onPublished,
     this.initial,
+    this.accountName,
+    this.directTarget,
     this.photoPicker = pickRequestPhotos,
   });
   final FoundiRequest? initial;
+  final String? accountName;
+  final DirectProfessionalTarget? directTarget;
   final RequestRepository repository;
   final ProfessionalRepository catalog;
   final VoidCallback onExit, onMine;
@@ -52,10 +56,36 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
   late FoundiRequest _preview;
   FoundiRequest? _published;
   final _selectedPhotos = <LocalRequestPhoto>[];
+  final _retainedPhotoIds = <String>[];
   final _attemptedPhotos = <String>{};
   final _discardedPhotos = <String>{};
   String? _photoError;
   bool _pickingPhotos = false;
+
+  int get _photoCount => _retainedPhotoIds.length + _selectedPhotos.length;
+  String get _privacy => _direct
+      ? 'Demande privée : seuls toi et le professionnel choisi pouvez consulter son contenu et ses photos. Tes coordonnées restent privées.'
+      : requestPrivacy;
+  bool get _direct =>
+      widget.directTarget != null || widget.initial?.isDirect == true;
+  bool get _photosPublic =>
+      !_direct &&
+      _photoCount > 0 &&
+      (_retainedPhotoIds.isEmpty || widget.initial?.photosPublic == true);
+
+  Widget _retainedPhotos({bool removable = false}) => PublishedRequestPhotos(
+    requestId: _id,
+    photoIds: _retainedPhotoIds,
+    readPhoto: _photoRepository?.readRequestPhoto,
+    onRemove: removable && !_pickingPhotos
+        ? (id) => setState(() => _retainedPhotoIds.remove(id))
+        : null,
+  );
+
+  String? get _accountAuthorName {
+    final name = widget.accountName?.trim() ?? '';
+    return name.isEmpty ? null : name;
+  }
 
   RequestPhotoRepository? get _photoRepository {
     final repository = widget.repository;
@@ -73,7 +103,7 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
     FocusScope.of(context).unfocus();
     try {
       final selections = await widget.photoPicker();
-      if (selections.length + _selectedPhotos.length > maxRequestPhotos) {
+      if (selections.length + _photoCount > maxRequestPhotos) {
         throw const AuthFailure(
           'Tu peux ajouter jusqu’à trois photos. Retire-en une ou réduis ta sélection.',
         );
@@ -107,11 +137,16 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
   void initState() {
     super.initState();
     final request = widget.initial;
-    if (request == null) return;
+    if (request == null) {
+      _categoryId = widget.directTarget?.activity?.categoryId;
+      _specialtyId = widget.directTarget?.activity?.specialtyId;
+      return;
+    }
     _manualTitle = true;
     _title.text = request.title;
     _description.text = request.description;
     _budget.text = request.budget?.toString() ?? '';
+    _retainedPhotoIds.addAll(request.photoIds);
     _categoryId = request.categoryId;
     _specialtyId = request.specialtyId.isEmpty ? null : request.specialtyId;
     _zoneId = request.zoneId;
@@ -159,6 +194,8 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
         (_title.text.trim() != initial.title ||
             _description.text.trim() != initial.description ||
             _budget.text.trim() != (initial.budget?.toString() ?? '') ||
+            _selectedPhotos.isNotEmpty ||
+            _retainedPhotoIds.length != initial.photoIds.length ||
             _categoryId != initial.categoryId ||
             (_specialtyId ?? '') != initial.specialtyId ||
             _zoneId != initial.zoneId);
@@ -201,6 +238,17 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
     if (_stage == _Stage.review) {
       _returnToInput();
     } else if (await confirmDiscard() && mounted && widget.active) {
+      if (widget.initial != null && _attemptedPhotos.isNotEmpty) {
+        try {
+          await _photoRepository?.discardRequestPhotos(
+            _id,
+            _attemptedPhotos.toList(),
+          );
+        } catch (_) {
+          // Staged uploads also expire through server cleanup.
+        }
+        if (!mounted || !widget.active) return;
+      }
       widget.onExit();
     }
   }
@@ -212,6 +260,14 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
 
   ProfessionalCategory? _category(ProfessionalCatalog catalog, String? id) =>
       catalog.categories.where((item) => item.id == id).firstOrNull;
+
+  bool _directActivityValid(ProfessionalCatalog catalog) {
+    final category = _category(catalog, _categoryId);
+    return category != null &&
+        (category.specialties.isEmpty
+            ? (_specialtyId ?? '').isEmpty
+            : category.specialties.any((s) => s.id == _specialtyId));
+  }
 
   bool _referencesValid(ProfessionalCatalog catalog, RequestDraft draft) {
     final category = _category(catalog, draft.categoryId);
@@ -237,7 +293,12 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
           .trim(),
       description: _description.text.trim(),
       budget: RequestDraft.parseBudget(_budget.text),
-      photoIds: List.unmodifiable(_selectedPhotos.map((photo) => photo.id)),
+      photoIds: List.unmodifiable([
+        ..._retainedPhotoIds,
+        ..._selectedPhotos.map((photo) => photo.id),
+      ]),
+      photosPublic: _photosPublic,
+      replacePhotos: widget.initial != null && _photoRepository != null,
     );
     if (!_referencesValid(catalog, draft)) return;
     final specialty = category!.specialties
@@ -256,6 +317,12 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
       status: 'published',
       createdAt: null,
       budget: draft.budget,
+      authorPublicName: _direct ? null : _accountAuthorName,
+      requesterName: _direct ? _accountAuthorName : null,
+      directProfessionalId:
+          widget.directTarget?.id ?? widget.initial?.directProfessionalId,
+      directProfessionalName:
+          widget.directTarget?.name ?? widget.initial?.directProfessionalName,
     );
     setState(() {
       _stage = _Stage.review;
@@ -266,7 +333,7 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
   Future<void> _publish() async {
     final ok = await perform(() async {
       final repository = _photoRepository;
-      if (widget.initial == null && repository != null) {
+      if (repository != null) {
         if (_discardedPhotos.isNotEmpty) {
           await repository.discardRequestPhotos(_id, _discardedPhotos.toList());
           _discardedPhotos.clear();
@@ -283,7 +350,14 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
         }
       }
       _published = widget.initial == null
-          ? await widget.repository.publish(_id, _reviewedDraft)
+          ? widget.directTarget != null
+                ? await (widget.repository as DirectRequestRepository)
+                      .publishDirect(
+                        _id,
+                        widget.directTarget!.id,
+                        _reviewedDraft,
+                      )
+                : await widget.repository.publish(_id, _reviewedDraft)
           : await (widget.repository as RequestManagementRepository).manage(
               _id,
               'edit',
@@ -332,14 +406,49 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
                 switch (_stage) {
                   _Stage.input =>
                     widget.initial == null
-                        ? 'Nouvelle demande'
+                        ? _direct
+                              ? 'Demande directe'
+                              : 'Nouvelle demande'
                         : 'Modifier ma demande',
                   _Stage.review => 'Vérification',
-                  _Stage.success => 'Demande publiée',
+                  _Stage.success =>
+                    _direct ? 'Demande envoyée' : 'Demande publiée',
                 },
                 onBack: _back,
                 bottomSpacing: 10,
               ),
+              if (_direct) ...[
+                FoundiPanel(
+                  color: FoundiUi.soft,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Pour ${widget.directTarget?.name ?? widget.initial?.directProfessionalName ?? 'le professionnel choisi'}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 6),
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.lock_outline,
+                            size: 15,
+                            color: FoundiUi.green,
+                          ),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Visible uniquement par vous deux',
+                              style: TextStyle(fontSize: 12, height: 1.45),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               switch (_stage) {
                 _Stage.input => _input(catalog, references),
                 _Stage.review => _review(catalog, references),
@@ -399,9 +508,11 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
             maxLines: 6,
             maxLength: 3000,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Description du besoin *',
-              hintText: 'Ex. Installer un climatiseur dans une chambre',
+              hintText: _direct
+                  ? 'Décris ton besoin à ce professionnel'
+                  : 'Ex. Installer un climatiseur dans une chambre',
               alignLabelWithHint: true,
               floatingLabelBehavior: FloatingLabelBehavior.always,
             ),
@@ -414,7 +525,7 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
             },
           ),
           const SizedBox(height: 8),
-          if (widget.initial == null && _photoRepository != null)
+          if (_photoRepository != null)
             _photoInput()
           else if (widget.initial?.photoIds.isNotEmpty == true)
             const Padding(
@@ -423,6 +534,7 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
                 'Les photos publiées restent associées à ta demande.',
               ),
             ),
+          const SizedBox(height: 8),
           references,
           if (catalog != null) ...[
             if ((_categoryId != null && category == null) ||
@@ -436,24 +548,57 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
               const AuthNotice(
                 'Une sélection n’est plus disponible. Choisis une référence active.',
               ),
-            _choice(
-              'Catégorie *',
-              'requestCategory',
-              catalog.categories,
-              _categoryId,
-              (id) => setState(() {
-                _categoryId = id;
-                _specialtyId = null;
-              }),
-            ),
-            if (category != null && category.specialties.isNotEmpty)
-              _choice(
-                'Spécialité *',
-                'requestSpecialty',
-                category.specialties,
-                _specialtyId,
-                (id) => setState(() => _specialtyId = id),
+            if (_direct) ...[
+              _lockedActivityField(
+                'Catégorie',
+                'directRequestCategory',
+                category?.label ??
+                    widget.directTarget?.activity?.categoryLabel ??
+                    'Indisponible',
               ),
+              _lockedActivityField(
+                'Spécialité',
+                'directRequestSpecialty',
+                category?.specialties
+                        .where((s) => s.id == _specialtyId)
+                        .firstOrNull
+                        ?.label ??
+                    widget.directTarget?.activity?.specialtyLabel ??
+                    (category?.specialties.isEmpty == true
+                        ? 'Sans spécialité'
+                        : 'Indisponible'),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'Activité reprise du profil professionnel.',
+                  style: TextStyle(color: FoundiUi.muted, fontSize: 12),
+                ),
+              ),
+              if (!_directActivityValid(catalog))
+                const AuthNotice(
+                  'L’activité est indisponible. Rouvre le profil du professionnel pour actualiser ses informations.',
+                ),
+            ] else ...[
+              _choice(
+                'Catégorie *',
+                'requestCategory',
+                catalog.categories,
+                _categoryId,
+                (id) => setState(() {
+                  _categoryId = id;
+                  _specialtyId = null;
+                }),
+              ),
+              if (category != null && category.specialties.isNotEmpty)
+                _choice(
+                  'Spécialité *',
+                  'requestSpecialty',
+                  category.specialties,
+                  _specialtyId,
+                  (id) => setState(() => _specialtyId = id),
+                ),
+            ],
             _choice(
               'Zone de recherche *',
               'requestZone',
@@ -539,14 +684,39 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
               ),
             ),
           const SizedBox(height: 12),
-          const Text(
-            requestPrivacy,
-            style: TextStyle(color: FoundiUi.muted, fontSize: 12, height: 1.45),
+          if (!_direct)
+            Text(
+              _privacy,
+              style: TextStyle(
+                color: FoundiUi.muted,
+                fontSize: 12,
+                height: 1.45,
+              ),
+            ),
+          const SizedBox(height: 14),
+          const Row(
+            children: [
+              Icon(Icons.person_outline, size: 18, color: FoundiUi.muted),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Ton nom de compte sera utilisé automatiquement.',
+                  style: TextStyle(
+                    color: FoundiUi.muted,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           FilledButton(
             key: const ValueKey('verifyRequest'),
-            onPressed: catalog == null || _pickingPhotos
+            onPressed:
+                catalog == null ||
+                    _pickingPhotos ||
+                    (_direct && !_directActivityValid(catalog))
                 ? null
                 : () => _verify(catalog),
             child: const Text('Vérifier ma demande'),
@@ -563,24 +733,28 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
       children: [
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
-          onPressed:
-              _pickingPhotos || _selectedPhotos.length >= maxRequestPhotos
+          onPressed: _pickingPhotos || _photoCount >= maxRequestPhotos
               ? null
               : _pickPhotos,
           icon: const Icon(Icons.add_photo_alternate_outlined),
           label: const Text('Ajouter des photos (facultatif)'),
         ),
         Text(
-          'Jusqu’à 3 photos · ${_selectedPhotos.length}/3',
+          'Jusqu’à 3 photos · $_photoCount/3',
           style: const TextStyle(color: FoundiUi.muted, fontSize: 12),
         ),
         if (_pickingPhotos)
           const LinearProgressIndicator(semanticsLabel: 'Lecture des photos'),
         AuthNotice(_photoError),
+        if (_retainedPhotoIds.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _retainedPhotos(removable: true),
+        ],
         if (_selectedPhotos.isNotEmpty) ...[
           const SizedBox(height: 8),
           LocalRequestPhotos(
             photos: _selectedPhotos,
+            numberOffset: _retainedPhotoIds.length,
             onRemove: _pickingPhotos ? null : _removePhoto,
           ),
         ],
@@ -595,14 +769,26 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
       children: [
         RequestHeading(
           widget.initial == null
-              ? 'Vérifie avant publication'
+              ? _direct
+                    ? 'Vérifie avant envoi'
+                    : 'Vérifie avant publication'
               : 'Vérifie tes modifications',
-          subtitle: _selectedPhotos.isEmpty
+          subtitle: _direct
+              ? 'Vérifie le destinataire et le contenu avant l’envoi.'
+              : _photoCount == 0
               ? 'Voici ce qui sera visible, même sans compte Foundi.'
-              : 'Le texte sera public. Tes photos seront visibles par toi et les professionnels autorisés.',
+              : _photosPublic
+              ? 'Ton nom de compte, ton texte et tes photos seront visibles dans Explorer, même sans compte Foundi.'
+              : 'Le texte sera public. Les photos sont réservées à toi et aux professionnels approuvés.',
           bottomSpacing: 16,
         ),
+        Text('Auteur affiché · ${_preview.authorDisplayName}'),
+        const SizedBox(height: 8),
         RequestPreview(_preview),
+        if (_retainedPhotoIds.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _retainedPhotos(),
+        ],
         if (_selectedPhotos.isNotEmpty) ...[
           const SizedBox(height: 12),
           const Text(
@@ -610,13 +796,26 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
-          LocalRequestPhotos(photos: _selectedPhotos),
+          LocalRequestPhotos(
+            photos: _selectedPhotos,
+            numberOffset: _retainedPhotoIds.length,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Retire toute photo qui montre des coordonnées, une adresse exacte ou un document personnel.',
+            style: TextStyle(color: FoundiUi.muted, fontSize: 12, height: 1.45),
+          ),
         ],
         const SizedBox(height: 12),
-        const Text(
-          requestPrivacy,
-          style: TextStyle(color: FoundiUi.muted, fontSize: 12, height: 1.45),
-        ),
+        if (!_direct)
+          Text(
+            _privacy,
+            style: const TextStyle(
+              color: FoundiUi.muted,
+              fontSize: 12,
+              height: 1.45,
+            ),
+          ),
         const SizedBox(height: 12),
         references,
         if (catalog != null && !valid)
@@ -625,7 +824,11 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
           ),
         AuthNotice(error),
         if (busy && _selectedPhotos.isNotEmpty)
-          const Text('Envoi des photos et publication…'),
+          Text(
+            _direct
+                ? 'Envoi privé de la demande et des photos…'
+                : 'Envoi des photos et publication…',
+          ),
         FilledButton(
           key: const ValueKey('publishRequest'),
           onPressed: busy || !valid ? null : _publish,
@@ -635,9 +838,13 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Text(
-                  widget.initial == null
+                  widget.initial != null
+                      ? 'Enregistrer les modifications'
+                      : _direct
+                      ? 'Envoyer ma demande privée'
+                      : _selectedPhotos.isEmpty
                       ? 'Publier ma demande'
-                      : 'Enregistrer les modifications',
+                      : 'Publier ma demande et mes photos',
                 ),
         ),
         const SizedBox(height: 6),
@@ -662,8 +869,8 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
         ),
       ),
       const SizedBox(height: 22),
-      const Text(
-        'C’est publié !',
+      Text(
+        _direct ? 'C’est envoyé !' : 'C’est publié !',
         textAlign: TextAlign.center,
         style: TextStyle(
           fontSize: 28,
@@ -672,8 +879,10 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
         ),
       ),
       const SizedBox(height: 12),
-      const Text(
-        'Ta demande est désormais visible dans le fil public Foundi.',
+      Text(
+        _direct
+            ? 'Ta demande a été envoyée uniquement au professionnel choisi. Tu peux la retrouver dans Mes demandes.'
+            : 'Ta demande est désormais visible dans le fil public Foundi.',
         textAlign: TextAlign.center,
         style: TextStyle(color: FoundiUi.muted, height: 1.6),
       ),
@@ -691,6 +900,27 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
       ),
     ],
   );
+
+  Widget _lockedActivityField(String label, String key, String value) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: TextFormField(
+          key: ValueKey(key),
+          initialValue: value.isEmpty ? 'Sans spécialité' : value,
+          enabled: false,
+          style: const TextStyle(color: FoundiUi.muted),
+          decoration: InputDecoration(
+            labelText: label,
+            filled: true,
+            fillColor: const Color(0xFFF0F2F1),
+            suffixIcon: const Icon(
+              Icons.lock_outline,
+              size: 17,
+              color: FoundiUi.muted,
+            ),
+          ),
+        ),
+      );
 
   Widget _choice(
     String label,

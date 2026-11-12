@@ -140,8 +140,7 @@ class _DashboardState extends State<Dashboard> {
                               ),
                             ),
                           ),
-                        )
-                        ,
+                        ),
                     SizedBox(
                       width: 185,
                       child: Card(

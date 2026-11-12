@@ -110,6 +110,33 @@ test('V9 durable events, privacy, dedup, pagination, tokens, push preferences, r
   now+=60001;await service.deliver(key('another-match','b'));assert.equal(sent.length,before+1);
   await service.unregister('b','phone1');assert.equal((await db.doc('users/b/devices/phone1').get()).exists,false);
   await assert.rejects(device('unverified','phone','unverified-token-123456789'),e=>e.code==='permission-denied');
+
+  // A recommendation can reach a verified professional outside the matching filters.
+  const recommendation = { ownerUid: 'a', actorUid: 'c', professionalUid: 'outside', requestId: 'request', createdAt: now };
+  const recPath = 'requestRecommendations/notify-pro';
+  const proNote = key(recPath, 'outside');
+  await db.doc(recPath).set(recommendation);
+  const proToken = 'token-outside-professional-1234567890';
+  await device('outside', 'phone', proToken);
+  await Promise.all([service.recommendation('notify-pro', recommendation), service.recommendation('notify-pro', recommendation)]);
+  assert.equal((await all('outside')).filter(n => n.type === 'request.recommendation_received').length, 1);
+  assert.equal((await all('a')).filter(n => n.type === 'request.recommended').length, 1);
+  const sentBeforeRecommendation = sent.length;
+  await Promise.all([service.deliver(proNote), service.deliver(proNote)]);
+  assert.equal(sent.length, sentBeforeRecommendation + 1);
+  assert.equal(sent.at(-1).token, proToken);
+  assert.deepEqual(sent.at(-1).data, { notificationId: proNote, recipientUid: 'outside' });
+  assert.deepEqual(await service.resolve('outside', proNote), { resourceType: 'opportunity', resourceId: 'request' });
+
+  const mutedPath = 'requestRecommendations/notify-pro-muted';
+  await db.doc(mutedPath).set(recommendation);
+  await db.doc('users/outside/notificationPreferences/push').set({ proposals: false });
+  await service.recommendation('notify-pro-muted', recommendation);
+  const mutedNote = key(mutedPath, 'outside');
+  await service.deliver(mutedNote);
+  assert.equal((await db.doc(`notificationOutbox/${mutedNote}`).get()).data().reason, 'preference');
+  assert.equal(sent.length, sentBeforeRecommendation + 1);
+  assert.equal((await all('outside')).filter(n => n.type === 'request.recommendation_received').length, 2);
  }finally{await deleteApp(app);}
 });
 

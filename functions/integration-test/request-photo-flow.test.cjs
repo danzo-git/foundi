@@ -25,9 +25,10 @@ const host = (address) => {
 const bytes = readFileSync(path.join(__dirname, '../test/fixtures/photo.png'));
 const mime = 'image/png';
 
-test('Firebase emulators enforce private photo transport, atomic publication and lifecycle', { skip: !enabled, timeout: 160000 }, async () => {
+test('Firebase emulators enforce private storage and explicit public photo publication', { skip: !enabled, timeout: 160000 }, async () => {
   const stamp = Date.now();
   const requestId = `RequestPhotoEmulator${stamp}`;
+  const publicId = requestId + 'Public';
   const ids = ['1', '2', '3', '4'].map((n) => n.repeat(32));
   const admin = adminApp({ projectId, storageBucket: projectId + '.appspot.com' }, `request-photo-${stamp}`);
   const auth = adminAuth(admin);
@@ -86,6 +87,7 @@ test('Firebase emulators enforce private photo transport, atomic publication and
       title: 'Réparer un meuble', description: 'Réparer un meuble dans la chambre.', budget: null };
     const upload = (user, id, type, payload, rid) => request('uploadRequestPhoto', user, id, type, payload, rid);
     const read = (user, id) => request('readRequestPhoto', user, id);
+    const readPublic = (id, rid) => request('readPublicRequestPhoto', null, id, undefined, undefined, rid);
     assert.equal((await upload(null, ids[0])).status, 401);
     assert.equal((await upload(unverified, ids[0])).status, 403);
     assert.equal((await upload(owner, ids[0], mime, bytes, '../' + requestId)).status, 400);
@@ -115,6 +117,7 @@ test('Firebase emulators enforce private photo transport, atomic publication and
     assert.deepEqual(saved, replay);
     assert.equal(saved.status, 'published');
     assert.deepEqual(saved.photoIds, [ids[0]]);
+    assert.equal((await readPublic(ids[0], requestId)).status, 404);
     assert.equal((await db.doc(`requestPublicationLimits/${owner.uid}`).get()).data().createdAtMs.length, 1);
     assert.equal((await read(null, ids[0])).status, 401);
     assert.equal((await read(other, ids[0])).status, 403);
@@ -125,6 +128,19 @@ test('Firebase emulators enforce private photo transport, atomic publication and
     assert.equal(Buffer.from(await response.arrayBuffer()).toString('ascii', 8, 12), 'WEBP');
     const edited = await owner.call('manageRequest', { requestId, action: 'edit', request: draft, expectedRevision: saved.createdAt });
     assert.deepEqual(edited.photoIds, [ids[0]]);
+    assert.equal((await upload(owner, ids[1])).status, 200);
+    assert.equal((await read(pro, ids[1])).status, 404);
+    const replace = { requestId, action: 'edit', expectedRevision: edited.updatedAt,
+      request: { ...draft, photoIds: [ids[1]], photosPublic: false } };
+    const replaced = await owner.call('manageRequest', replace);
+    assert.deepEqual(await owner.call('manageRequest', replace), replaced);
+    assert.equal(replaced.createdAt, saved.createdAt);
+    assert.deepEqual(replaced.photoIds, [ids[1]]);
+    assert.equal((await read(owner, ids[0])).status, 404);
+    assert.equal((await read(pro, ids[1])).status, 200);
+    assert.equal((await readPublic(ids[1], requestId)).status, 404);
+    assert.equal((await db.doc(`userRequests/${owner.uid}/items/${requestId}`).get()).data().status, 'published');
+    assert.equal((await db.doc(`requestPublicationLimits/${owner.uid}`).get()).data().createdAtMs.length, 1);
     await owner.call('manageRequest', { requestId, action: 'delete' });
     assert.equal((await read(owner, ids[0])).status, 404);
     assert.equal((await db.doc(fileDoc).get()).data().state, 'discarded');
@@ -141,11 +157,33 @@ test('Firebase emulators enforce private photo transport, atomic publication and
       },
       files: { remove: (p) => bucket.file(p).delete({ ignoreNotFound: true }) },
     });
-    assert.deepEqual(await cleanup.cleanup(), { removed: 1, failed: 0 });
+    assert.deepEqual(await cleanup.cleanup(), { removed: 2, failed: 0 });
     assert.equal((await bucket.file(object).exists())[0], false);
     assert.equal((await db.doc(fileDoc).get()).exists, false);
+
+    cleanupDocs.push(`requests/${publicId}`, `requestOwnership/${publicId}`,
+      `requestPhotoDrafts/${publicId}`, `requestPhotoFiles/${publicId}_${ids[0]}`,
+      `userRequests/${other.uid}/items/${publicId}`, `requestPublicationLimits/${other.uid}`);
+    assert.equal((await upload(other, ids[0], mime, bytes, publicId)).status, 200);
+    assert.equal((await readPublic(ids[0], publicId)).status, 404);
+    const publicRequest = await other.call('publishRequest', {
+      requestId: publicId, request: { ...draft, photoIds: [ids[0]], photosPublic: true },
+    });
+    assert.equal(publicRequest.photosPublic, true);
+    const publicResponse = await readPublic(ids[0], publicId);
+    assert.equal(publicResponse.status, 200);
+    assert.equal(publicResponse.headers.get('cache-control'), 'private, no-store');
+    assert.equal(Buffer.from(await publicResponse.arrayBuffer()).toString('ascii', 8, 12), 'WEBP');
+    assert.equal((await readPublic(ids[1], publicId)).status, 404);
+    const publicFile = (await db.doc(`requestPhotoFiles/${publicId}_${ids[0]}`).get()).data();
+    const publicObject = `requestPhotos/${other.uid}/${publicId}/${ids[0]}/${publicFile.objectId}.webp`;
+    await assert.rejects(getDownloadURL(ref(owner.storage, publicObject)), { code: 'storage/unauthorized' });
+    await other.call('manageRequest', { requestId: publicId, action: 'close' });
+    assert.equal((await readPublic(ids[0], publicId)).status, 404);
   } finally {
-    for (const uid of users) await bucket.deleteFiles({ prefix: `requestPhotos/${uid}/${requestId}/` });
+    for (const uid of users) {
+      for (const id of [requestId, publicId]) await bucket.deleteFiles({ prefix: `requestPhotos/${uid}/${id}/` });
+    }
     await Promise.all(cleanupDocs.map((p) => db.doc(p).delete()));
     if (previousCatalog.exists) await catalog.set(previousCatalog.data());
     else await catalog.delete();

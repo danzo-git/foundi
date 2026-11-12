@@ -11,6 +11,18 @@ class FirebaseRequestInteractionRepository
   final FirebaseFunctions _functions;
 
   @override
+  Stream<RequestEngagement> watchRequestEngagement(String requestId) async* {
+    final counts = await _call('readRequestEngagement', {
+      'requestId': requestId,
+    });
+    yield RequestEngagement.fromMap(counts);
+    yield* _db
+        .doc('requestEngagement/$requestId')
+        .snapshots()
+        .map((snapshot) => RequestEngagement.fromMap(snapshot.data() ?? {}));
+  }
+
+  @override
   Stream<int> watchRequestLikes(String requestId) => _db
       .doc('requestEngagement/$requestId')
       .snapshots()

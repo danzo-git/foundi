@@ -728,7 +728,7 @@ void main() {
         expect(find.text('Vérification en attente'), findsOneWidget);
         await capture(t, 7);
         expect(p.profile.approved, false);
-        await tap(t, find.text('Suivre mon dossier  ›'));
+        await tap(t, find.text('Suivre mon dossier'));
         expect(find.text('Vérification en attente'), findsOneWidget);
         await tap(t, find.text('Retour à mon espace'));
         expect(find.byKey(const ValueKey('nav-0')), findsOneWidget);
@@ -751,14 +751,22 @@ void main() {
         await tap(t, find.text('Changer d’espace  ›'));
         await tap(t, find.text('Espace professionnel'));
         await tap(t, find.byKey(const ValueKey('confirmSpace')));
-        expect(find.text('Espace Professionnel'), findsOneWidget);
+        expect(find.text('Mon compte'), findsOneWidget);
+        expect(
+          t.widget<Text>(find.byKey(const ValueKey('currentSpace'))).data,
+          'Professionnel',
+        );
         expect(a.modeWrites, 0);
         expect(p.accessChecks, 0);
         expect(a.user!.profile.preferredMode, 'client');
-        await tap(t, find.byKey(const ValueKey('spaceSelector')));
+        await tap(t, find.text('Changer d’espace  ›'));
         await tap(t, find.text('Espace client'));
         await tap(t, find.byKey(const ValueKey('confirmSpace')));
-        expect(find.text('Espace Client'), findsOneWidget);
+        expect(find.text('Mon compte'), findsOneWidget);
+        expect(
+          t.widget<Text>(find.byKey(const ValueKey('currentSpace'))).data,
+          'Client',
+        );
         expect(a.user!.id, 'uid');
         expect(a.signOuts, 0);
       });

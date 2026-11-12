@@ -44,6 +44,45 @@ function setup() {
 
 const fails = code => error => error.code === code;
 
+test('public request names are account-derived and ignore legacy client names on creation and edit', async () => {
+  for (const name of ['Autre personne', '', 'contact@example.test', 'Client 07 01 02 03 04', 'a'.repeat(101), { name: 'Awa' }]) {
+    const c = setup();
+    c.data.set('users/client', { fullName: 'Awa Kouassi', email: 'private@example.test', phone:'+2250700000000' });
+    c.account.displayName='Autre nom Auth';
+    const created = await c.publish('client', id, { ...request, authorPublicName: name, requesterName:'Usurpation' });
+    assert.equal(created.authorPublicName,'Awa Kouassi');
+    assert.equal(c.data.get('requests/' + id).authorPublicName,'Awa Kouassi');
+    const edited = await c.manage('client', id, 'edit', { ...request, authorPublicName: name }, created.createdAt);
+    assert.equal(edited.authorPublicName,'Awa Kouassi');
+    assert.equal(edited.requesterName,undefined);
+    assert.deepEqual(c.data.get('requests/' + id).authorPublicName,c.data.get('userRequests/client/items/' + id).authorPublicName);
+    assert.ok(!JSON.stringify(c.data.get('requests/' + id)).includes('private@example.test'));
+    assert.ok(!JSON.stringify(c.data.get('requests/' + id)).includes('+2250700000000'));
+    assert.equal(c.data.get('requestPublicationLimits/client').createdAtMs.length,1);
+  }
+});
+
+test('public author falls back only to a safe Auth name, otherwise stays neutral',async()=>{
+  const c=setup();c.account.displayName='Élodie N’Guessan';
+  const created=await c.publish('client',id,{...request,authorPublicName:'Faux nom'});
+  assert.equal(created.authorPublicName,'Élodie N’Guessan');
+  const missing=setup();missing.account.email='contact@example.test';missing.account.phoneNumber='+2250700000000';
+  const neutral=await missing.publish('client',id,{...request,authorPublicName:'Faux nom'});
+  assert.equal(neutral.authorPublicName,undefined);
+});
+
+test('editing an older request replaces its per-request alias with the account name without changing quota or ID',async()=>{
+  const c=setup();
+  const created=await c.publish('client',id,request);
+  c.data.get('requests/'+id).authorPublicName='Ancien alias';
+  c.data.get('userRequests/client/items/'+id).authorPublicName='Ancien alias';
+  c.data.set('users/client',{fullName:'Awa Kouassi'});
+  const edited=await c.manage('client',id,'edit',{...request,authorPublicName:'Autre personne'},created.createdAt);
+  assert.equal(edited.authorPublicName,'Awa Kouassi');assert.equal(edited.id,id);assert.equal(edited.status,'published');
+  assert.deepEqual(c.data.get('requestPublicationLimits/client').createdAtMs,[created.createdAt]);
+  await assert.rejects(c.manage('client',id,'edit',{...request,requesterName:'Usurpation'},edited.updatedAt),fails('invalid-argument'));
+});
+
 test('active verified accounts can publish; public projection excludes UID, contacts and injected fields', async () => {
 
   const c = setup();

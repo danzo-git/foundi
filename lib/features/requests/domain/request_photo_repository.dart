@@ -3,6 +3,13 @@ import 'dart:typed_data';
 const maxRequestPhotos = 3;
 const maxRequestPhotoBytes = 5 * 1024 * 1024;
 
+typedef RequestPhotoReader =
+    Future<Uint8List> Function(String requestId, String photoId);
+
+abstract interface class PublicRequestPhotoRepository {
+  Future<Uint8List> readPublicRequestPhoto(String requestId, String photoId);
+}
+
 class LocalRequestPhoto {
   const LocalRequestPhoto({
     required this.id,

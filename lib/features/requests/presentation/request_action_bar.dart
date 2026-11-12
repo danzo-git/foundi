@@ -78,6 +78,7 @@ class RequestActionBar extends StatefulWidget {
     this.uid,
     this.onAuthenticate,
     this.reply,
+    this.onViewRespondents,
   });
 
   final FoundiRequest request;
@@ -85,6 +86,7 @@ class RequestActionBar extends StatefulWidget {
   final String? uid;
   final VoidCallback? onAuthenticate;
   final Widget? reply;
+  final VoidCallback? onViewRespondents;
 
   @override
   State<RequestActionBar> createState() => _RequestActionBarState();
@@ -92,7 +94,7 @@ class RequestActionBar extends StatefulWidget {
 
 class _RequestActionBarState extends State<RequestActionBar> {
   StreamSubscription<bool>? _mine;
-  Stream<int>? _counts;
+  Stream<RequestEngagement>? _counts;
   bool? _liked, _pending;
   int _generation = 0;
 
@@ -105,7 +107,7 @@ class _RequestActionBarState extends State<RequestActionBar> {
     _counts = null;
     _liked = _pending = null;
     if (!_open) return;
-    _counts = widget.repository.watchRequestLikes(widget.request.id);
+    _counts = widget.repository.watchRequestEngagement(widget.request.id);
     final uid = widget.uid;
     if (uid != null) {
       _mine = widget.repository
@@ -193,7 +195,7 @@ class _RequestActionBarState extends State<RequestActionBar> {
         context,
         alreadyRecommended
             ? 'Tu as déjà recommandé ce professionnel pour cette demande.'
-            : 'Recommandation enregistrée.',
+            : 'Recommandation enregistrée. L’auteur et le professionnel recevront une notification Foundi.',
       );
     }
   }
@@ -201,45 +203,78 @@ class _RequestActionBarState extends State<RequestActionBar> {
   @override
   Widget build(BuildContext context) {
     final liked = _pending ?? _liked ?? false;
-    return Column(
-      children: [
-        const Divider(height: 12, thickness: 1, color: FoundiUi.line),
-        Row(
-          children: [
-            Expanded(
-              child: StreamBuilder<int>(
-                stream: _counts,
-                builder: (context, count) => RequestActionButton(
+    return StreamBuilder<RequestEngagement>(
+      stream: _counts,
+      builder: (context, count) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_open)
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              children: [
+                if (count.data?.recommendationCount case final int total)
+                  Text(
+                    '$total ${total == 1 ? 'recommandation' : 'recommandations'}',
+                    style: const TextStyle(color: FoundiUi.muted, fontSize: 12),
+                  ),
+                if (count.data?.responseCount case final int total)
+                  TextButton(
+                    onPressed: widget.onViewRespondents,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      foregroundColor: FoundiUi.ink,
+                      disabledForegroundColor: FoundiUi.muted,
+                    ),
+                    child: Text(
+                      '$total ${total == 1 ? 'réponse' : 'réponses'}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                if (count.hasError)
+                  TextButton.icon(
+                    onPressed: () => setState(_subscribe),
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Réessayer les compteurs'),
+                  ),
+              ],
+            ),
+          const Divider(height: 12, thickness: 1, color: FoundiUi.line),
+          Row(
+            children: [
+              Expanded(
+                child: RequestActionButton(
                   icon: liked ? Icons.favorite : Icons.favorite_border,
                   label: count.data == null
                       ? 'J’aime'
-                      : 'J’aime · ${count.data}',
+                      : 'J’aime · ${count.data!.likeCount}',
                   selected: liked,
                   onPressed: _open && _pending == null ? _like : null,
                 ),
               ),
-            ),
-            const _ActionDivider(),
-            Expanded(
-              child: RequestActionButton(
-                icon: Icons.send_outlined,
-                label: 'Recommander',
-                onPressed: _open ? _recommend : null,
+              const _ActionDivider(),
+              Expanded(
+                child: RequestActionButton(
+                  icon: Icons.send_outlined,
+                  label: 'Recommander',
+                  onPressed: _open ? _recommend : null,
+                ),
               ),
-            ),
-            const _ActionDivider(),
-            Expanded(
-              child:
-                  widget.reply ??
-                  RequestActionButton(
-                    icon: Icons.chat_bubble_outline,
-                    label: 'Répondre',
-                    onPressed: _open ? widget.onAuthenticate : null,
-                  ),
-            ),
-          ],
-        ),
-      ],
+              const _ActionDivider(),
+              Expanded(
+                child:
+                    widget.reply ??
+                    RequestActionButton(
+                      icon: Icons.chat_bubble_outline,
+                      label: 'Répondre',
+                      onPressed: _open ? widget.onAuthenticate : null,
+                    ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

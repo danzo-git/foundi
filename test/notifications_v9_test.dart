@@ -266,12 +266,19 @@ void main() {
         NotificationSettings(repository: r, uid: 'u', permission: permission),
       );
       expect(permission.asked, 0);
+      expect(
+        find.text('Propositions, décisions et recommandations'),
+        findsOneWidget,
+      );
       await t.tap(find.byType(Switch).first);
       await t.pumpAndSettle();
       expect(r.preferences['messages'], false);
       expect(find.text('Impossible d’enregistrer. Réessaie.'), findsNothing);
       await capture(t, '04-preferences');
-      await t.ensureVisible(find.text('Activer les alertes sur ce téléphone'));
+      await t.scrollUntilVisible(
+        find.text('Activer les alertes sur ce téléphone'),
+        150,
+      );
       await t.pumpAndSettle();
       await t.tap(find.text('Activer les alertes sur ce téléphone'));
       await t.pumpAndSettle();

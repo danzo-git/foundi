@@ -36,7 +36,11 @@ function createOpportunityService({ store, auth }) {
       const ownIds = await store.owned(uid, rows.map(r => r.id));
       for (const row of rows) {
         if (row.status !== 'published' || ownIds.has(row.id)) continue;
-        items.push({ id: row.id, ...Object.fromEntries(fields.map(k => [k, row[k]])) });
+        items.push({ id: row.id, ...Object.fromEntries(fields.map(k => [k, row[k]])),
+          ...(row.authorPublicName ? { authorPublicName: row.authorPublicName } : {}),
+          ...(row.photosPublic === true && row.photoIds?.length
+            ? { photosPublic: true, photoIds: row.photoIds } : {}),
+        });
       }
       if (rows.length < size) { unit++; after = null; }
       else { const last = rows.at(-1); after = { createdAt: last.createdAt, id: last.id }; }

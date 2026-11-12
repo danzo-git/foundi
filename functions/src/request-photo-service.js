@@ -86,11 +86,14 @@ function createRequestPhotoService({ store, auth, files, clock = Date.now, newId
     const reserved = await store.transaction(async (tx) => {
       const now = clock();
       const own = await tx.get(ownPath(uid, requestId));
+      const published = await tx.get(`requests/${requestId}`) || await tx.get(`directRequests/${requestId}`);
       if (own) {
-        if (own.status === 'deleted') fail('permission-denied', 'Cette demande a été supprimée.');
-        return { published: true };
+        if (own.status !== 'published' || published?.status !== 'published' || own.createdAt !== published.createdAt) {
+          fail('failed-precondition', 'Cette demande n’est plus modifiable.');
+        }
+        if (own.photoIds?.includes(photoId)) return { published: true };
       }
-      if (await tx.get(`requests/${requestId}`)) fail('permission-denied', 'Cette demande ne t’appartient pas.');
+      if (published && !own) fail('permission-denied', 'Cette demande ne t’appartient pas.');
       const manifest = await tx.get(manifestPath(requestId));
       const previous = await tx.get(path);
       const { path: limitPath, value } = await limits(tx, uid, now);
@@ -99,7 +102,7 @@ function createRequestPhotoService({ store, auth, files, clock = Date.now, newId
           !['pending', 'uploading', 'ready'].includes(previous.state))) {
         fail('failed-precondition', 'Retire cette photo et sélectionne-la à nouveau.');
       }
-      const ids = manifest?.ids ?? [];
+      const ids = (manifest?.ids ?? []).filter((id) => !own?.photoIds?.includes(id));
       if (!ids.includes(photoId) && ids.length >= 3) {
         fail('resource-exhausted', 'Retire une photo avant d’en ajouter une autre.');
       }
@@ -196,16 +199,65 @@ function createRequestPhotoService({ store, auth, files, clock = Date.now, newId
     }
   }
 
+  async function replace(tx, uid, requestId, previousIds, ids, now) {
+    photoIds(ids);
+    const manifest = await tx.get(manifestPath(requestId));
+    const allIds = [...new Set([...previousIds, ...ids])];
+    const paths = allIds.map((id) => photoPath(requestId, id));
+    const records = await Promise.all(paths.map((path) => tx.get(path)));
+    for (const id of ids) {
+      const record = records[allIds.indexOf(id)];
+      const retained = previousIds.includes(id);
+      if (record?.uid !== uid || !record.generation ||
+          (retained ? record.state !== 'linked' :
+            record.state !== 'ready' || record.deleteAt <= now ||
+            manifest?.uid !== uid || !manifest.ids.includes(id))) {
+        fail('failed-precondition', 'Une photo est indisponible. Renvoie-la avant d’enregistrer.');
+      }
+    }
+    for (let i = 0; i < allIds.length; i++) {
+      const record = records[i];
+      if (ids.includes(allIds[i])) {
+        if (record.state !== 'linked') tx.set(paths[i], { ...record, state: 'linked', deleteAt: null });
+      } else if (record?.uid === uid && record.state === 'linked') {
+        tx.set(paths[i], { ...record, state: 'discarded', deleteAt: now });
+      }
+    }
+    if (manifest?.uid === uid) {
+      tx.set(manifestPath(requestId), { ...manifest, ids: manifest.ids.filter((id) => !allIds.includes(id)) });
+    }
+  }
+
+  async function publishedPhoto(tx, requestId, photoId, publicOnly = false) {
+    const request = await tx.get(`requests/${requestId}`) || (!publicOnly && await tx.get(`directRequests/${requestId}`));
+    if (request?.status !== 'published' || !request.photoIds?.includes(photoId) ||
+        (publicOnly && request.photosPublic !== true)) {
+      fail('not-found', 'Cette photo est indisponible.');
+    }
+    const photo = await tx.get(photoPath(requestId, photoId));
+    if (photo?.state !== 'linked' || !photo.generation) fail('not-found', 'Cette photo est indisponible.');
+    return { ...photo, directRequest: request.visibility === 'direct' ? request : null };
+  }
+
+  async function readPublic(requestId, photoId) {
+    checkRequest(requestId);
+    photoIds([photoId]);
+    const authorize = (tx) => publishedPhoto(tx, requestId, photoId, true);
+    const photo = await store.transaction(authorize);
+    const bytes = await files.read(storagePath(photo), photo.generation);
+    await store.transaction(authorize);
+    return bytes;
+  }
+
   async function read(uid, requestId, photoId) {
     await account(uid);
     checkRequest(requestId);
     photoIds([photoId]);
     const authorize = async (tx) => {
-      const request = await tx.get(`requests/${requestId}`);
-      const photo = await tx.get(photoPath(requestId, photoId));
-      if (request?.status !== 'published' || !request.photoIds?.includes(photoId) ||
-          photo?.state !== 'linked' || !photo.generation) {
-        fail('not-found', 'Cette photo est indisponible.');
+      const photo = await publishedPhoto(tx, requestId, photoId);
+      if (photo.directRequest && uid !== photo.directRequest.clientUid &&
+          (uid !== photo.directRequest.directProfessionalId || (await tx.get(`professionalProfiles/${uid}`))?.status !== 'approved')) {
+        fail('permission-denied', 'Cette photo est privée.');
       }
       if (photo.uid !== uid && (await tx.get(`professionalProfiles/${uid}`))?.status !== 'approved') {
         fail('permission-denied', 'Ces photos sont réservées à l’auteur et aux professionnels approuvés.');
@@ -263,7 +315,7 @@ function createRequestPhotoService({ store, auth, files, clock = Date.now, newId
     return { removed, failed };
   }
 
-  return { upload, discard, link, scheduleDelete, read, cleanup };
+  return { upload, discard, link, replace, scheduleDelete, read, readPublic, cleanup };
 }
 
 module.exports = { createRequestPhotoService, photoIds };

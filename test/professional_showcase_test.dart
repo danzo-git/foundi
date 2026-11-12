@@ -57,7 +57,8 @@ void main() {
       );
       await fixtures.flow(t, auth, pro, () async {
         await fixtures.tap(t, find.byKey(const ValueKey('nav-3')));
-        await fixtures.tap(t, find.text('Mon profil professionnel'));
+        expect(find.text('Mon compte'), findsOneWidget);
+        expect(find.text('Mon profil professionnel'), findsNothing);
         expect(find.text('Atelier Test'), findsOneWidget);
         expect(find.text(auth.user!.email), findsNothing);
         expect(find.byType(Image), findsAtLeastNWidgets(3));
@@ -90,6 +91,7 @@ void main() {
         pro.failShowcaseSave = false;
         await fixtures.tap(t, save);
         expect(find.text('Atelier Actualisé'), findsOneWidget);
+        expect(find.text('Mon compte'), findsOneWidget);
         expect(find.text('Aucune réalisation ajoutée.'), findsOneWidget);
         expect(pro.showcase!.portrait, same(photo));
         expect(pro.showcase!.cover, same(photo));

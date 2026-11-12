@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../professional/domain/professional_repository.dart';
 import '../../navigation/presentation/space_widgets.dart';
 import '../domain/request_repository.dart';
+import '../domain/request_photo_repository.dart';
+import 'request_photos.dart';
 import 'request_views.dart';
 
 class ExplorerView extends StatefulWidget {
@@ -38,6 +40,13 @@ class _ExplorerViewState extends State<ExplorerView> {
   ExplorerFilters get _filters => _forMe ? _personal : _public;
   ProfessionalCatalog? _catalog;
   final _items = <FoundiRequest>[];
+  RequestPhotoReader? get _publicPhotoReader {
+    final repository = widget.repository;
+    return repository is PublicRequestPhotoRepository
+        ? (repository as PublicRequestPhotoRepository).readPublicRequestPhoto
+        : null;
+  }
+
   Map<String, dynamic>? _cursor;
   StreamSubscription<List<FoundiRequest>>? _subscription;
   int _generation = 0;
@@ -481,6 +490,20 @@ class _ExplorerViewState extends State<ExplorerView> {
               key: ValueKey(request.id),
               onTap: () => widget.onOpen(request),
               footer: widget.footerBuilder?.call(request),
+              showDescription: true,
+              showStatus: true,
+              photos:
+                  request.status == 'published' &&
+                      request.photosPublic &&
+                      request.photoIds.isNotEmpty &&
+                      _publicPhotoReader != null
+                  ? PublishedRequestPhotos(
+                      requestId: request.id,
+                      photoIds: request.photoIds,
+                      readPhoto: _publicPhotoReader,
+                      inFeed: true,
+                    )
+                  : null,
             ),
           ),
         if (!_busy && _cursor != null)

@@ -27,6 +27,14 @@ class FoundiSettings extends StatelessWidget {
   final String? error;
   final VoidCallback? onNotifications;
   final VoidCallback onSpaces, onDossier, onActivity, onSignOut;
+
+  void _personal(BuildContext context) => Navigator.push(
+    context,
+    MaterialPageRoute<void>(
+      builder: (_) =>
+          ProfileScreen(user: user, repository: AuthScope.of(context)),
+    ),
+  );
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
     padding: const EdgeInsets.fromLTRB(22, 12, 22, 24),
@@ -47,15 +55,7 @@ class FoundiSettings extends StatelessWidget {
             Icons.person_outline,
             'Informations personnelles',
             'Nom, e-mail, téléphone',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(
-                builder: (_) => ProfileScreen(
-                  user: user,
-                  repository: AuthScope.of(context),
-                ),
-              ),
-            ),
+            () => _personal(context),
           ),
           if (professional.status != ProfessionalStatus.none)
             row(
@@ -84,6 +84,12 @@ class FoundiSettings extends StatelessWidget {
         ]),
         heading('PRÉFÉRENCES ET SÉCURITÉ'),
         group([
+          row(
+            Icons.lock_outline,
+            'Sécurité',
+            'Mot de passe et accès au compte',
+            () => _personal(context),
+          ),
           row(
             Icons.notifications_none,
             'Notifications',

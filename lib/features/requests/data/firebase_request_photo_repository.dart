@@ -8,7 +8,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../domain/request_photo_repository.dart';
 
-class FirebaseRequestPhotoRepository implements RequestPhotoRepository {
+class FirebaseRequestPhotoRepository
+    implements RequestPhotoRepository, PublicRequestPhotoRepository {
   FirebaseRequestPhotoRepository(this.functions, {this.endpointBase});
 
   final FirebaseFunctions functions;
@@ -96,14 +97,26 @@ class FirebaseRequestPhotoRepository implements RequestPhotoRepository {
   }
 
   @override
-  Future<Uint8List> readRequestPhoto(String requestId, String photoId) async {
+  Future<Uint8List> readRequestPhoto(String requestId, String photoId) =>
+      _readPhoto(requestId, photoId, isPublic: false);
+
+  @override
+  Future<Uint8List> readPublicRequestPhoto(String requestId, String photoId) =>
+      _readPhoto(requestId, photoId, isPublic: true);
+
+  Future<Uint8List> _readPhoto(
+    String requestId,
+    String photoId, {
+    required bool isPublic,
+  }) async {
+    final endpoint = isPublic ? 'readPublicRequestPhoto' : 'readRequestPhoto';
     try {
       final response = await _http.get<List<int>>(
-        '$_base/readRequestPhoto',
+        '$_base/$endpoint',
         queryParameters: {'requestId': requestId, 'photoId': photoId},
         options: Options(
           responseType: ResponseType.bytes,
-          headers: await _headers(),
+          headers: isPublic ? null : await _headers(),
         ),
       );
       return Uint8List.fromList(response.data!);

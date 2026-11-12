@@ -97,7 +97,7 @@ test('three real photos link atomically with V9.2 publication and have no public
   assert.deepEqual(c.documents.get('requestPublicationLimits/owner').createdAtMs, [first.createdAt]);
   assert.equal(c.objects.size, 3);
   assert.deepEqual(await c.publish('owner', id, { ...data, photoIds: [] }), first);
-  assert.deepEqual(await c.upload('owner', id, keys[3], raw, 'image/png'), { published: true });
+  assert.deepEqual(await c.upload('owner', id, keys[0], raw, 'image/png'), { published: true });
   assert.equal(c.objects.size, 3);
   assert.doesNotMatch(JSON.stringify(c.documents.get('requests/' + id)), /uid|generation|requestPhotos|token/i);
   const bytes = await c.read('pro', id, keys[0]);
@@ -113,7 +113,7 @@ test('three real photos link atomically with V9.2 publication and have no public
   const edited = await c.manage('owner', id, 'edit', { ...data, title: 'Titre corrigé' }, first.createdAt);
   assert.deepEqual(edited.photoIds, input.photoIds);
   assert.deepEqual(c.documents.get('requests/' + id).photoIds, input.photoIds);
-  await assert.rejects(c.manage('owner', id, 'edit', input, edited.updatedAt), is('invalid-argument'));
+  await assert.rejects(c.manage('owner', id, 'edit', { ...data, photoIds: [keys[3]] }, edited.updatedAt), is('failed-precondition'));
   await c.manage('owner', id, 'close');
   await assert.rejects(c.read('pro', id, keys[0]), is('not-found'));
   assert.equal(c.objects.size, 3);
@@ -123,6 +123,103 @@ test('three real photos link atomically with V9.2 publication and have no public
   assert.deepEqual(await c.cleanup(), { removed: 3, failed: 0 });
   assert.equal(c.objects.size, 0);
   assert.deepEqual(c.documents.get('requestPublicationLimits/owner').createdAtMs, [first.createdAt]);
+});
+
+test('editing replaces photos atomically, retries the same revision and preserves proposals and quotas', async () => {
+  const c = fixture();
+  for (const key of keys.slice(0, 3)) await c.upload('owner', id, key, raw, 'image/png');
+  const original = await c.publish('owner', id, { ...data, photoIds: keys.slice(0, 3), photosPublic: true });
+  const quota = structuredClone(c.documents.get('requestPublicationLimits/owner'));
+  const ownPath = `userRequests/owner/items/${id}`;
+  c.documents.set(ownPath, { ...c.documents.get(ownPath), proposalCount: 2, selectedProposalId: 'private-proposal' });
+  const proposal = { requestId: id, amount: 75000, description: 'Contenu privé' };
+  c.documents.set('proposals/private-proposal', proposal);
+
+  await assert.rejects(c.upload('other', id, keys[3], raw, 'image/png'), is('permission-denied'));
+  c.failSave(true);
+  await assert.rejects(c.upload('owner', id, keys[3], raw, 'image/png'));
+  assert.deepEqual(c.documents.get('requests/' + id).photoIds, original.photoIds);
+  c.failSave(false);
+  await c.upload('owner', id, keys[3], raw, 'image/png');
+  await assert.rejects(c.readPublic(id, keys[3]), is('not-found'));
+  const edit = { ...data, photoIds: [keys[1], keys[3]], photosPublic: true };
+  const beforeInvalid = structuredClone(c.documents);
+  await assert.rejects(c.manage('owner', id, 'edit', { ...edit, photoIds: keys }, original.createdAt), is('invalid-argument'));
+  assert.deepEqual(c.documents, beforeInvalid);
+  const [saved, retried] = await Promise.all([
+    c.manage('owner', id, 'edit', edit, original.createdAt),
+    c.manage('owner', id, 'edit', edit, original.createdAt),
+  ]);
+  assert.deepEqual(retried, saved);
+  assert.equal(saved.id, original.id);
+  assert.equal(saved.createdAt, original.createdAt);
+  assert.equal(saved.status, 'published');
+  assert.equal(saved.proposalCount, 2);
+  assert.equal(saved.selectedProposalId, 'private-proposal');
+  assert.deepEqual(c.documents.get('proposals/private-proposal'), proposal);
+  assert.deepEqual(c.documents.get('requestPublicationLimits/owner'), quota);
+  assert.deepEqual(c.documents.get('requests/' + id).photoIds, edit.photoIds);
+  assert.equal(c.documents.get('requests/' + id).lastEdit, undefined);
+  await assert.rejects(c.manage('owner', id, 'edit', { ...edit, title: 'Autre modification' }, original.createdAt), is('aborted'));
+  for (const key of [keys[0], keys[2]]) await assert.rejects(c.readPublic(id, key), is('not-found'));
+  for (const key of edit.photoIds) assert.ok((await c.readPublic(id, key)).length);
+  assert.deepEqual(await c.cleanup(), { removed: 2, failed: 0 });
+  assert.equal(c.objects.size, 2);
+
+  const empty = await c.manage('owner', id, 'edit', { ...data, photoIds: [], photosPublic: false }, saved.updatedAt);
+  assert.equal(empty.photoIds, undefined);
+  assert.equal(empty.photosPublic, undefined);
+  assert.equal(c.documents.get('requests/' + id).photoIds, undefined);
+  assert.deepEqual(await c.cleanup(), { removed: 2, failed: 0 });
+  assert.equal(c.objects.size, 0);
+});
+
+test('discarded and expired edit uploads never remove linked photos or reopen a closed request', async () => {
+  const c = fixture();
+  await c.upload('owner', id, keys[0], raw, 'image/png');
+  const original = await c.publish('owner', id, { ...data, photoIds: [keys[0]] });
+  await c.upload('owner', id, keys[1], raw, 'image/png');
+  await c.discard('owner', id, [keys[0], keys[1]]);
+  assert.equal(c.documents.get(`requestPhotoFiles/${id}_${keys[0]}`).state, 'linked');
+  assert.deepEqual(c.documents.get('requests/' + id).photoIds, [keys[0]]);
+  await c.upload('owner', id, keys[2], raw, 'image/png');
+  await c.manage('owner', id, 'close');
+  await assert.rejects(c.upload('owner', id, keys[3], raw, 'image/png'), is('failed-precondition'));
+  await assert.rejects(c.manage('owner', id, 'edit', { ...data, photoIds: [keys[2]] }, original.createdAt), is('failed-precondition'));
+  c.advance(25 * 3600000);
+  assert.deepEqual(await c.cleanup(), { removed: 2, failed: 0 });
+  assert.equal(c.documents.get(`requestPhotoFiles/${id}_${keys[0]}`).state, 'linked');
+  assert.equal(c.objects.size, 1);
+});
+
+test('public photo reads require explicit consent on first publication and stop on closure', async () => {
+  const privateRequest = fixture();
+  await privateRequest.upload('owner', id, keys[0], raw, 'image/png');
+  const input = { ...data, photoIds: [keys[0]] };
+  await assert.rejects(privateRequest.readPublic(id, keys[0]), is('not-found'));
+  await assert.rejects(privateRequest.publish('owner', id, { ...input, photosPublic: 'true' }), is('invalid-argument'));
+  const original = await privateRequest.publish('owner', id, input);
+  const retry = await privateRequest.publish('owner', id, { ...input, photosPublic: true });
+  assert.deepEqual(retry, original);
+  await assert.rejects(
+    privateRequest.manage('owner', id, 'edit', { ...data, photosPublic: true }, original.createdAt),
+    is('invalid-argument'),
+  );
+  await assert.rejects(privateRequest.readPublic(id, keys[0]), is('not-found'));
+  assert.ok((await privateRequest.read('owner', id, keys[0])).length);
+
+  const publicRequest = fixture();
+  await publicRequest.upload('owner', id, keys[0], raw, 'image/png');
+  const saved = await publicRequest.publish('owner', id, { ...input, photosPublic: true });
+  assert.equal(saved.photosPublic, true);
+  assert.ok((await publicRequest.readPublic(id, keys[0])).length);
+  await assert.rejects(publicRequest.readPublic(id, keys[1]), is('not-found'));
+  await publicRequest.manage('owner', id, 'edit', data, saved.createdAt);
+  assert.equal(publicRequest.documents.get('requests/' + id).photosPublic, true);
+  await publicRequest.manage('owner', id, 'close');
+  await assert.rejects(publicRequest.readPublic(id, keys[0]), is('not-found'));
+  await publicRequest.manage('owner', id, 'delete');
+  assert.equal(publicRequest.documents.get('requests/' + id).photosPublic, undefined);
 });
 
 test('upload validation uses bytes, rejects unverified accounts and never readies invalid photos', async () => {

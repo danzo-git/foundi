@@ -1,4 +1,5 @@
 const { createHash } = require('node:crypto');
+const { requestRecord } = require('./request-access');
 const { OtpError, requireUid } = require('./auth-validation');
 const fail = (code, message) => { throw new OtpError(code, message); };
 const validId = id => typeof id === 'string' && /^[a-zA-Z0-9_-]{20,80}$/.test(id);
@@ -28,12 +29,13 @@ function createProposalService({store,auth,clock=()=>Date.now()}) {
     return candidates[0];
   }
   async function context(tx,uid,requestId,clientUid) {
-    const request=await tx.get(`requests/${requestId}`);
+    const request=await requestRecord(tx,requestId);
     const own=await tx.get(`userRequests/${clientUid}/items/${requestId}`);
     const profile=await tx.get(`professionalProfiles/${uid}`);
     if(profile?.status!=='approved') fail('permission-denied','Un profil professionnel approuvé est requis.');
     if(!request || request.status!=='published' || !own || own.status!=='published' || own.createdAt!==request.createdAt) fail('failed-precondition','Cette demande n’est plus ouverte ou sa propriété ne peut pas être confirmée.');
     if(uid===clientUid) fail('permission-denied','Tu ne peux pas répondre à ta propre demande.');
+    if(request.visibility === 'direct' && (request.directProfessionalId !== uid || request.clientUid !== clientUid)) fail('permission-denied','Cette demande est réservée au professionnel choisi.');
     return {request,own,profile};
   }
   async function access(uid,requestId) {

@@ -1,4 +1,5 @@
 const { OtpError, requireUid } = require('./auth-validation');
+const { requestRecord } = require('./request-access');
 const fail = (code, message) => { throw new OtpError(code, message); };
 const idOK = id => typeof id === 'string' && /^[a-zA-Z0-9_-]{20,80}$/.test(id);
 const proposalIdOK = id => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id);
@@ -38,11 +39,12 @@ function createConversationService({ store, auth, clock = () => Date.now(), onSe
         if (!linked(chat, p, proposalId)) fail('failed-precondition', 'La discussion liée est indisponible.');
         return { conversationId, alreadySelected: true };
       }
-      const pub = await tx.get(`requests/${requestId}`);
+      const pub = await requestRecord(tx,requestId);
       const user = await tx.get(`users/${uid}`);
       const pro = await tx.get(`professionalProfiles/${p.professionalUid}`);
       if (own.status !== 'published' || pub?.status !== 'published' || own.createdAt !== pub.createdAt || !['sent','retained'].includes(p.status) || p.conversationId) fail('failed-precondition', 'Une nouvelle discussion nécessite une demande ouverte et une proposition disponible.');
       if (pro?.status !== 'approved') fail('permission-denied', 'Ce professionnel n’est plus approuvé.');
+      if (pub.visibility === 'direct' && (pub.clientUid !== uid || pub.directProfessionalId !== p.professionalUid)) fail('permission-denied','Cette demande est privée.');
       const now = clock(), status = p.status === 'retained' ? 'retained' : 'discussing';
       const snapshot = Object.fromEntries(publicFields.filter(k => pub[k] !== undefined).map(k => [k,pub[k]]));
       tx.set(`proposals/${proposalId}`, { ...p, status, conversationId, discussionOpenedAt: now });

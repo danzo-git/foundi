@@ -20,6 +20,7 @@ const sample = FoundiRequest(
   specialtyId: 'test_specialty',
   zoneId: 'test_zone',
   budget: 15000,
+  authorPublicName: 'Ancien alias de demande',
 );
 
 class ManagedRequests extends FakeRequests
@@ -89,6 +90,35 @@ void main() {
     await pro.changes.close();
     await pro.docChanges.close();
   });
+  testWidgets(
+    'editing a public request uses the account name without a per-request name field',
+    (t) async {
+      final repository = ManagedRequests()..items.add(sample);
+      await runFlow(t, repository, (_, _) async {
+        final menu = find.byType(PopupMenuButton<String>);
+        await t.scrollUntilVisible(menu, 140);
+        await t.pumpAndSettle();
+        await fixtures.tap(t, menu);
+        await fixtures.tap(t, find.text('Modifier'));
+
+        final name = find.byKey(const ValueKey('requestAuthorName'));
+        expect(name, findsNothing);
+        expect(find.text('Nom d’affichage public'), findsNothing);
+        expect(find.text('Utiliser « Awa K. »'), findsNothing);
+        await tapForm(t, find.text('Vérifier ma demande'));
+        expect(find.text('Auteur affiché · Awa Kouassi'), findsOneWidget);
+        await tapForm(t, find.text('Enregistrer les modifications'));
+
+        expect(repository.actions, ['edit']);
+        expect(repository.lastId, sample.id);
+        expect(
+          repository.lastDraft!.toMap().containsKey('authorPublicName'),
+          isFalse,
+        );
+        expect(repository.publishIds, isEmpty);
+      });
+    },
+  );
   testWidgets('prefilled edit saves on original ID and reports failures', (
     t,
   ) async {

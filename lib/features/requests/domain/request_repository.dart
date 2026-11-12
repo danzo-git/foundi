@@ -1,3 +1,5 @@
+import '../../professional/domain/professional_showcase.dart';
+
 class RequestDraft {
   const RequestDraft({
     required this.categoryId,
@@ -7,10 +9,14 @@ class RequestDraft {
     required this.description,
     this.budget,
     this.photoIds = const [],
+    this.photosPublic = false,
+    this.replacePhotos = false,
   });
   final String categoryId, specialtyId, zoneId, title, description;
   final int? budget;
   final List<String> photoIds;
+  final bool photosPublic;
+  final bool replacePhotos;
   Map<String, dynamic> toMap() => {
     'categoryId': categoryId,
     'specialtyId': specialtyId,
@@ -18,7 +24,9 @@ class RequestDraft {
     'title': title.trim(),
     'description': description.trim(),
     'budget': budget,
-    if (photoIds.isNotEmpty) 'photoIds': photoIds,
+    if (replacePhotos || photoIds.isNotEmpty) 'photoIds': photoIds,
+    if (replacePhotos || (photoIds.isNotEmpty && photosPublic))
+      'photosPublic': photosPublic,
   };
   static int? parseBudget(String text) {
     final value = text.trim().replaceAll(RegExp(r'[ \u00a0\u202f]'), '');
@@ -51,6 +59,12 @@ class FoundiRequest {
     this.specialtyId = '',
     this.zoneId = '',
     this.photoIds = const [],
+    this.photosPublic = false,
+    this.authorPublicName,
+    this.directProfessionalId,
+    this.directProfessionalName,
+    this.clientUid,
+    this.requesterName,
   });
   final String categoryId, specialtyId, zoneId;
   final String id,
@@ -67,6 +81,17 @@ class FoundiRequest {
   final DateTime? createdAt;
   final int? budget;
   final List<String> photoIds;
+  final bool photosPublic;
+  final String? authorPublicName;
+  String get authorDisplayName {
+    final name = (isDirect ? requesterName : authorPublicName)?.trim();
+    return name == null || name.isEmpty ? 'Membre Foundi' : name;
+  }
+
+  final String? directProfessionalId, directProfessionalName, clientUid;
+  final String? requesterName;
+  bool get isDirect => directProfessionalId != null;
+
   String get category => [
     categoryLabel,
     if (specialtyLabel.isNotEmpty) specialtyLabel,
@@ -104,6 +129,14 @@ class FoundiRequest {
               )
             : null,
         budget: (data['budget'] as num?)?.toInt(),
+        photosPublic: data['photosPublic'] == true,
+        authorPublicName: data['authorPublicName'] as String?,
+        directProfessionalId: data['directProfessionalId'] as String?,
+        directProfessionalName: data['directProfessionalName'] as String?,
+        clientUid: data['clientUid'] as String?,
+        requesterName: data['directProfessionalId'] != null
+            ? data['requesterName'] as String?
+            : null,
         photoIds:
             (data['photoIds'] as List?)?.whereType<String>().take(3).toList() ??
             const [],
@@ -123,6 +156,22 @@ abstract interface class RequestRepository {
   Stream<FoundiRequest?> watchPublicDetail(String id);
 }
 
+class DirectProfessionalTarget {
+  const DirectProfessionalTarget(this.id, this.name, {this.activity});
+  final String id, name;
+  final ProfessionalRequestActivity? activity;
+}
+
+abstract interface class DirectRequestRepository {
+  Future<FoundiRequest> publishDirect(
+    String id,
+    String professionalId,
+    RequestDraft draft,
+  );
+  Stream<List<FoundiRequest>> watchDirectRequests(String professionalId);
+  Stream<FoundiRequest?> watchDirectRequest(String id);
+}
+
 abstract interface class RequestManagementRepository {
   Future<FoundiRequest> manage(
     String id,
@@ -130,6 +179,40 @@ abstract interface class RequestManagementRepository {
     RequestDraft? draft,
     int? expectedRevision,
   });
+}
+
+class RequestRespondent {
+  const RequestRespondent(this.name, this.activity, {this.professionalId});
+  final String name;
+  final List<String> activity;
+  final String? professionalId;
+}
+
+class RequestRespondentsPage {
+  const RequestRespondentsPage({
+    required this.total,
+    required this.items,
+    required this.canViewProposals,
+    this.nextOffset,
+  });
+  final int total;
+  final List<RequestRespondent> items;
+  final bool canViewProposals;
+  final int? nextOffset;
+}
+
+abstract interface class RequestRespondentsRepository {
+  Future<RequestRespondentsPage> listRequestRespondents(
+    String requestId, {
+    int offset = 0,
+  });
+}
+
+abstract interface class RequestRespondentProfileRepository {
+  Future<ProfessionalShowcase> readRequestRespondentProfile(
+    String requestId,
+    String professionalId,
+  );
 }
 
 class OpportunityPage {

@@ -68,7 +68,7 @@ test('emulated showcase callables persist sanitized photos and restrict access t
       assert.equal(saved.cover.id, saved.gallery[0].id);
       assert.equal('phone' in saved, false);
       assert.deepEqual(await owner.call('readProfessionalShowcase', {}), saved);
-      assert.deepEqual(await recipient.call('readProfessionalShowcase', { proposalId }), saved);
+      assert.deepEqual(await recipient.call('readProfessionalShowcase', { proposalId }), {...saved,professionalId:owner.uid,requestActivity:null});
       await assert.rejects(other.call('readProfessionalShowcase', { proposalId }), denied);
       await assert.rejects(getDoc(doc(recipient.firestore, showcasePath)), (error) => error.code === 'permission-denied');
       await assert.rejects(getDoc(doc(recipient.firestore, privatePath)), (error) => error.code === 'permission-denied');

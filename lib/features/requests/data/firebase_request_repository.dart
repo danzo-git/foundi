@@ -8,6 +8,7 @@ import '../../proposals/data/firebase_proposal_repository.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../../auth/domain/auth_repository.dart';
+import '../../professional/domain/professional_showcase.dart';
 import '../domain/request_repository.dart';
 import '../domain/request_photo_repository.dart';
 import '../domain/request_interaction_repository.dart';
@@ -17,8 +18,12 @@ import 'firebase_request_photo_repository.dart';
 class FirebaseRequestRepository
     implements
         RequestRepository,
+        DirectRequestRepository,
+        RequestRespondentsRepository,
+        RequestRespondentProfileRepository,
         RequestInteractionSource,
         RequestPhotoRepository,
+        PublicRequestPhotoRepository,
         RequestManagementRepository,
         OpportunityRepository,
         ExplorerRepository,
@@ -53,6 +58,9 @@ class FirebaseRequestRepository
   @override
   Future<Uint8List> readRequestPhoto(String requestId, String photoId) =>
       _photos.readRequestPhoto(requestId, photoId);
+  @override
+  Future<Uint8List> readPublicRequestPhoto(String requestId, String photoId) =>
+      _photos.readPublicRequestPhoto(requestId, photoId);
   late final RichConversationRepository _rich =
       FirebaseRichConversationRepository(
         _functions,
@@ -230,6 +238,55 @@ class FirebaseRequestRepository
   @override
   String newId() => _db.collection('requests').doc().id;
   @override
+  Future<FoundiRequest> publishDirect(
+    String id,
+    String professionalId,
+    RequestDraft draft,
+  ) async {
+    try {
+      final result = await _functions
+          .httpsCallable('publishDirectRequest')
+          .call<Map<String, dynamic>>({
+            'requestId': id,
+            'professionalId': professionalId,
+            'request': draft.toMap(),
+          });
+      return FoundiRequest.fromMap(id, result.data);
+    } on FirebaseFunctionsException catch (error) {
+      throw AuthFailure(
+        error.code == 'not-found'
+            ? 'Les demandes directes ne sont pas encore disponibles.'
+            : error.code == 'resource-exhausted'
+            ? 'Tu as atteint la limite de publication. Réessaie plus tard.'
+            : error.message ??
+                  'Envoi non confirmé. Réessaie : la demande ne sera envoyée qu’une fois.',
+      );
+    }
+  }
+
+  @override
+  Stream<List<FoundiRequest>> watchDirectRequests(String professionalId) =>
+      _watch(
+        _db
+            .collection('directRequests')
+            .where('directProfessionalId', isEqualTo: professionalId)
+            .where('status', whereIn: ['published', 'closed', 'in_discussion'])
+            .orderBy('createdAt', descending: true)
+            .limit(50),
+        resolveDirectAuthors: true,
+      );
+  @override
+  Stream<FoundiRequest?> watchDirectRequest(String id) => _db
+      .doc('directRequests/$id')
+      .snapshots()
+      .asyncMap(
+        (s) async => s.exists
+            ? (await _parseRequests([
+                (id: s.id, data: s.data()!),
+              ], resolveDirectAuthors: true)).single
+            : null,
+      );
+  @override
   Future<FoundiRequest> publish(String id, RequestDraft draft) async {
     try {
       final result = await _functions
@@ -258,13 +315,54 @@ class FirebaseRequestRepository
     }
   }
 
-  Stream<List<FoundiRequest>> _watch(Query<Map<String, dynamic>> query) =>
-      query.snapshots().map(
-        (s) => s.docs
-            .map((d) => FoundiRequest.fromMap(d.id, d.data()))
-            .where((r) => r.status != 'deleted')
-            .toList(),
-      );
+  Future<List<FoundiRequest>> _parseRequests(
+    List<({String id, Map<String, dynamic> data})> records, {
+    bool resolveDirectAuthors = false,
+  }) async {
+    final legacy = resolveDirectAuthors
+        ? records
+              .where(
+                (r) =>
+                    r.data['directProfessionalId'] != null &&
+                    r.data['status'] != 'deleted' &&
+                    (r.data['requesterName'] as String? ?? '').trim().isEmpty,
+              )
+              .toList()
+        : [];
+    var authors = <String, dynamic>{};
+    if (legacy.isNotEmpty) {
+      try {
+        final result = await _functions
+            .httpsCallable('readDirectRequestAuthors')
+            .call<Map<String, dynamic>>({
+              'requestIds': legacy.map((r) => r.id).toList(),
+            });
+        authors = Map<String, dynamic>.from(result.data['authors'] as Map);
+      } on FirebaseFunctionsException catch (_) {
+        throw const AuthFailure(
+          'Impossible de charger le nom des demandeurs. Réessaie.',
+        );
+      }
+    }
+    return records
+        .map(
+          (r) => FoundiRequest.fromMap(r.id, {
+            ...r.data,
+            if (authors[r.id] case final String name) 'requesterName': name,
+          }),
+        )
+        .where((r) => r.status != 'deleted')
+        .toList();
+  }
+
+  Stream<List<FoundiRequest>> _watch(
+    Query<Map<String, dynamic>> query, {
+    bool resolveDirectAuthors = false,
+  }) => query.snapshots().asyncMap(
+    (s) => _parseRequests([
+      for (final d in s.docs) (id: d.id, data: d.data()),
+    ], resolveDirectAuthors: resolveDirectAuthors),
+  );
   @override
   Stream<List<FoundiRequest>> watchPublic() => _watch(
     _db
@@ -279,10 +377,66 @@ class FirebaseRequestRepository
         .collection('userRequests/$uid/items')
         .orderBy('createdAt', descending: true)
         .limit(50),
+    resolveDirectAuthors: true,
   );
   @override
   Stream<FoundiRequest?> watchPublicDetail(String id) => _db
       .doc('requests/$id')
       .snapshots()
       .map((s) => s.exists ? FoundiRequest.fromMap(s.id, s.data()!) : null);
+
+  @override
+  Future<RequestRespondentsPage> listRequestRespondents(
+    String requestId, {
+    int offset = 0,
+  }) async {
+    try {
+      final result = await _functions
+          .httpsCallable('listRequestRespondents')
+          .call<Map<String, dynamic>>({
+            'requestId': requestId,
+            'offset': offset,
+          });
+      final data = result.data;
+      return RequestRespondentsPage(
+        total: (data['total'] as num).toInt(),
+        canViewProposals: data['canViewProposals'] == true,
+        nextOffset: (data['nextOffset'] as num?)?.toInt(),
+        items: [
+          for (final item in data['items'] as List)
+            RequestRespondent(
+              item['name'] as String,
+              List<String>.from(item['activity'] as List),
+              professionalId: item['professionalId'] as String?,
+            ),
+        ],
+      );
+    } on FirebaseFunctionsException catch (error) {
+      throw AuthFailure(switch (error.code) {
+        'not-found' => 'Cette demande n’est plus publique.',
+        _ => 'Impossible de charger les réponses. Réessaie.',
+      });
+    }
+  }
+
+  @override
+  Future<ProfessionalShowcase> readRequestRespondentProfile(
+    String requestId,
+    String professionalId,
+  ) async {
+    try {
+      final result = await _functions
+          .httpsCallable('readRequestRespondentProfile')
+          .call<Map<String, dynamic>>({
+            'requestId': requestId,
+            'professionalId': professionalId,
+          });
+      return ProfessionalShowcase.fromMap(result.data);
+    } on FirebaseFunctionsException catch (error) {
+      throw AuthFailure(switch (error.code) {
+        'not-found' => 'Ce profil professionnel n’est plus disponible.',
+        _ => 'Impossible de charger le profil. Réessaie.',
+      });
+    }
+  }
 }

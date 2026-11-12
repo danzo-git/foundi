@@ -302,6 +302,12 @@ exports.publishRequest = onCall({ region: 'europe-west1', maxInstances: 3, timeo
 
   r => handle(() => requests.publish(r.auth?.uid, r.data?.requestId, r.data?.request)));
 
+exports.publishDirectRequest = onCall({ region: 'europe-west1', maxInstances: 3, timeoutSeconds: 60 },
+  r => handle(() => requests.publishDirect(r.auth?.uid, r.data?.requestId, r.data?.professionalId, r.data?.request)));
+
+exports.readDirectRequestAuthors = onCall({ region: 'europe-west1', maxInstances: 3, timeoutSeconds: 60 },
+  r => handle(() => requests.readDirectAuthors(r.auth?.uid, r.data?.requestIds)));
+
 
 
 exports.manageRequest = onCall({ region: 'europe-west1', maxInstances: 3, timeoutSeconds: 60 },
@@ -339,6 +345,18 @@ const proposals = createProposalService({auth:getAuth(),store:{...store,
 exports.proposalAccess=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.access(r.auth?.uid,r.data?.requestId)));
 exports.sendProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.send(r.auth?.uid,r.data?.requestId,r.data?.proposal)));
 exports.proposalApproval=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.approval(r.auth?.uid,r.data?.proposalId)));
+
+const { createRequestRespondentsService } = require('./request-respondents-service');
+const requestRespondents = createRequestRespondentsService({ db: getFirestore(), auth: getAuth() });
+exports.listRequestRespondents = onCall(proOptions, (r) =>
+  handle(() => requestRespondents.list(r.auth?.uid, r.data?.requestId, r.data?.offset)));
+exports.readRequestRespondentProfile = onCall(proOptions, (r) =>
+  handle(() => requestRespondents.readProfile(r.data?.requestId, r.data?.professionalId)));
+
+const { createRequestEngagementService } = require('./request-engagement-service');
+const requestEngagement = createRequestEngagementService({ db: getFirestore() });
+exports.readRequestEngagement = onCall(proOptions, (r) =>
+  handle(() => requestEngagement.read(r.data?.requestId)));
 
 const { createRequestInteractionService } = require('./request-interaction-service');
 const requestInteractions = createRequestInteractionService({
@@ -397,19 +415,24 @@ const attachments=createAttachmentService({auth:getAuth(),store:{...store,
 const attachmentOptions={region:'europe-west1',maxInstances:3,concurrency:2,timeoutSeconds:120,memory:'512MiB'};
 exports.prepareConversationAttachment=onCall(attachmentOptions,r=>handle(()=>attachments.prepare(r.auth?.uid,r.data)));
 exports.cancelConversationAttachment=onCall(attachmentOptions,r=>handle(()=>attachments.cancel(r.auth?.uid,r.data?.conversationId,r.data?.messageId)));
-async function authenticatedMediaHttp(req,res,operation){
+async function mediaHttp(res,operation){
   res.set('Cache-Control','private, no-store');res.set('X-Content-Type-Options','nosniff');
   try{
-    const token=/^Bearer (\S+)$/.exec(req.get('authorization')||'');
-    if(!token)throw new OtpError('unauthenticated','Connexion nécessaire.');
-    let identity;try{identity=await getAuth().verifyIdToken(token[1],true);}catch{throw new OtpError('unauthenticated','Reconnecte-toi pour continuer.');}
-    await operation(identity.uid);
+    await operation();
   }catch(e){
     const codes={'unauthenticated':401,'permission-denied':403,'invalid-argument':400,'not-found':404,'already-exists':409,'failed-precondition':409,'resource-exhausted':429};
     const known=e instanceof OtpError;const code=known?e.code:'unavailable';
     if(!known)logger.warn('Media operation unavailable.',{code:String(e.code||'internal')});
     if(!res.headersSent)res.status(codes[code]||503).json({error:{code,message:known?e.message:'Fichier indisponible. Réessaie plus tard.'}});
   }
+}
+function authenticatedMediaHttp(req,res,operation){
+  return mediaHttp(res, async () => {
+    const token=/^Bearer (\S+)$/.exec(req.get('authorization')||'');
+    if(!token)throw new OtpError('unauthenticated','Connexion nécessaire.');
+    let identity;try{identity=await getAuth().verifyIdToken(token[1],true);}catch{throw new OtpError('unauthenticated','Reconnecte-toi pour continuer.');}
+    await operation(identity.uid);
+  });
 }
 exports.uploadConversationAttachment=onRequest({...attachmentOptions,cors:true},(req,res)=>authenticatedMediaHttp(req,res,async uid=>{
   if(req.method!=='POST')throw new OtpError('invalid-argument','Méthode invalide.');
@@ -437,6 +460,12 @@ exports.readRequestPhoto = onRequest({ ...requestPhotoOptions, cors: true }, (re
     const bytes = await requestPhotos.read(uid, req.query.requestId, req.query.photoId);
     res.set('Content-Type', 'image/webp').status(200).send(bytes);
   }));
+exports.readPublicRequestPhoto = onRequest({ ...requestPhotoOptions, timeoutSeconds: 30, cors: true }, (req, res) =>
+  mediaHttp(res, async () => {
+    if (req.method !== 'GET') throw new OtpError('invalid-argument', 'Méthode invalide.');
+    const bytes = await requestPhotos.readPublic(req.query.requestId, req.query.photoId);
+    res.set('Content-Type', 'image/webp').status(200).send(bytes);
+  }));
 exports.discardRequestPhotos = onCall(requestPhotoOptions, (r) =>
   handle(() => requestPhotos.discard(r.auth?.uid, r.data?.requestId, r.data?.photoIds)));
 exports.cleanupRequestPhotos = onSchedule({
@@ -447,12 +476,18 @@ exports.cleanupRequestPhotos = onSchedule({
 });
 
 // V9 observes durable server-owned events; business operations remain V8.1/V8.2.
-const {onDocumentCreated,onDocumentUpdated}=require('firebase-functions/v2/firestore');
+const {onDocumentCreated,onDocumentUpdated,onDocumentWritten}=require('firebase-functions/v2/firestore');
 const {getMessaging}=require('firebase-admin/messaging');
 const {createNotificationService}=require('./notification-service');
 const pushEnabled=defineBoolean('NOTIFICATION_PUSH_ENABLED',{default:false});
 const notifications=createNotificationService({db:getFirestore(),auth:getAuth(),messaging:getMessaging(),logger});
 const eventOptions={region:'europe-west1',maxInstances:3,retry:true,timeoutSeconds:120};
+exports.notifyDirectRequestCreated = onDocumentCreated({...eventOptions, document:'directRequests/{requestId}'},
+  e => e.data && notifications.directRequest(e.params.requestId, e.data.data()));
+exports.syncRequestResponseCount = onDocumentWritten({ ...eventOptions, document: 'proposals/{id}' },
+  (event) => requestEngagement.changed(event.data));
+exports.syncRequestRecommendationCount = onDocumentWritten({ ...eventOptions, document: 'requestRecommendations/{id}' },
+  (event) => requestEngagement.changed(event.data));
 exports.notifyProfessionalDecision=onDocumentCreated({...eventOptions,document:'professionalAudit/{id}'},e=>e.data && notifications.professional(e.params.id,e.data.data()));
 exports.notifyProposalCreated=onDocumentCreated({...eventOptions,document:'proposals/{id}'},e=>e.data && notifications.proposal(e.params.id,e.data.data()));
 exports.notifyRequestRecommendation = onDocumentCreated({ ...eventOptions, document: 'requestRecommendations/{id}' },

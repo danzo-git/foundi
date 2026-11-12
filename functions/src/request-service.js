@@ -1,7 +1,9 @@
 const { OtpError, requireUid } = require('./auth-validation');
+const { createHash } = require('node:crypto');
 
 const { activeZones } = require('./catalog-service');
 const { photoIds: validatePhotoIds } = require('./request-photo-service');
+const { directRequestActivity, accountRequesterName } = require('./direct-request-context');
 
 const fail = (code, message) => { throw new OtpError(code, message); };
 
@@ -72,7 +74,7 @@ function requestInput(input) {
 
 function createRequestService({ store, auth, photos, clock = () => Date.now() }) {
 
-  async function publish(uid, requestId, input) {
+  async function publish(uid, requestId, input, professionalId = null) {
 
     requireUid(uid);
 
@@ -91,20 +93,48 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
       // A retry after a lost response returns the actual saved content.
 
-      if (existing) return { id: requestId, ...existing };
+      if (existing) {
+        if ((existing.directProfessionalId || null) !== professionalId) fail('already-exists', 'Cet identifiant correspond à une autre demande.');
+        return { id: requestId, ...existing };
+      }
 
       const value = requestInput(input);
       const photoIds = input.photoIds === undefined ? [] : validatePhotoIds(input.photoIds);
+      if (input.photosPublic !== undefined && (input.photosPublic !== true || !photoIds.length)) {
+        fail('invalid-argument', 'La publication des photos doit être confirmée avec les photos choisies.');
+      }
 
       const publicPath = `requests/${requestId}`;
 
       const occupied = await tx.get(publicPath);
+      const privateOccupied = await tx.get(`directRequests/${requestId}`);
+      let recipient;
+      if (professionalId) {
+        if (professionalId === uid) fail('permission-denied', 'Tu ne peux pas t’envoyer une demande directe.');
+        recipient = await tx.get(`professionalProfiles/${professionalId}`);
+        let account;
+        try { account = await auth.getUser(professionalId); }
+        catch (error) { if (error.code !== 'auth/user-not-found') throw error; }
+        if (recipient?.status !== 'approved' || !recipient.businessName?.trim() || !account?.emailVerified || account.disabled) {
+          fail('failed-precondition', 'Ce professionnel n’est plus disponible.');
+        }
+        if (input.photosPublic === true) fail('invalid-argument', 'Les photos d’une demande directe restent privées.');
+      }
 
       const catalog = await tx.get('referenceData/professionalOnboarding');
 
-      if (occupied) fail('already-exists', 'Cet identifiant de publication est déjà utilisé.');
+      if (occupied || privateOccupied) fail('already-exists', 'Cet identifiant de publication est déjà utilisé.');
 
       if (catalog?.enabled !== true) fail('failed-precondition', 'Les catégories et zones sont temporairement indisponibles.');
+
+      const requesterName = accountRequesterName(await tx.get(`users/${uid}`), account);
+      if (professionalId) {
+        const activity = directRequestActivity(recipient, catalog);
+        if (!activity || value.categoryId !== activity.categoryId || value.specialtyId !== activity.specialtyId) {
+          fail('failed-precondition', 'L’activité du professionnel a changé. Rouvre son profil avant d’envoyer ta demande.');
+        }
+        if (!requesterName) fail('failed-precondition', 'Renseigne ton nom dans les informations personnelles de ton compte.');
+      }
 
       const category = catalog.categories?.find(c => c.id === value.categoryId && c.active !== false);
 
@@ -132,7 +162,7 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
       }
 
-      // Explicit public projection: no UID, account identity, contact or internal metadata.
+      // The account-derived name is public; UID, contacts and internal metadata stay private.
 
       const quotaPath = `requestPublicationLimits/${uid}`;
       const quota = await tx.get(quotaPath);
@@ -146,9 +176,17 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
       const published = { ...value, categoryLabel: category.label, specialtyLabel: specialty?.label || '',
 
         zoneLabel: labels.join(' › '), status: 'published', createdAt: now,
-        ...(photoIds.length ? { photoIds } : {}) };
+        ...(!professionalId && requesterName ? {authorPublicName: requesterName} : {}),
+        ...(photoIds.length ? { photoIds } : {}),
+        ...(input.photosPublic === true ? { photosPublic: true } : {}) };
+      if (!published.authorPublicName) delete published.authorPublicName;
 
-      tx.set(publicPath, published);
+      if (professionalId) {
+        Object.assign(published, {visibility: 'direct', requesterName, directProfessionalId: professionalId, directProfessionalName: recipient.businessName.trim()});
+        tx.set(`directRequests/${requestId}`, {...published, clientUid: uid});
+      } else {
+        tx.set(publicPath, published);
+      }
 
       tx.set(ownPath, published);
       tx.set(`requestOwnership/${requestId}`, { ownerUid: uid });
@@ -166,11 +204,21 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
     if (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{20,80}$/.test(requestId) || !['edit', 'close', 'delete'].includes(action)) fail('invalid-argument', 'Action invalide.');
 
-    if ((await auth.getUser(uid)).disabled) fail('permission-denied', 'Compte indisponible.');
+    const account = await auth.getUser(uid);
+    if (account.disabled) fail('permission-denied', 'Compte indisponible.');
 
     const value = action === 'edit' ? requestInput(input) : null;
+    if (value && input.photoIds !== undefined) {
+      value.photoIds = validatePhotoIds(input.photoIds);
+      if (input.photosPublic !== undefined && typeof input.photosPublic !== 'boolean') {
+        fail('invalid-argument', 'Vérifie la visibilité des photos.');
+      }
+      if (input.photosPublic !== undefined) value.photosPublic = input.photosPublic;
+    }
 
-    if (value && Object.keys(input).some(k => !Object.keys(value).includes(k))) fail('invalid-argument', 'Champ protégé.');
+    // Older clients may still send a per-request name. Ignore it completely.
+    if (value && Object.keys(input).some(k => k !== 'authorPublicName' && !Object.keys(value).includes(k))) fail('invalid-argument', 'Champ protégé.');
+    const editFingerprint = value && createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
     return store.transaction(async tx => {
 
@@ -186,10 +234,23 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
       if (existing.status === 'deleted' || (action === 'edit' && existing.status !== 'published') || (action === 'close' && !['published','in_discussion'].includes(existing.status))) fail('failed-precondition', 'Cette demande n’est plus modifiable.');
 
-      if (value && expectedRevision !== (existing.updatedAt ?? existing.createdAt)) fail('aborted', 'Cette demande a changé. Rouvre-la avant de modifier.');
+      if (value && expectedRevision !== (existing.updatedAt ?? existing.createdAt)) {
+        if (existing.lastEdit?.baseRevision === expectedRevision && existing.lastEdit.fingerprint === editFingerprint) {
+          return { id: requestId, ...existing };
+        }
+        fail('aborted', 'Cette demande a changé. Rouvre-la avant de modifier.');
+      }
       const conversations = action !== 'edit' && tx.conversationsForRequest
         ? await tx.conversationsForRequest(requestId) : [];
       let changed = {};
+      const accountName = accountRequesterName(await tx.get(`users/${uid}`), account);
+      let requesterName;
+      if (existing.visibility === 'direct') {
+        if (value && (value.categoryId !== existing.categoryId || value.specialtyId !== existing.specialtyId)) {
+          fail('invalid-argument', 'L’activité d’une demande directe ne peut pas être modifiée.');
+        }
+        requesterName = accountName ?? existing.requesterName;
+      }
 
       if (value) {
 
@@ -213,7 +274,25 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
       }
 
-      const saved = { ...existing, ...changed, status: value ? 'published' : target, updatedAt: Math.max(clock(), (existing.updatedAt ?? existing.createdAt) + 1) };
+      const saved = { ...existing, ...changed, status: value ? 'published' : target, updatedAt: Math.max(clock(), (existing.updatedAt ?? existing.createdAt) + 1),
+        ...(value ? { lastEdit: { baseRevision: expectedRevision, fingerprint: editFingerprint } } : {}) };
+      if (existing.visibility === 'direct') {
+        delete saved.authorPublicName;
+        if (requesterName) saved.requesterName = requesterName;
+      } else {
+        // Never retain an old per-request alias when editing or managing a request.
+        if (accountName) saved.authorPublicName = accountName;
+        else delete saved.authorPublicName;
+      }
+      if (!saved.authorPublicName) delete saved.authorPublicName;
+      if (value?.photoIds !== undefined) {
+        if (!photos) fail('failed-precondition', 'Les photos sont indisponibles.');
+        await photos.replace(tx, uid, requestId, existing.photoIds ?? [], value.photoIds, clock());
+        if (!saved.photoIds.length) {
+          delete saved.photoIds;
+          delete saved.photosPublic;
+        }
+      }
       if (action === 'delete' && existing.photoIds?.length && photos) {
         await photos.scheduleDelete(tx, uid, requestId, existing.photoIds);
       }
@@ -227,8 +306,17 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
       }
 
       const publicFields = ['title','description','categoryId','categoryLabel','specialtyId','specialtyLabel','zoneId','zoneLabel','budget','status','createdAt','updatedAt'];
-      if (saved.photoIds?.length && action !== 'delete') publicFields.push('photoIds');
-      tx.set(`requests/${requestId}`, Object.fromEntries(publicFields.map(key => [key, saved[key]])));
+      if (saved.authorPublicName && action !== 'delete') publicFields.push('authorPublicName');
+      if (saved.photoIds?.length && action !== 'delete') {
+        publicFields.push('photoIds');
+        if (saved.photosPublic === true) publicFields.push('photosPublic');
+      }
+      if (existing.visibility === 'direct') {
+        if (saved.photosPublic === true) fail('invalid-argument', 'Les photos d’une demande directe restent privées.');
+        tx.set(`directRequests/${requestId}`, {...saved, clientUid: uid});
+      } else {
+        tx.set(`requests/${requestId}`, Object.fromEntries(publicFields.map(key => [key, saved[key]])));
+      }
 
       return { id: requestId, ...saved };
 
@@ -236,7 +324,43 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
   }
 
-  return { publish, manage };
+  async function publishDirect(uid, requestId, professionalId, input) {
+    requireUid(uid);
+    if (typeof professionalId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(professionalId)) fail('invalid-argument', 'Professionnel invalide.');
+    return publish(uid, requestId, input, professionalId);
+  }
+
+  // Resolve legacy requests without migrating production documents or exposing
+  // user records. Every ID is checked against its private canonical document.
+  async function readDirectAuthors(uid, ids) {
+    requireUid(uid);
+    const account = await auth.getUser(uid);
+    if (account.disabled || !account.emailVerified) fail('permission-denied', 'Compte indisponible.');
+    if (!Array.isArray(ids) || !ids.length || ids.length > 50 ||
+        ids.some(id => typeof id !== 'string' || !/^[a-zA-Z0-9_-]{20,80}$/.test(id))) {
+      fail('invalid-argument', 'Demandes privées invalides.');
+    }
+    return store.transaction(async tx => {
+      const recipient = await tx.get(`professionalProfiles/${uid}`);
+      const authors = {};
+      for (const id of new Set(ids)) {
+        const request = await tx.get(`directRequests/${id}`);
+        if (!request || request.visibility !== 'direct' || request.status === 'deleted' ||
+            !(request.clientUid === uid || (request.directProfessionalId === uid && recipient?.status === 'approved'))) {
+          fail('permission-denied', 'Cette demande privée est indisponible.');
+        }
+        const profile = await tx.get(`users/${request.clientUid}`);
+        let author;
+        if (!accountRequesterName(profile)) {
+          try { author = await auth.getUser(request.clientUid); }
+          catch (error) { if (error.code !== 'auth/user-not-found') throw error; }
+        }
+        authors[id] = accountRequesterName(profile, author) ?? 'Membre Foundi';
+      }
+      return { authors };
+    });
+  }
+  return { publish, publishDirect, manage, readDirectAuthors };
 
 }
 

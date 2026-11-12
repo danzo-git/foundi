@@ -97,10 +97,16 @@ Future<LocalRequestPhoto> validateRequestPhoto(
 }
 
 class LocalRequestPhotos extends StatelessWidget {
-  const LocalRequestPhotos({super.key, required this.photos, this.onRemove});
+  const LocalRequestPhotos({
+    super.key,
+    required this.photos,
+    this.onRemove,
+    this.numberOffset = 0,
+  });
 
   final List<LocalRequestPhoto> photos;
   final ValueChanged<LocalRequestPhoto>? onRemove;
+  final int numberOffset;
 
   @override
   Widget build(BuildContext context) => Wrap(
@@ -111,7 +117,7 @@ class LocalRequestPhotos extends StatelessWidget {
         _PhotoTile(
           key: ValueKey(photo.id),
           bytes: photo.bytes,
-          number: index + 1,
+          number: index + 1 + numberOffset,
           onRemove: onRemove == null ? null : () => onRemove!(photo),
         ),
     ],
@@ -123,15 +129,29 @@ class PublishedRequestPhotos extends StatelessWidget {
     super.key,
     required this.requestId,
     required this.photoIds,
-    this.repository,
+    this.readPhoto,
+    this.inFeed = false,
+    this.onRemove,
   });
   final String requestId;
   final List<String> photoIds;
-  final RequestPhotoRepository? repository;
+  final RequestPhotoReader? readPhoto;
+  final bool inFeed;
+  final ValueChanged<String>? onRemove;
 
   @override
   Widget build(BuildContext context) {
-    final source = repository;
+    final source = readPhoto;
+    if (inFeed && source != null) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 8,
+        children: [
+          for (final (index, id) in photoIds.indexed)
+            Expanded(child: _photo(source, id, index)),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -150,32 +170,41 @@ class PublishedRequestPhotos extends StatelessWidget {
             runSpacing: 8,
             children: [
               for (final (index, id) in photoIds.indexed)
-                _PublishedPhoto(
-                  key: ValueKey((requestId, id)),
-                  repository: source,
-                  requestId: requestId,
-                  photoId: id,
-                  number: index + 1,
-                ),
+                _photo(source, id, index),
             ],
           ),
       ],
     );
   }
+
+  Widget _photo(RequestPhotoReader source, String id, int index) =>
+      _PublishedPhoto(
+        key: ValueKey((requestId, id, source)),
+        readPhoto: source,
+        requestId: requestId,
+        photoId: id,
+        number: index + 1,
+        inFeed: inFeed,
+        onRemove: onRemove == null ? null : () => onRemove!(id),
+      );
 }
 
 class _PublishedPhoto extends StatefulWidget {
   const _PublishedPhoto({
     super.key,
-    required this.repository,
+    required this.readPhoto,
     required this.requestId,
     required this.photoId,
     required this.number,
+    required this.inFeed,
+    this.onRemove,
   });
 
-  final RequestPhotoRepository repository;
+  final RequestPhotoReader readPhoto;
   final String requestId, photoId;
   final int number;
+  final bool inFeed;
+  final VoidCallback? onRemove;
 
   @override
   State<_PublishedPhoto> createState() => _PublishedPhotoState();
@@ -184,35 +213,59 @@ class _PublishedPhoto extends StatefulWidget {
 class _PublishedPhotoState extends State<_PublishedPhoto> {
   late Future<Uint8List> _photo = _load();
   Future<Uint8List> _load() =>
-      widget.repository.readRequestPhoto(widget.requestId, widget.photoId);
+      widget.readPhoto(widget.requestId, widget.photoId);
+
+  void _retry() => setState(() {
+    _photo = _load();
+  });
 
   @override
   Widget build(BuildContext context) => FutureBuilder<Uint8List>(
     future: _photo,
     builder: (context, snapshot) {
       if (snapshot.hasData) {
-        return _PhotoTile(bytes: snapshot.requireData, number: widget.number);
+        return _PhotoTile(
+          bytes: snapshot.requireData,
+          number: widget.number,
+          inFeed: widget.inFeed,
+          onRemove: widget.onRemove,
+        );
       }
       if (snapshot.hasError) {
+        if (widget.inFeed) {
+          return SizedBox(
+            height: 132,
+            child: Center(
+              child: IconButton(
+                tooltip:
+                    'Photo indisponible. Réessayer la photo ${widget.number}',
+                onPressed: _retry,
+                icon: const Icon(Icons.refresh),
+              ),
+            ),
+          );
+        }
         final error = snapshot.error;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(error is AuthFailure ? error.message : 'Photo indisponible.'),
             TextButton.icon(
-              onPressed: () {
-                setState(() {
-                  _photo = _load();
-                });
-              },
+              onPressed: _retry,
               icon: const Icon(Icons.refresh, size: 18),
               label: Text('Réessayer la photo ${widget.number}'),
             ),
+            if (widget.onRemove != null)
+              TextButton(
+                onPressed: widget.onRemove,
+                child: Text('Retirer la photo ${widget.number}'),
+              ),
           ],
         );
       }
-      return SizedBox.square(
-        dimension: 78,
+      return SizedBox(
+        width: widget.inFeed ? double.infinity : 78,
+        height: widget.inFeed ? 132 : 78,
         child: Center(
           child: CircularProgressIndicator(
             semanticsLabel: 'Chargement de la photo ${widget.number}',
@@ -229,11 +282,13 @@ class _PhotoTile extends StatelessWidget {
     required this.bytes,
     required this.number,
     this.onRemove,
+    this.inFeed = false,
   });
 
   final Uint8List bytes;
   final int number;
   final VoidCallback? onRemove;
+  final bool inFeed;
 
   Widget _image({required BoxFit fit, int? width}) => Image.memory(
     bytes,
@@ -245,8 +300,9 @@ class _PhotoTile extends StatelessWidget {
   );
 
   @override
-  Widget build(BuildContext context) => SizedBox.square(
-    dimension: 78,
+  Widget build(BuildContext context) => SizedBox(
+    width: inFeed ? double.infinity : 78,
+    height: inFeed ? 132 : 78,
     child: Material(
       borderRadius: BorderRadius.circular(10),
       clipBehavior: Clip.antiAlias,
@@ -254,7 +310,7 @@ class _PhotoTile extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _image(fit: BoxFit.cover, width: 180),
+          _image(fit: BoxFit.cover, width: inFeed ? 720 : 180),
           Semantics(
             button: true,
             label: 'Agrandir la photo $number',

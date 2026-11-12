@@ -231,7 +231,11 @@ void main() {
         await captureV4(t, '05-space-selector');
         await fixtures.tap(t, find.text('Espace client'));
         await fixtures.tap(t, find.byKey(const ValueKey('confirmSpace')));
-        expect(find.text('Espace Client'), findsOneWidget);
+        expect(find.text('Mon compte'), findsOneWidget);
+        expect(
+          t.widget<Text>(find.byKey(const ValueKey('currentSpace'))).data,
+          'Client',
+        );
         await captureV4(t, '06-client-after-switch');
         expect(auth.user!.id, 'uid');
         expect(auth.user!.profile.preferredMode, 'professional');

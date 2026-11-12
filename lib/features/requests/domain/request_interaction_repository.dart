@@ -31,7 +31,25 @@ class RecommendationPage {
   final String? cursor;
 }
 
+class RequestEngagement {
+  const RequestEngagement({
+    this.likeCount = 0,
+    this.recommendationCount,
+    this.responseCount,
+  });
+  final int likeCount;
+  final int? recommendationCount, responseCount;
+
+  factory RequestEngagement.fromMap(Map<String, dynamic> data) =>
+      RequestEngagement(
+        likeCount: (data['likeCount'] as num?)?.toInt() ?? 0,
+        recommendationCount: (data['recommendationCount'] as num?)?.toInt(),
+        responseCount: (data['responseCount'] as num?)?.toInt(),
+      );
+}
+
 abstract interface class RequestInteractionRepository {
+  Stream<RequestEngagement> watchRequestEngagement(String requestId);
   Stream<int> watchRequestLikes(String requestId);
   Stream<bool> watchMyRequestLike(String requestId, String uid);
   Future<void> setRequestLike(String requestId, bool liked);

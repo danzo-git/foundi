@@ -460,7 +460,7 @@ class _NotificationSettingsState extends State<NotificationSettings>
               children: [
                 for (final entry in {
                   'messages': 'Messages',
-                  'proposals': 'Propositions et décisions',
+                  'proposals': 'Propositions, décisions et recommandations',
                   'opportunities': 'Opportunités « Pour moi »',
                   'account': 'Compte professionnel',
                   'messagePreview':

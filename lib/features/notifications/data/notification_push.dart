@@ -4,6 +4,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/notification_repository.dart';
 import '../presentation/notification_views.dart';
@@ -16,6 +17,7 @@ class NotificationPush implements PushPermission {
   StreamSubscription<User?>? _auth;
   StreamSubscription<String>? _refresh;
   StreamSubscription<RemoteMessage>? _opens;
+  AppLifecycleListener? _lifecycle;
   Future<void> _serial = Future.value();
   bool _signingOut = false;
   String? _uid;
@@ -25,11 +27,15 @@ class NotificationPush implements PushPermission {
         TargetPlatform.android,
         TargetPlatform.iOS,
       ].contains(defaultTargetPlatform);
-  void _queue(Future<void> Function() action) {
-    _serial = _serial.then((_) => action()).catchError((Object _) {
-      // Do not log tokens or private payloads. Inbox remains available after FCM errors.
-      debugPrint('Foundi: synchronisation push indisponible.');
-    });
+  Future<T> _queue<T>(Future<T> Function() action) {
+    final result = _serial.then((_) => action());
+    _serial = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {
+        debugPrint('Foundi: synchronisation push indisponible.');
+      },
+    );
+    return result;
   }
 
   Future<String> _deviceId() async {
@@ -60,9 +66,10 @@ class NotificationPush implements PushPermission {
     if (initial != null) _open(initial);
     // Keep registration-token semantics used by Admin SDK messaging.send.
     // ignore: deprecated_member_use
-    _refresh = FirebaseMessaging.instance.onTokenRefresh.listen(
-      (token) => _queue(() => _register(token)),
-    );
+    _refresh = FirebaseMessaging.instance.onTokenRefresh.listen((token) {
+      final uid = _uid;
+      if (uid != null) _queue(() => _register(uid, token));
+    });
     _auth = FirebaseAuth.instance.userChanges().listen((user) {
       final uid = user != null && user.emailVerified ? user.uid : null;
       _queue(() async {
@@ -75,6 +82,7 @@ class NotificationPush implements PushPermission {
         if (uid != null && !_signingOut) await _sync();
       });
     });
+    _lifecycle = AppLifecycleListener(onResume: () => _queue(_sync));
   }
 
   void _open(RemoteMessage message) {
@@ -88,40 +96,48 @@ class NotificationPush implements PushPermission {
     }
   }
 
-  Future<void> _register(String token) async {
-    final current = FirebaseAuth.instance.currentUser;
-    if (_signingOut ||
-        current == null ||
-        current.uid != _uid ||
-        !current.emailVerified) {
-      return;
-    }
+  bool _canRegister(String uid) {
+    final user = FirebaseAuth.instance.currentUser;
+    return !_signingOut &&
+        _uid == uid &&
+        user?.uid == uid &&
+        user?.emailVerified == true;
+  }
+
+  Future<bool> _register(String uid, String token) async {
+    if (!_canRegister(uid)) return false;
+    final deviceId = await _deviceId();
+    if (!_canRegister(uid)) return false;
     await _functions.httpsCallable('registerNotificationDevice').call<void>({
-      'deviceId': await _deviceId(),
+      'deviceId': deviceId,
       'token': token,
       'platform': defaultTargetPlatform == TargetPlatform.iOS
           ? 'ios'
           : 'android',
     });
+    return _canRegister(uid);
   }
 
-  Future<void> _sync() async {
+  Future<bool> _sync() async {
+    final uid = _uid;
+    if (uid == null || !_canRegister(uid)) return false;
     final settings = await FirebaseMessaging.instance.getNotificationSettings();
     if (![
       AuthorizationStatus.authorized,
       AuthorizationStatus.provisional,
     ].contains(settings.authorizationStatus)) {
-      return;
+      return false;
     }
     // APNs may not be ready immediately after a restore. A later resume/enable retries safely.
     if (defaultTargetPlatform == TargetPlatform.iOS &&
         await FirebaseMessaging.instance.getAPNSToken() == null) {
-      return;
+      return false;
     }
+    if (!_canRegister(uid)) return false;
     await FirebaseMessaging.instance.setAutoInitEnabled(true);
     // ignore: deprecated_member_use
     final token = await FirebaseMessaging.instance.getToken();
-    if (token != null) await _register(token);
+    return token != null && await _register(uid, token);
   }
 
   @override
@@ -130,8 +146,12 @@ class NotificationPush implements PushPermission {
     final s = await FirebaseMessaging.instance.getNotificationSettings();
     if (s.authorizationStatus == AuthorizationStatus.authorized ||
         s.authorizationStatus == AuthorizationStatus.provisional) {
-      _queue(_sync);
-      return 'Notifications autorisées sur ce téléphone.';
+      try {
+        if (await _queue(_sync)) return 'Alertes actives sur ce téléphone.';
+      } catch (_) {
+        // The settings screen can retry registration after a temporary error.
+      }
+      return 'Notifications autorisées. Réessaie pour enregistrer ce téléphone.';
     }
     if (s.authorizationStatus == AuthorizationStatus.denied) {
       return 'Notifications refusées. Tu peux les autoriser dans les réglages du téléphone.';
@@ -156,12 +176,7 @@ class NotificationPush implements PushPermission {
         sound: true,
       );
     }
-    // Serialize against account switches/token refresh; never attach the old token to a new account.
-    final registration = _serial.then((_) => _sync());
-    _serial = registration.catchError((Object _) {
-      debugPrint('Foundi: synchronisation push indisponible.');
-    });
-    await registration;
+    await _queue(_sync);
   }
 
   Future<void> beforeSignOut() async {
@@ -192,8 +207,11 @@ class NotificationPush implements PushPermission {
   }
 
   Future<void> dispose() async {
-    await _auth?.cancel();
-    await _refresh?.cancel();
-    await _opens?.cancel();
+    _lifecycle?.dispose();
+    await Future.wait([
+      if (_auth case final auth?) auth.cancel(),
+      if (_refresh case final refresh?) refresh.cancel(),
+      if (_opens case final opens?) opens.cancel(),
+    ]);
   }
 }

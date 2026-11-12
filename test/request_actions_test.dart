@@ -69,6 +69,7 @@ class ActionRequests extends proposals.Proposals
   final mutations = <bool>[];
   bool mineLiked = false, failLike = false, failRecommendation = false;
   Completer<void>? pendingLike;
+  RequestEngagement? counts;
 
   @override
   RequestInteractionRepository get interactions => this;
@@ -84,6 +85,19 @@ class ActionRequests extends proposals.Proposals
   @override
   Stream<int> watchRequestLikes(String requestId) =>
       _changes(() => mineLiked ? 1 : 0);
+  @override
+  Stream<RequestEngagement> watchRequestEngagement(String requestId) =>
+      _changes(
+        () =>
+            counts ??
+            RequestEngagement(
+              likeCount: mineLiked ? 1 : 0,
+              recommendationCount: recommendations.length,
+              responseCount: sent
+                  .where((proposal) => proposal.requestId == requestId)
+                  .length,
+            ),
+      );
   @override
   Stream<bool> watchMyRequestLike(String requestId, String uid) =>
       _changes(() => mineLiked);
@@ -118,6 +132,7 @@ class ActionRequests extends proposals.Proposals
     }
     final already = recommendations.contains(professionalId);
     if (!already) recommendations.add(professionalId);
+    interactionsChanged.add(null);
     return already;
   }
 
@@ -140,6 +155,21 @@ class ActionRequests extends proposals.Proposals
     List<String>? zoneIds,
     Map<String, dynamic>? cursor,
   }) async => OpportunityPage(items, null);
+}
+
+class RespondingActionRequests extends ActionRequests
+    implements RequestRespondentsRepository {
+  @override
+  Future<RequestRespondentsPage> listRequestRespondents(
+    String requestId, {
+    int offset = 0,
+  }) async => const RequestRespondentsPage(
+    total: 3,
+    items: [
+      RequestRespondent('Atelier Ébène', ['Menuiserie']),
+    ],
+    canViewProposals: false,
+  );
 }
 
 Future<void> capture(WidgetTester t, String name) async {
@@ -187,6 +217,57 @@ void main() {
       'Roboto',
     )..addFont(Future.value(ByteData.sublistView(bytes)))).load();
   });
+
+  testWidgets(
+    'public cards display live totals and the response count opens public respondents',
+    (t) async {
+      final repo = RespondingActionRequests()
+        ..items.add(request)
+        ..counts = const RequestEngagement(
+          likeCount: 1,
+          recommendationCount: 2,
+          responseCount: 3,
+        );
+      addTearDown(repo.interactionsChanged.close);
+      await requests.runFlow(t, repo, (_, _) async {
+        if (!captureEnabled) {
+          t.view.physicalSize = const Size(320, 780);
+          t.platformDispatcher.textScaleFactorTestValue = 1.7;
+          await t.pumpAndSettle();
+        }
+        await t.scrollUntilVisible(
+          find.text('3 réponses'),
+          140,
+          scrollable: find
+              .byWidgetPredicate(
+                (widget) =>
+                    widget is Scrollable &&
+                    widget.axisDirection == AxisDirection.down,
+              )
+              .first,
+        );
+        await requests.tapForm(t, find.text('3 réponses'));
+        expect(find.text('3 professionnels ont répondu'), findsOneWidget);
+        expect(find.text('Atelier Ébène'), findsOneWidget);
+        expect(find.text('Voir mes propositions'), findsNothing);
+        await t.binding.handlePopRoute();
+        await t.pumpAndSettle();
+        expect(find.text('2 recommandations'), findsOneWidget);
+        await t.ensureVisible(find.text('3 réponses'));
+        await capture(t, '07-compteurs-explorer');
+        repo.counts = const RequestEngagement(
+          likeCount: 1,
+          recommendationCount: 1,
+          responseCount: 0,
+        );
+        repo.interactionsChanged.add(null);
+        await t.pumpAndSettle();
+        expect(find.text('1 recommandation'), findsOneWidget);
+        expect(find.text('0 réponses'), findsOneWidget);
+        expect(t.takeException(), isNull);
+      }, guest: true);
+    },
+  );
 
   testWidgets(
     'Client card supports optimistic likes and recommendation without opening the card',
@@ -240,6 +321,12 @@ void main() {
         repo.failRecommendation = false;
         await fixtures.tap(t, find.text('Confirmer la recommandation'));
         expect(repo.recommendations, ['atelier']);
+        expect(
+          find.text(
+            'Recommandation enregistrée. L’auteur et le professionnel recevront une notification Foundi.',
+          ),
+          findsOneWidget,
+        );
         expect(find.text('Détail de la demande'), findsNothing);
 
         await requests.tapForm(t, find.text(request.title));

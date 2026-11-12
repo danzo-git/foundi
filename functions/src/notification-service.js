@@ -41,6 +41,16 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     return emit({eventId:`professionalAudit/${id}`,type,recipientUid:audit.uid,actorUid:audit.adminUid,
       resourceType:'professional',resourceId:audit.uid,occurredAt:audit.createdAt});
   }
+  async function directRequest(id, value) {
+    const current = (await doc(`directRequests/${id}`).get()).data();
+    if (current?.visibility !== 'direct' || current.status !== 'published' ||
+        current.clientUid !== value.clientUid || current.directProfessionalId !== value.directProfessionalId ||
+        current.clientUid === current.directProfessionalId ||
+        (await doc(`professionalProfiles/${current.directProfessionalId}`).get()).data()?.status !== 'approved') return false;
+    return emit({eventId:`directRequests/${id}/created`, type:'request.direct_received',
+      recipientUid:current.directProfessionalId, actorUid:current.clientUid,
+      resourceType:'directRequest', resourceId:id, requestId:id, occurredAt:current.createdAt});
+  }
   async function proposal(id, value) {
     if (value.status !== 'sent' || value.clientUid === value.professionalUid) return;
     const own = (await doc(`userRequests/${value.clientUid}/items/${value.requestId}`).get()).data();
@@ -48,20 +58,38 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     return emit({eventId:`proposals/${id}/created`,type:'proposal.created',recipientUid:value.clientUid,
       actorUid:value.professionalUid,resourceType:'requestProposals',resourceId:value.requestId,requestId:value.requestId,proposalId:id,occurredAt:value.createdAt});
   }
-  async function availableRecommendation(uid, value) {
-    if (value?.ownerUid !== uid || ![value.requestId, value.professionalUid].every(internalId)) return false;
+  async function availableRecommendation(value) {
+    if (!value || ![value.ownerUid, value.requestId, value.professionalUid].every(internalId)) return false;
     const [own, professional] = await Promise.all([
-      doc(`userRequests/${uid}/items/${value.requestId}`).get(),
+      doc(`userRequests/${value.ownerUid}/items/${value.requestId}`).get(),
       doc(`professionalProfiles/${value.professionalUid}`).get(),
     ]);
     return own.exists && own.data().status !== 'deleted' && professional.data()?.status === 'approved' &&
       await active(value.professionalUid);
   }
+  async function requestIsPublished(requestId) {
+    return (await doc(`requests/${requestId}`).get()).data()?.status === 'published';
+  }
   async function recommendation(id, value) {
-    if (!await availableRecommendation(value.ownerUid, value)) return false;
-    return emit({ eventId: `requestRecommendations/${id}`, type: 'request.recommended', recipientUid: value.ownerUid,
-      actorUid: value.actorUid, resourceType: 'recommendation', resourceId: id, requestId: value.requestId,
-      occurredAt: value.createdAt });
+    if (!await availableRecommendation(value)) return false;
+    const event = {
+      eventId: `requestRecommendations/${id}`,
+      resourceId: id,
+      requestId: value.requestId,
+      occurredAt: value.createdAt,
+    };
+    const ownerNotified = await emit({
+      ...event, type: 'request.recommended', recipientUid: value.ownerUid,
+      actorUid: value.actorUid, resourceType: 'recommendation',
+    });
+    if (value.professionalUid === value.ownerUid || !await requestIsPublished(value.requestId)) {
+      return ownerNotified;
+    }
+    const professionalNotified = await emit({
+      ...event, type: 'request.recommendation_received', recipientUid: value.professionalUid,
+      resourceType: 'recommendedRequest',
+    });
+    return ownerNotified || professionalNotified;
   }
   async function decision(uid, requestId, id, audit) {
     const type = decisionType(audit);
@@ -232,6 +260,11 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     if (!n || n.recipientUid !== uid || n.schemaVersion !== 9 || !internalId(n.resourceId)) return unavailable();
     const resourceId=n.resourceId;
     switch(n.resourceType) {
+      case 'directRequest': {
+        const [r,p] = await Promise.all([doc(`directRequests/${resourceId}`).get(), doc(`professionalProfiles/${uid}`).get()]);
+        if (r.data()?.directProfessionalId !== uid || r.data()?.status === 'deleted' || p.data()?.status !== 'approved') return unavailable();
+        break;
+      }
       case 'professional':
         if(resourceId!==uid || !(await doc(`professionalProfiles/${uid}`).get()).exists)return unavailable();
         break;
@@ -250,8 +283,15 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
         break;
       case 'recommendation': {
         const value = (await doc(`requestRecommendations/${resourceId}`).get()).data();
-        if (!await availableRecommendation(uid, value)) return unavailable();
+        if (value?.ownerUid !== uid || !await availableRecommendation(value)) return unavailable();
         break;
+      }
+      case 'recommendedRequest': {
+        const value = (await doc(`requestRecommendations/${resourceId}`).get()).data();
+        if (value?.professionalUid !== uid || !await availableRecommendation(value) ||
+            !await requestIsPublished(value.requestId)) return unavailable();
+        // The installed app already opens public request details for this target type.
+        return { resourceType: 'opportunity', resourceId: value.requestId };
       }
       case 'participatedRequest': {
         // A closed public request cannot be read. Use the recipient's private proposal/history.
@@ -367,6 +407,6 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       logger.info('notification_drain',{jobs:jobs.size,pushes:pushes.size});
     }
   }
-  return {emit,professional,proposal,recommendation,decision,conversation,message,read,markConversationRead,excludeLegacyMessage,enqueueRequest,processJob,register,unregister,resolve,deliver,drain};
+  return {emit,professional,directRequest,proposal,recommendation,decision,conversation,message,read,markConversationRead,excludeLegacyMessage,enqueueRequest,processJob,register,unregister,resolve,deliver,drain};
 }
 module.exports={createNotificationService,PAGE};

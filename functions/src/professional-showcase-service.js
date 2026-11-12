@@ -107,7 +107,11 @@ function createProfessionalShowcaseService({ store, auth }) {
         if (proposalId !== undefined) return null;
         fail('permission-denied', 'Ton dossier professionnel doit être approuvé.');
       }
-      return showcaseProjection(await tx.get(pathFor(professionalUid)));
+      const profile = showcaseProjection(await tx.get(pathFor(professionalUid)));
+      if (!profile || proposalId === undefined) return profile;
+      const { directRequestActivity } = require('./direct-request-context');
+      const catalog = await tx.get('referenceData/professionalOnboarding');
+      return { ...profile, professionalId: professionalUid, requestActivity: directRequestActivity(professional, catalog) };
     });
   }
 

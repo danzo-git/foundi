@@ -1,0 +1,8 @@
+{
+  "firestore": {"rules":"firestore.rules", "indexes":"firestore.indexes.json"},
+  "emulators": {
+    "firestore":{"port":1541,"websocketPort":1546},
+    "hub":{"port":1544}, "logging":{"port":1545},
+    "ui":{"enabled":false}, "singleProjectMode":true
+  }
+}

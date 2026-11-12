@@ -18,6 +18,7 @@ import '../../requests/domain/request_interaction_repository.dart';
 import '../../requests/presentation/request_action_bar.dart';
 import '../../requests/presentation/request_composer.dart';
 import '../../requests/presentation/request_views.dart';
+import '../../requests/presentation/direct_requests.dart';
 import '../../notifications/presentation/notification_views.dart';
 import '../../notifications/domain/notification_repository.dart';
 
@@ -46,11 +47,35 @@ class FoundiShell extends StatefulWidget {
 }
 
 class _FoundiShellState extends AuthActionState<FoundiShell> {
+  String? get _requestAccountName {
+    final name = widget.user.profile.fullName.trim();
+    return name.isEmpty ? widget.user.displayName : name;
+  }
+
   NotificationScope? _notifications;
+  DirectRequestsScope? _directScope;
+  void _directChanged() {
+    final intent = _directScope?.navigation.value;
+    if (!mounted || !widget.active || intent == null) return;
+    _directScope!.navigation.value = null;
+    if (intent.uid != widget.user.id) return;
+    _professional = false;
+    _requestId = intent.requestId;
+    _requestReturn = 'mine';
+    _showRequests(intent.requestId == null ? 'mine' : 'directDetail');
+  }
+
   bool _openingNotification = false;
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final direct = DirectRequestsScope.maybeOf(context);
+    if (_directScope?.navigation != direct?.navigation) {
+      _directScope?.navigation.removeListener(_directChanged);
+      _directScope = direct;
+      direct?.navigation.addListener(_directChanged);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _directChanged());
+    }
     final scope = NotificationScope.maybeOf(context);
     if (_notifications?.intent != scope?.intent) {
       _notifications?.intent.removeListener(_notificationIntentChanged);
@@ -64,6 +89,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
 
   @override
   void dispose() {
+    _directScope?.navigation.removeListener(_directChanged);
     _notifications?.intent.removeListener(_notificationIntentChanged);
     super.dispose();
   }
@@ -98,6 +124,15 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
       if (push) await scope.repository.markRead(widget.user.id, id);
       if (!mounted) return;
       switch (target.type) {
+        case 'directRequest':
+          if (!widget.professional.approved ||
+              widget.requestRepository is! DirectRequestRepository) {
+            _notificationUnavailable();
+            return;
+          }
+          _requestId = target.id;
+          _requestReturn = 'directRequests';
+          _showRequests('directDetail');
         case 'professional':
           _dossier();
         case 'conversation':
@@ -139,6 +174,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           setState(() => _professional = true);
           _requestId = target.id;
           _requestReturn = 'explore';
+          _explorerRespondents = false;
           _showRequests('detail');
         default:
           _notificationUnavailable();
@@ -200,6 +236,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
       widget.professional.approved &&
       widget.user.profile.preferredMode == 'professional';
   bool _settings = false;
+  int _accountSection = 0;
   BuildContext? _selectorContext;
   FoundiRequest? _editing, _proposalRequest;
   GlobalKey<RequestComposerState>? _editKey;
@@ -227,6 +264,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
   }
 
   String? _page, _requestId;
+  bool _explorerRespondents = false;
   String get _landing => professionalSpace ? 'explore' : 'mine';
   String get _requestPage => _page ?? _landing;
   String _requestReturn = 'explore';
@@ -241,7 +279,8 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
   String? get _backPage => switch (_requestPage) {
     'conversation' => _conversationReturn,
     'proposal-detail' => _proposalDetailReturn,
-    'detail' => _requestReturn,
+    'detail' || 'directDetail' => _requestReturn,
+    'directRequests' => 'account',
     'receivedProposals' => _receivedReturn,
     'sentProposals' when !professionalSpace => 'account',
     _ => null,
@@ -253,7 +292,8 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
     'messages' || 'conversation' => 2,
     'account' => 3,
     'mine' || 'edit' => professionalSpace ? 3 : 0,
-    'detail' || 'proposal-compose' => _tabFor(_requestReturn),
+    'detail' || 'directDetail' || 'proposal-compose' => _tabFor(_requestReturn),
+    'directRequests' => 3,
     'receivedProposals' => _tabFor(_receivedReturn),
     'proposal-detail' => _tabFor(_proposalDetailReturn),
     'publish' => _tabFor(_publicationReturn),
@@ -268,7 +308,8 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
   void _openRequest(FoundiRequest request, String from) {
     _requestId = request.id;
     _requestReturn = from;
-    _showRequests('detail');
+    _explorerRespondents = from == 'explore';
+    _showRequests(request.isDirect ? 'directDetail' : 'detail');
   }
 
   Widget? _proposalAction(
@@ -289,7 +330,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
       emphasized: professionalSpace,
       onCompose: () {
         if (!widget.active || _requestPage != from) return;
-        if (from != 'detail') {
+        if (from != 'detail' && from != 'directDetail') {
           _requestId = request.id;
           _requestReturn = from;
         }
@@ -307,13 +348,17 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
     );
   }
 
-  Widget _requestActions(FoundiRequest request, String from) =>
-      RequestActionBar(
-        request: request,
-        uid: widget.user.id,
-        repository: widget.requestRepository!.interactionRepository!,
-        reply: _proposalAction(request, from, compact: true),
-      );
+  Widget _requestActions(FoundiRequest request, String from) => request.isDirect
+      ? const SizedBox.shrink()
+      : RequestActionBar(
+          request: request,
+          uid: widget.user.id,
+          repository: widget.requestRepository!.interactionRepository!,
+          reply: _proposalAction(request, from, compact: true),
+          onViewRespondents: from == 'explore'
+              ? () => _openRequest(request, from)
+              : null,
+        );
 
   void _publish() {
     if (professionalSpace) {
@@ -433,7 +478,10 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             professionalProfileAction: _showcaseRepository == null
                 ? null
                 : (proposal) => proposal.clientUid == widget.user.id
-                      ? () => _openShowcase(proposalId: proposal.id)
+                      ? () => _openShowcase(
+                          proposalId: proposal.id,
+                          professionalId: proposal.professionalUid,
+                        )
                       : null,
             actionsBuilder: _conversations == null
                 ? null
@@ -453,6 +501,14 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             key: ValueKey(_requestId),
             repository: widget.requestRepository!,
             id: _requestId!,
+            showRespondents: _explorerRespondents,
+            onViewProposals: _proposals == null
+                ? null
+                : (id) {
+                    _receivedRequestId = id;
+                    _receivedReturn = 'detail';
+                    _showRequests('receivedProposals');
+                  },
             actionsBuilder:
                 widget.requestRepository?.interactionRepository != null
                 ? (r) => _requestActions(r, 'detail')
@@ -462,6 +518,37 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             onBack: () => _showRequests(_requestReturn),
           ),
           'account' => _accountBody(),
+          'directRequests'
+              when widget.requestRepository is DirectRequestRepository &&
+                  widget.professional.approved =>
+            DirectRequestsInbox(
+              repository: widget.requestRepository! as DirectRequestRepository,
+              uid: widget.user.id,
+              onBack: () => _showRequests('account'),
+              onOpen: (r) => _openRequest(r, 'directRequests'),
+            ),
+          'directDetail'
+              when widget.requestRepository is DirectRequestRepository =>
+            RequestDetailView(
+              key: ValueKey('direct-$_requestId'),
+              repository: widget.requestRepository!,
+              id: _requestId!,
+              privateRequest: true,
+              load: () => (widget.requestRepository! as DirectRequestRepository)
+                  .watchDirectRequest(_requestId!),
+              onBack: () => _showRequests(_requestReturn),
+              actionsBuilder: (r) => r.clientUid == widget.user.id
+                  ? FilledButton(
+                      onPressed: () {
+                        _receivedReturn = 'directDetail';
+                        _receivedRequestId = r.id;
+                        _showRequests('receivedProposals');
+                      },
+                      child: const Text('Voir mes propositions'),
+                    )
+                  : _proposalAction(r, 'directDetail') ??
+                        const SizedBox.shrink(),
+            ),
           'publish' => const SizedBox.shrink(),
           _ => ListView(
             padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
@@ -508,6 +595,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             repository: widget.requestRepository!,
             catalog: widget.catalogRepository!,
             initial: _editing,
+            accountName: _requestAccountName,
             active: _requestPage == 'edit' && widget.active,
             onExit: _finishEdit,
             onMine: _finishEdit,
@@ -522,6 +610,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             key: ValueKey('requestComposer-$_publicationVersion'),
             repository: widget.requestRepository!,
             catalog: widget.catalogRepository!,
+            accountName: _requestAccountName,
             active: _requestPage == 'publish' && widget.active,
             onPublished: () => _publicationComplete = true,
             onExit: () => _showRequests(
@@ -661,11 +750,17 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
     if (result != professionalSpace) {
       _hasExplorer = _hasExplorer || _requestPage == 'explore';
       _professional = result;
-      _showRequests(null);
+      _showRequests(_requestPage == 'account' ? 'account' : null);
     }
   }
 
   void _activity() {
+    if (widget.professional.approved) {
+      _accountSection = 1;
+      _settings = false;
+      _showRequests('account');
+      return;
+    }
     if (widget.professional.status == ProfessionalStatus.draft ||
         widget.professional.status == ProfessionalStatus.needsChanges) {
       _dossier();
@@ -689,38 +784,37 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
         : null;
   }
 
-  void _openShowcase({String? proposalId}) {
+  void _personal() {
+    final user = widget.auth.currentUser;
+    if (user?.id != widget.user.id) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProfileScreen(user: user!, repository: widget.auth),
+      ),
+    );
+  }
+
+  void _openShowcase({
+    required String proposalId,
+    required String professionalId,
+  }) {
     final repository = _showcaseRepository;
-    if (repository == null ||
-        (proposalId == null && !widget.professional.approved)) {
-      return;
-    }
+    if (repository == null) return;
     final navigator = Navigator.of(context);
     navigator.push(
       MaterialPageRoute<void>(
         builder: (_) => ProfessionalShowcaseScreen(
           repository: repository,
+          professionalId: professionalId,
           proposalId: proposalId,
           businessName: widget.professional.activity.businessName,
-          onPersonal: proposalId != null
-              ? null
-              : () {
-                  if (!mounted) return;
-                  final user = widget.auth.currentUser;
-                  if (user?.id != widget.user.id) return;
-                  navigator.push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          ProfileScreen(user: user!, repository: widget.auth),
-                    ),
-                  );
-                },
         ),
       ),
     );
   }
 
   void _navigate(int index) {
+    if (index == 3) _accountSection = 0;
     final page = switch (index) {
       0 => _landing,
       1 => professionalSpace ? 'sentProposals' : 'explore',
@@ -770,10 +864,15 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           onSpaces: _spaces,
           onDossier: _dossier,
           onActivity: _activity,
-          onPublish: widget.requestRepository == null ? null : _publish,
-          onShowcase: _showcaseRepository == null
-              ? null
-              : () => _openShowcase(),
+          onPersonal: _personal,
+          onDirectRequests:
+              widget.professional.approved &&
+                  widget.requestRepository is DirectRequestRepository
+              ? () => _showRequests('directRequests')
+              : null,
+          initialSection: _accountSection,
+          professionalRepository: widget.professionalRepository,
+          showcaseRepository: _showcaseRepository,
           onRequests: widget.requestRepository == null
               ? null
               : () => _showRequests('mine'),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -30,6 +32,13 @@ class _BootstrapState extends State<_Bootstrap> {
   NotificationPush? _push;
   String? _attachmentEndpointBase;
   late Future<FirebaseAuthRepository> _initialization = _initialize();
+
+  @override
+  void dispose() {
+    unawaited(_push?.dispose());
+    _notificationIntent.dispose();
+    super.dispose();
+  }
 
   Future<FirebaseAuthRepository> _initialize() async {
     const emulated = bool.fromEnvironment('USE_FIREBASE_EMULATORS');

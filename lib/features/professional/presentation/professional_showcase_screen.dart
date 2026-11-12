@@ -9,6 +9,60 @@ import '../../auth/presentation/auth_widgets.dart';
 import '../../navigation/presentation/space_widgets.dart';
 import '../../requests/presentation/request_views.dart';
 import '../domain/professional_showcase.dart';
+import 'professional_profile_widgets.dart';
+import '../../requests/domain/request_repository.dart';
+import '../../requests/presentation/direct_requests.dart';
+
+enum ShowcaseEditSection { portrait, cover, gallery }
+
+Future<ProfessionalShowcase?> editProfessionalShowcase(
+  BuildContext context, {
+  required ProfessionalShowcaseRepository repository,
+  required ProfessionalShowcase initial,
+  VoidCallback? onPersonal,
+  ShowcaseEditSection? section,
+}) => Navigator.of(context).push<ProfessionalShowcase>(
+  MaterialPageRoute(
+    builder: (_) => _ShowcaseEditor(
+      repository: repository,
+      initial: initial,
+      onPersonal: onPersonal,
+      section: section,
+    ),
+  ),
+);
+
+void openShowcasePhoto(BuildContext context, ShowcasePhoto photo, int index) {
+  showDialog<void>(
+    context: context,
+    builder: (dialogContext) => Dialog(
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Image.memory(
+                photo.bytes,
+                fit: BoxFit.contain,
+                semanticLabel: 'Réalisation ${index + 1}',
+                errorBuilder: (_, _, _) => const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('Image indisponible.'),
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Fermer'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
 class ProfessionalShowcaseScreen extends StatefulWidget {
   const ProfessionalShowcaseScreen({
@@ -17,11 +71,13 @@ class ProfessionalShowcaseScreen extends StatefulWidget {
     this.proposalId,
     this.businessName = '',
     this.onPersonal,
+    this.professionalId,
   }) : loadRecommended = null;
 
   const ProfessionalShowcaseScreen.recommended({
     super.key,
     required Future<ProfessionalShowcase> Function() this.loadRecommended,
+    this.professionalId,
   }) : repository = null,
        proposalId = null,
        businessName = '',
@@ -32,6 +88,7 @@ class ProfessionalShowcaseScreen extends StatefulWidget {
   final String? proposalId;
   final String businessName;
   final VoidCallback? onPersonal;
+  final String? professionalId;
 
   @override
   State<ProfessionalShowcaseScreen> createState() =>
@@ -42,20 +99,18 @@ class _ProfessionalShowcaseScreenState
     extends State<ProfessionalShowcaseScreen> {
   bool get _own => widget.proposalId == null && widget.loadRecommended == null;
   late Future<ProfessionalShowcase?> _profile = _load();
+  int _section = 0;
 
   Future<ProfessionalShowcase?> _load() =>
       widget.loadRecommended?.call() ??
       widget.repository!.readShowcase(proposalId: widget.proposalId);
 
   Future<void> _edit(ProfessionalShowcase? profile) async {
-    final saved = await Navigator.of(context).push<ProfessionalShowcase>(
-      MaterialPageRoute(
-        builder: (_) => _ShowcaseEditor(
-          repository: widget.repository!,
-          initial: profile ?? ProfessionalShowcase(name: widget.businessName),
-          onPersonal: widget.onPersonal,
-        ),
-      ),
+    final saved = await editProfessionalShowcase(
+      context,
+      repository: widget.repository!,
+      initial: profile ?? ProfessionalShowcase(name: widget.businessName),
+      onPersonal: widget.onPersonal,
     );
     if (!mounted || saved == null) return;
     setState(() {
@@ -67,31 +122,7 @@ class _ProfessionalShowcaseScreenState
   }
 
   void _openPhoto(ShowcasePhoto photo, int index) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => Dialog(
-        clipBehavior: Clip.antiAlias,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Image.memory(
-                  photo.bytes,
-                  fit: BoxFit.contain,
-                  semanticLabel: 'Réalisation ${index + 1}',
-                ),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Fermer'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    openShowcasePhoto(context, photo, index);
   }
 
   @override
@@ -126,8 +157,9 @@ class _ProfessionalShowcaseScreenState
           );
         }
         final profile = snapshot.data;
+        final professionalId = widget.professionalId ?? profile?.professionalId;
         return ListView(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 26),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 28),
           children: [
             if (_own) ...[
               Wrap(
@@ -164,26 +196,89 @@ class _ProfessionalShowcaseScreenState
                     : 'Le profil et les réalisations ne sont pas disponibles pour cette proposition.',
               )
             else ...[
-              _ShowcaseIdentity(profile: profile),
-              if (profile.bio.isNotEmpty) ...[
-                const SizedBox(height: 22),
-                const _SectionTitle('À propos'),
-                const SizedBox(height: 6),
-                Text(profile.bio, style: const TextStyle(height: 1.5)),
-              ],
-              const SizedBox(height: 22),
-              const _SectionTitle('Réalisations'),
-              const SizedBox(height: 8),
-              if (profile.gallery.isEmpty)
-                const Text(
-                  'Aucune réalisation ajoutée.',
-                  style: TextStyle(color: FoundiUi.muted),
-                )
-              else
-                _PhotoGrid(
-                  photos: profile.gallery,
-                  onPhoto: (index) => _openPhoto(profile.gallery[index], index),
+              ProfessionalShowcaseHeader(
+                profile: profile,
+                showBio: true,
+                action:
+                    !_own &&
+                        professionalId != null &&
+                        DirectRequestsScope.maybeOf(context)?.onRequest !=
+                            null &&
+                        DirectRequestsScope.maybeOf(
+                              context,
+                            )?.auth.currentUser?.id !=
+                            professionalId
+                    ? OutlinedButton.icon(
+                        key: const ValueKey('requestProfessionalDirectly'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 38),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          backgroundColor: FoundiUi.soft,
+                          foregroundColor: FoundiUi.green,
+                          side: const BorderSide(color: FoundiUi.green),
+                          textStyle: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () =>
+                            DirectRequestsScope.maybeOf(context)!.onRequest!(
+                              DirectProfessionalTarget(
+                                professionalId,
+                                profile.name,
+                                activity: profile.requestActivity,
+                              ),
+                            ),
+                        icon: const Icon(Icons.send_outlined, size: 17),
+                        label: const Text('Faire une demande'),
+                      )
+                    : null,
+                footer: ProfessionalProfileTabs(
+                  section: _section,
+                  keyPrefix: 'publicProfileSection',
+                  onSelected: (section) => setState(() => _section = section),
                 ),
+              ),
+              const SizedBox(height: 14),
+              ProfessionalProfileSection(
+                profile: profile,
+                section: _section,
+                onPhoto: (index) => _openPhoto(profile.gallery[index], index),
+                onSeeAll: () => setState(() => _section = 2),
+                details: [
+                  if (_section == 1 && profile.name.isNotEmpty)
+                    ProfessionalProfileDetail(
+                      Icons.business_outlined,
+                      'Nom professionnel',
+                      profile.name,
+                    ),
+                  if (profile.trade.isNotEmpty)
+                    ProfessionalProfileDetail(
+                      Icons.sell_outlined,
+                      'Activité',
+                      profile.trade,
+                    ),
+                  if (profile.area.isNotEmpty)
+                    ProfessionalProfileDetail(
+                      Icons.location_on_outlined,
+                      'Zone d’intervention',
+                      profile.area,
+                    ),
+                  if (_section == 1 && profile.bio.isNotEmpty)
+                    ProfessionalProfileDetail(
+                      Icons.description_outlined,
+                      'Présentation',
+                      profile.bio,
+                    ),
+                ],
+              ),
             ],
           ],
         );
@@ -197,11 +292,13 @@ class _ShowcaseEditor extends StatefulWidget {
     required this.repository,
     required this.initial,
     this.onPersonal,
+    this.section,
   });
 
   final ProfessionalShowcaseRepository repository;
   final ProfessionalShowcase initial;
   final VoidCallback? onPersonal;
+  final ShowcaseEditSection? section;
 
   @override
   State<_ShowcaseEditor> createState() => _ShowcaseEditorState();
@@ -210,6 +307,9 @@ class _ShowcaseEditor extends StatefulWidget {
 class _ShowcaseEditorState extends AuthActionState<_ShowcaseEditor> {
   final _form = GlobalKey<FormState>();
   final _scroll = ScrollController();
+  final _portraitSection = GlobalKey();
+  final _coverSection = GlobalKey();
+  final _gallerySection = GlobalKey();
   late final _name = TextEditingController(text: widget.initial.name);
   late final _trade = TextEditingController(text: widget.initial.trade);
   late final _area = TextEditingController(text: widget.initial.area);
@@ -217,6 +317,21 @@ class _ShowcaseEditorState extends AuthActionState<_ShowcaseEditor> {
   late ShowcasePhoto? _portrait = widget.initial.portrait;
   late ShowcasePhoto? _cover = widget.initial.cover;
   late final _gallery = widget.initial.gallery.toList();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final target = switch (widget.section) {
+        ShowcaseEditSection.portrait => _portraitSection.currentContext,
+        ShowcaseEditSection.cover => _coverSection.currentContext,
+        ShowcaseEditSection.gallery => _gallerySection.currentContext,
+        null => null,
+      };
+      if (target != null) Scrollable.ensureVisible(target, alignment: 0.15);
+    });
+  }
 
   @override
   void dispose() {
@@ -334,15 +449,17 @@ class _ShowcaseEditorState extends AuthActionState<_ShowcaseEditor> {
   Widget _photoRow(
     String title,
     ShowcasePhoto? photo,
-    ValueChanged<ShowcasePhoto?> update,
-  ) => ListTile(
+    ValueChanged<ShowcasePhoto?> update, {
+    Key? key,
+  }) => ListTile(
+    key: key,
     contentPadding: EdgeInsets.zero,
     leading: SizedBox(
       height: 44,
       width: 52,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(9),
-        child: _Photo(photo, icon: Icons.photo_outlined),
+        child: ShowcasePhotoView(photo, icon: Icons.photo_outlined),
       ),
     ),
     title: Text(title),
@@ -374,7 +491,7 @@ class _ShowcaseEditorState extends AuthActionState<_ShowcaseEditor> {
               const _SectionTitle('Profil visible par les clients'),
               const SizedBox(height: 6),
               const Text(
-                'Ce profil est accessible aux clients qui reçoivent tes propositions.',
+                'Ces informations et photos sont visibles sur ton profil professionnel public.',
                 style: TextStyle(color: FoundiUi.muted),
               ),
               const SizedBox(height: 12),
@@ -382,8 +499,14 @@ class _ShowcaseEditorState extends AuthActionState<_ShowcaseEditor> {
                 'Photo de profil',
                 _portrait,
                 (photo) => _portrait = photo,
+                key: _portraitSection,
               ),
-              _photoRow('Couverture', _cover, (photo) => _cover = photo),
+              _photoRow(
+                'Couverture',
+                _cover,
+                (photo) => _cover = photo,
+                key: _coverSection,
+              ),
               const SizedBox(height: 12),
               _field('Nom affiché', _name, 65, required: true),
               const SizedBox(height: 6),
@@ -393,10 +516,10 @@ class _ShowcaseEditorState extends AuthActionState<_ShowcaseEditor> {
               const SizedBox(height: 6),
               _field('Présentation', _bio, 500, lines: 4),
               const SizedBox(height: 12),
-              const _SectionTitle('Réalisations'),
+              _SectionTitle('Réalisations', key: _gallerySection),
               const SizedBox(height: 8),
               if (_gallery.isNotEmpty)
-                _PhotoGrid(
+                ShowcaseGallery(
                   photos: _gallery,
                   onRemove: busy
                       ? null
@@ -477,7 +600,7 @@ class _ShowcasePage extends StatelessWidget {
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+  const _SectionTitle(this.text, {super.key});
   final String text;
 
   @override
@@ -489,166 +612,6 @@ class _SectionTitle extends StatelessWidget {
         color: FoundiUi.ink,
         fontSize: 18,
         fontWeight: FontWeight.w700,
-      ),
-    ),
-  );
-}
-
-class _ShowcaseIdentity extends StatelessWidget {
-  const _ShowcaseIdentity({required this.profile});
-  final ProfessionalShowcase profile;
-
-  @override
-  Widget build(BuildContext context) => FoundiPanel(
-    padding: EdgeInsets.zero,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            SizedBox(
-              height: 145,
-              width: double.infinity,
-              child: profile.cover == null
-                  ? const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [FoundiUi.ink, FoundiUi.green],
-                        ),
-                      ),
-                    )
-                  : _Photo(
-                      profile.cover,
-                      icon: Icons.photo_outlined,
-                      label: 'Couverture',
-                    ),
-            ),
-            Positioned(
-              left: 14,
-              bottom: -24,
-              child: Container(
-                width: 76,
-                height: 76,
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-                child: ClipOval(
-                  child: _Photo(
-                    profile.portrait,
-                    icon: Icons.person_outline,
-                    label: 'Photo du professionnel',
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(15, 32, 15, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const RequestTag('Professionnel vérifié'),
-              const SizedBox(height: 8),
-              _SectionTitle(profile.name),
-              const SizedBox(height: 4),
-              Text(profile.trade),
-              if (profile.area.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.location_on_outlined,
-                      color: FoundiUi.green,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        profile.area,
-                        style: const TextStyle(color: FoundiUi.muted),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _Photo extends StatelessWidget {
-  const _Photo(this.photo, {required this.icon, this.label});
-  final ShowcasePhoto? photo;
-  final IconData icon;
-  final String? label;
-
-  @override
-  Widget build(BuildContext context) {
-    final placeholder = ColoredBox(
-      color: FoundiUi.tint,
-      child: Center(child: Icon(icon, color: FoundiUi.green)),
-    );
-    final image = photo;
-    return image == null
-        ? placeholder
-        : Image.memory(
-            image.bytes,
-            fit: BoxFit.cover,
-            semanticLabel: label,
-            excludeFromSemantics: label == null,
-            errorBuilder: (context, error, stackTrace) => placeholder,
-          );
-  }
-}
-
-class _PhotoGrid extends StatelessWidget {
-  const _PhotoGrid({required this.photos, this.onPhoto, this.onRemove});
-  final List<ShowcasePhoto> photos;
-  final ValueChanged<int>? onPhoto, onRemove;
-
-  @override
-  Widget build(BuildContext context) => GridView.builder(
-    shrinkWrap: true,
-    primary: false,
-    physics: const NeverScrollableScrollPhysics(),
-    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-      maxCrossAxisExtent: 135,
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 8,
-    ),
-    itemCount: photos.length,
-    itemBuilder: (context, index) => ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          _Photo(photos[index], icon: Icons.photo_outlined),
-          if (onPhoto != null)
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => onPhoto!(index),
-                child: Semantics(label: 'Voir la réalisation ${index + 1}'),
-              ),
-            ),
-          if (onRemove != null)
-            Positioned(
-              top: 2,
-              right: 2,
-              child: IconButton.filledTonal(
-                tooltip: 'Retirer la réalisation ${index + 1}',
-                onPressed: () => onRemove!(index),
-                icon: const Icon(Icons.close),
-              ),
-            ),
-        ],
       ),
     ),
   );

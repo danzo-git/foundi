@@ -35,6 +35,9 @@ class FakeRequests implements RequestRepository {
       id: id,
       title: draft.title,
       description: draft.description,
+      categoryId: draft.categoryId,
+      specialtyId: draft.specialtyId,
+      zoneId: draft.zoneId,
       categoryLabel: 'Catégorie de test',
       specialtyLabel: 'Spécialité de test',
       zoneLabel: 'Zone de test',
@@ -42,6 +45,8 @@ class FakeRequests implements RequestRepository {
       createdAt: DateTime(2026, 10, 29),
       budget: draft.budget,
       photoIds: draft.photoIds,
+      photosPublic: draft.photosPublic,
+      authorPublicName: fixtures.profile.fullName,
     );
     items.insert(0, request);
     changes.add(null);
@@ -214,6 +219,8 @@ Future<void> preview(WidgetTester t) async {
   );
   await fixtures.tap(t, action);
   expect(find.text('De quoi as-tu besoin ?'), findsOneWidget);
+  expect(find.byKey(const ValueKey('requestAuthorName')), findsNothing);
+  expect(find.text('Nom d’affichage public'), findsNothing);
   expect(
     t.widget<TextFormField>(find.byType(TextFormField).first).key,
     const ValueKey('requestDescription'),
@@ -239,6 +246,7 @@ Future<void> preview(WidgetTester t) async {
   await tapForm(t, find.text('Modifier le titre'));
   await fill(t, 'requestTitle', 'Mon besoin de test');
   await tapForm(t, find.text('Vérifier ma demande'));
+  expect(find.text('Auteur affiché · Awa Kouassi'), findsOneWidget);
   await capture(t, '03-verification');
 }
 
@@ -302,6 +310,14 @@ void main() {
           await tapForm(t, find.text('Publier ma demande'));
           expect(find.text('C’est publié !'), findsOneWidget);
           expect(repository.items.length, 1);
+          expect(
+            repository.publishedDraft!.toMap().containsKey('authorPublicName'),
+            isFalse,
+          );
+          expect(
+            repository.publishedDraft!.toMap().containsKey('requesterName'),
+            isFalse,
+          );
           await capture(t, '05-succes');
           await tapForm(t, find.text('Accéder à Mes demandes'));
           expect(find.text('Mon besoin de test'), findsOneWidget);

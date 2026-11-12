@@ -29,6 +29,16 @@ test('filters narrow approved scope, exact zones and empty selections',async()=>
  for(const input of [{categoryIds:['other']},{specialtyIds:['other']},{zoneIds:['other']},{cursor:{unit:-1}}]) await assert.rejects(c.list('pro',input),e=>e.code==='invalid-argument');
  c.profile.zoneIds=[];assert.deepEqual((await c.list('pro')).items,[]);
 });
+test('personalized Explorer returns photo references only for explicitly public photos', async () => {
+ const c = setup();
+ Object.assign(c.rows[0], { photoIds: ['a'.repeat(32)], photosPublic: true });
+ Object.assign(c.rows[1], { photoIds: ['b'.repeat(32)] });
+ const [published, historical] = (await c.list('pro')).items;
+ assert.deepEqual(published.photoIds, c.rows[0].photoIds);
+ assert.equal(published.photosPublic, true);
+ assert.equal('photoIds' in historical, false);
+ assert.equal('photosPublic' in historical, false);
+});
 test('anonymous and every unapproved professional status are rejected on server',async()=>{
  const c=setup(); await assert.rejects(c.list(null),e=>e.code==='unauthenticated');
  for(const status of ['draft','pending','needs_changes','rejected','suspended',undefined]){c.profile.status=status;await assert.rejects(c.list('pro'),e=>e.code==='permission-denied');}

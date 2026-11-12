@@ -6,6 +6,7 @@ import '../../navigation/presentation/space_widgets.dart';
 import '../domain/request_repository.dart';
 import '../domain/request_photo_repository.dart';
 import 'request_photos.dart';
+import 'request_respondents.dart';
 import '../domain/request_interaction_repository.dart';
 import 'request_action_bar.dart';
 
@@ -327,12 +328,16 @@ class RequestCard extends StatelessWidget {
     this.showStatus = false,
     this.actions,
     this.footer,
+    this.showDescription = false,
+    this.photos,
   });
   final FoundiRequest request;
   final VoidCallback? onTap;
   final bool showStatus;
   final Widget? actions;
   final Widget? footer;
+  final bool showDescription;
+  final Widget? photos;
   @override
   Widget build(BuildContext context) {
     const padding = EdgeInsets.all(17);
@@ -364,12 +369,39 @@ class RequestCard extends StatelessWidget {
   Widget _content() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      if (showDescription || request.isDirect) ...[
+        Row(
+          children: [
+            const CircleAvatar(
+              radius: 16,
+              backgroundColor: FoundiUi.tint,
+              child: Icon(
+                Icons.person_outline,
+                size: 18,
+                color: FoundiUi.green,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                request.authorDisplayName,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: FoundiUi.ink,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+      ],
       Wrap(
         spacing: 8,
         runSpacing: 8,
         children: [
           ?actions,
           RequestTag(request.categoryLabel),
+          if (request.isDirect) const RequestTag('Privée'),
           if (showStatus) RequestTag(request.statusLabel),
         ],
       ),
@@ -382,6 +414,11 @@ class RequestCard extends StatelessWidget {
           color: FoundiUi.ink,
         ),
       ),
+      if (showDescription && request.description.trim().isNotEmpty) ...[
+        const SizedBox(height: 8),
+        _ExplorerRequestDescription(request.description),
+      ],
+      if (photos != null) ...[const SizedBox(height: 12), photos!],
       const SizedBox(height: 10),
       Text(
         request.budget == null
@@ -417,6 +454,55 @@ class RequestCard extends StatelessWidget {
       ],
     ],
   );
+}
+
+class _ExplorerRequestDescription extends StatefulWidget {
+  const _ExplorerRequestDescription(this.description);
+  final String description;
+
+  @override
+  State<_ExplorerRequestDescription> createState() =>
+      _ExplorerRequestDescriptionState();
+}
+
+class _ExplorerRequestDescriptionState
+    extends State<_ExplorerRequestDescription> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = DefaultTextStyle.of(
+      context,
+    ).style.copyWith(color: FoundiUi.ink);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter = TextPainter(
+          text: TextSpan(text: widget.description, style: style),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 4,
+        )..layout(maxWidth: constraints.maxWidth);
+        final canExpand = painter.didExceedMaxLines;
+        painter.dispose();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.description,
+              style: style,
+              maxLines: _expanded ? null : 4,
+              overflow: _expanded ? null : TextOverflow.ellipsis,
+            ),
+            if (canExpand)
+              TextButton(
+                onPressed: () => setState(() => _expanded = !_expanded),
+                child: Text(_expanded ? 'Voir moins' : 'Voir plus'),
+              ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 String requestDate(DateTime date) {
@@ -772,6 +858,7 @@ class RequestPreview extends StatelessWidget {
           runSpacing: 8,
           children: [
             RequestTag(request.category),
+            if (request.isDirect) const RequestTag('Privée'),
             RequestTag(request.zoneLabel),
           ],
         ),
@@ -842,9 +929,39 @@ class RequestContent extends StatelessWidget {
         runSpacing: 8,
         children: [
           RequestTag(request.category),
+          if (request.isDirect) const RequestTag('Privée'),
           if (showStatus) RequestTag(request.statusLabel),
         ],
       ),
+      if (request.isDirect &&
+          request.directProfessionalName?.isNotEmpty == true) ...[
+        const SizedBox(height: 12),
+        Text(
+          'Pour ${request.directProfessionalName}',
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: FoundiUi.green,
+          ),
+        ),
+      ],
+      if (request.isDirect) ...[
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const Icon(Icons.person_outline, size: 19, color: FoundiUi.green),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Demande de ${request.authorDisplayName}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: FoundiUi.ink,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
       const SizedBox(height: 24),
       Text(
         request.title,
@@ -941,25 +1058,47 @@ class RequestDetailView extends StatefulWidget {
     required this.onBack,
     this.actionsBuilder,
     this.canReadPhotos = true,
+    this.showRespondents = false,
+    this.onViewProposals,
+    this.load,
+    this.privateRequest = false,
   });
   final Widget Function(FoundiRequest)? actionsBuilder;
   final RequestRepository repository;
   final String id;
   final VoidCallback onBack;
   final bool canReadPhotos;
+  final bool showRespondents;
+  final ValueChanged<String>? onViewProposals;
+  final Stream<FoundiRequest?> Function()? load;
+  final bool privateRequest;
   @override
   State<RequestDetailView> createState() => _RequestDetailViewState();
 }
 
 class _RequestDetailViewState extends State<RequestDetailView> {
-  late Stream<FoundiRequest?> _stream = widget.repository.watchPublicDetail(
-    widget.id,
-  );
+  Stream<FoundiRequest?> _load() =>
+      widget.load?.call() ?? widget.repository.watchPublicDetail(widget.id);
+  late Stream<FoundiRequest?> _stream = _load();
+  RequestRespondentsRepository? get _respondents {
+    final repository = widget.repository;
+    return widget.showRespondents && repository is RequestRespondentsRepository
+        ? repository as RequestRespondentsRepository
+        : null;
+  }
+
   @override
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
     children: [
-      RequestHeading('Détail de la demande', onBack: widget.onBack),
+      RequestHeading(
+        widget.privateRequest
+            ? 'Demande privée'
+            : _respondents == null
+            ? 'Détail de la demande'
+            : 'Réponses à la demande',
+        onBack: widget.onBack,
+      ),
       StreamBuilder<FoundiRequest?>(
         stream: _stream,
         builder: (context, s) {
@@ -968,15 +1107,13 @@ class _RequestDetailViewState extends State<RequestDetailView> {
                   s.data == null)) {
             return Column(
               children: [
-                const AuthNotice(
-                  'Cette demande est indisponible ou n’est plus publique.',
+                AuthNotice(
+                  widget.privateRequest
+                      ? 'Cette demande privée est indisponible ou cet accès n’est plus autorisé.'
+                      : 'Cette demande est indisponible ou n’est plus publique.',
                 ),
                 OutlinedButton(
-                  onPressed: () => setState(
-                    () => _stream = widget.repository.watchPublicDetail(
-                      widget.id,
-                    ),
-                  ),
+                  onPressed: () => setState(() => _stream = _load()),
                   child: const Text('Réessayer'),
                 ),
               ],
@@ -987,6 +1124,50 @@ class _RequestDetailViewState extends State<RequestDetailView> {
           }
           final request = s.requireData!;
           final repository = widget.repository;
+          final respondents = _respondents;
+          if (respondents != null) {
+            if (request.status != 'published') {
+              return const AuthNotice('Cette demande n’est plus publique.');
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FoundiPanel(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      RequestTag(request.statusLabel),
+                      const SizedBox(height: 8),
+                      Text(
+                        request.title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        request.zoneLabel,
+                        style: const TextStyle(color: FoundiUi.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                RequestRespondents(
+                  key: ValueKey(request.id),
+                  repository: respondents,
+                  requestId: request.id,
+                  onViewProposals: widget.onViewProposals == null
+                      ? null
+                      : () => widget.onViewProposals!(request.id),
+                ),
+                if (widget.actionsBuilder != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: widget.actionsBuilder!(request),
+                  ),
+              ],
+            );
+          }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -996,10 +1177,14 @@ class _RequestDetailViewState extends State<RequestDetailView> {
                 PublishedRequestPhotos(
                   requestId: request.id,
                   photoIds: request.photoIds,
-                  repository:
-                      widget.canReadPhotos &&
-                          repository is RequestPhotoRepository
-                      ? repository as RequestPhotoRepository
+                  readPhoto:
+                      request.photosPublic &&
+                          repository is PublicRequestPhotoRepository
+                      ? (repository as PublicRequestPhotoRepository)
+                            .readPublicRequestPhoto
+                      : widget.canReadPhotos &&
+                            repository is RequestPhotoRepository
+                      ? (repository as RequestPhotoRepository).readRequestPhoto
                       : null,
                 ),
               ],
@@ -1047,6 +1232,7 @@ class _GuestRequestsState extends State<GuestRequests> {
     request: request,
     repository: widget.repository.interactionRepository!,
     onAuthenticate: widget.onAuthenticate,
+    onViewRespondents: () => setState(() => _detail = request.id),
   );
   @override
   Widget build(BuildContext context) => PopScope(
@@ -1085,6 +1271,7 @@ class _GuestRequestsState extends State<GuestRequests> {
                           key: ValueKey(_detail),
                           repository: widget.repository,
                           id: _detail!,
+                          showRespondents: true,
                           canReadPhotos: false,
                           actionsBuilder:
                               widget.repository.interactionRepository == null

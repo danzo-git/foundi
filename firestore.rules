@@ -89,6 +89,16 @@ service cloud.firestore {
       allow write: if false;
     }
     match /requestOwnership/{id} { allow read, write: if false; }
+    match /directRequests/{id} {
+      function recipient() {
+        return request.auth != null && resource.data.directProfessionalId == request.auth.uid
+          && resource.data.status in ['published', 'closed', 'in_discussion']
+          && get(/databases/$(database)/documents/professionalProfiles/$(request.auth.uid)).data.status == 'approved';
+      }
+      allow get: if owner(resource.data.clientUid) || recipient();
+      allow list: if recipient() && request.query.limit != null && request.query.limit <= 50;
+      allow write: if false;
+    }
     match /requestEngagement/{id} {
       function published() {
         return get(/databases/$(database)/documents/requests/$(id)).data.status == 'published';

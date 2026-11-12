@@ -33,20 +33,66 @@ RequestPhotoSelection photoSelection(String extension) {
 }
 
 class PhotoRequests extends requests.FakeRequests
-    implements RequestPhotoRepository {
+    implements
+        RequestPhotoRepository,
+        PublicRequestPhotoRepository,
+        RequestManagementRepository {
   final uploaded = <String, Uint8List>{};
   final discarded = <String>[];
   int attempts = 0;
   int reads = 0;
+  final publicReads = <String>[];
   int? failUploadAt;
   Completer<Uint8List>? pendingRead;
+  bool failEdit = false;
+  RequestDraft? editedDraft;
+  String? editedId;
+
+  @override
+  Future<FoundiRequest> manage(
+    String id,
+    String action, {
+    RequestDraft? draft,
+    int? expectedRevision,
+  }) async {
+    if (failEdit) throw const AuthFailure('Modification interrompue.');
+    final original = items.firstWhere((request) => request.id == id);
+    editedId = id;
+    editedDraft = draft!;
+    final edited = FoundiRequest(
+      id: id,
+      title: draft.title,
+      description: draft.description,
+      categoryId: draft.categoryId,
+      specialtyId: draft.specialtyId,
+      zoneId: draft.zoneId,
+      categoryLabel: original.categoryLabel,
+      specialtyLabel: original.specialtyLabel,
+      zoneLabel: original.zoneLabel,
+      status: original.status,
+      createdAt: original.createdAt,
+      revision: (original.revision ?? 0) + 1,
+      budget: draft.budget,
+      photoIds: draft.photoIds,
+      photosPublic: draft.photosPublic,
+      authorPublicName: fixtures.profile.fullName,
+    );
+    items[items.indexOf(original)] = edited;
+    changes.add(null);
+    return edited;
+  }
 
   @override
   Future<bool> uploadRequestPhoto(
     String requestId,
     LocalRequestPhoto photo,
   ) async {
-    if (items.any((request) => request.id == requestId)) return true;
+    if (items.any(
+      (request) =>
+          request.id == requestId && request.photoIds.contains(photo.id),
+    )) {
+      return true;
+    }
     if (++attempts == failUploadAt) {
       throw const AuthFailure('Envoi interrompu.');
     }
@@ -68,9 +114,22 @@ class PhotoRequests extends requests.FakeRequests
     if (pendingRead case final pending?) return pending.future;
     return uploaded[photoId]!;
   }
+
+  @override
+  Future<Uint8List> readPublicRequestPhoto(
+    String requestId,
+    String photoId,
+  ) async {
+    publicReads.add(photoId);
+    return uploaded[photoId]!;
+  }
 }
 
-Future<void> capture(WidgetTester t, String name) async {
+Future<void> capture(
+  WidgetTester t,
+  String name, {
+  Key key = captureKey,
+}) async {
   if (!captureEnabled) return;
   FocusManager.instance.primaryFocus?.unfocus();
   final formHeader = find.text('Nouvelle demande');
@@ -89,9 +148,7 @@ Future<void> capture(WidgetTester t, String name) async {
     });
     await t.pumpAndSettle();
   }
-  final boundary = t.renderObject<RenderRepaintBoundary>(
-    find.byKey(captureKey),
-  );
+  final boundary = t.renderObject<RenderRepaintBoundary>(find.byKey(key));
   await t.runAsync(() async {
     final image = await boundary.toImage(pixelRatio: 2);
     final png = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -127,6 +184,98 @@ void main() {
   });
 
   testWidgets(
+    'editing retains, adds and removes photos, retries errors and can remove every photo',
+    (t) async {
+      final repo = PhotoRequests();
+      final pro = fixtures.FakePro();
+      final originalIds = ['a' * 32, 'b' * 32, 'c' * 32];
+      for (final id in originalIds) {
+        repo.uploaded[id] = fixture('png');
+      }
+      final original = await repo.publish(
+        'existing-request',
+        RequestDraft(
+          categoryId: 'test_sector',
+          specialtyId: 'test_specialty',
+          zoneId: 'test_zone',
+          title: 'Réparer un meuble',
+          description: 'Une réparation de porte de meuble en bois.',
+          photoIds: originalIds,
+          photosPublic: true,
+        ),
+      );
+      var saved = false;
+      Future<void> open(FoundiRequest request) async {
+        await t.pumpWidget(
+          RepaintBoundary(
+            key: captureKey,
+            child: MaterialApp(
+              home: Scaffold(
+                body: RequestComposer(
+                  key: ValueKey(request.revision),
+                  repository: repo,
+                  catalog: pro,
+                  initial: request,
+                  onExit: () {},
+                  onMine: () => saved = true,
+                  onOpen: (_) {},
+                  photoPicker: () async => [photoSelection('png')],
+                ),
+              ),
+            ),
+          ),
+        );
+        await t.pumpAndSettle();
+      }
+
+      try {
+        await open(original);
+        expect(find.text('Jusqu’à 3 photos · 3/3'), findsOneWidget);
+        await requests.tapForm(t, find.byTooltip('Retirer la photo 2'));
+        expect(repo.discarded, isEmpty);
+        expect(repo.items.single.photoIds, originalIds);
+        await selectPhotos(t);
+        expect(find.text('Jusqu’à 3 photos · 3/3'), findsOneWidget);
+        await capture(t, '09-modifier-photos');
+        await requests.tapForm(t, find.text('Vérifier ma demande'));
+        repo.failEdit = true;
+        await requests.tapForm(t, find.text('Enregistrer les modifications'));
+        expect(saved, isFalse);
+        expect(repo.items.single.photoIds, originalIds);
+        expect(find.text('Modification interrompue.'), findsOneWidget);
+        repo.failEdit = false;
+        await requests.tapForm(t, find.text('Enregistrer les modifications'));
+        expect(saved, isTrue);
+        expect(repo.editedId, original.id);
+        expect(repo.editedDraft!.photoIds.take(2), [
+          originalIds.first,
+          originalIds.last,
+        ]);
+        expect(repo.editedDraft!.photoIds.length, 3);
+        expect(repo.editedDraft!.toMap()['photosPublic'], isTrue);
+        expect(repo.publishIds, [original.id]);
+        final edited = repo.items.single;
+        saved = false;
+        await open(edited);
+        for (var i = 0; i < 3; i++) {
+          await requests.tapForm(t, find.byTooltip('Retirer la photo 1'));
+        }
+        expect(find.text('Jusqu’à 3 photos · 0/3'), findsOneWidget);
+        await requests.tapForm(t, find.text('Vérifier ma demande'));
+        await requests.tapForm(t, find.text('Enregistrer les modifications'));
+        expect(saved, isTrue);
+        expect(repo.editedDraft!.toMap()['photoIds'], isEmpty);
+        expect(repo.editedDraft!.toMap()['photosPublic'], isFalse);
+      } finally {
+        await t.pumpWidget(const SizedBox());
+        await repo.changes.close();
+        await pro.changes.close();
+        await pro.docChanges.close();
+      }
+    },
+  );
+
+  testWidgets(
     'zero photos uses the original publication payload and skips media calls',
     (t) async {
       final repo = PhotoRequests();
@@ -138,6 +287,7 @@ void main() {
         expect(repo.discarded, isEmpty);
         expect(repo.publishIds, ['request-1']);
         expect(repo.publishedDraft!.toMap(), isNot(contains('photoIds')));
+        expect(repo.publishedDraft!.toMap(), isNot(contains('photosPublic')));
       });
     },
   );
@@ -281,23 +431,33 @@ void main() {
         await requests.chooseReferences(t);
         await requests.tapForm(t, find.text('Vérifier ma demande'));
         expect(find.text('Photos de la demande'), findsOneWidget);
+        expect(find.textContaining('même sans compte Foundi'), findsOneWidget);
         expect(repo.attempts, 0);
         await capture(t, '06-verification');
         repo.failUploadAt = 2;
-        await requests.tapForm(t, find.text('Publier ma demande'));
+        await requests.tapForm(
+          t,
+          find.text('Publier ma demande et mes photos'),
+        );
         expect(find.textContaining('Envoi interrompu'), findsOneWidget);
         expect(repo.publishIds, isEmpty);
         await requests.tapForm(t, find.text('Modifier'));
         expect(find.text(description), findsOneWidget);
         await requests.tapForm(t, find.byTooltip('Retirer la photo 2'));
         await requests.tapForm(t, find.text('Vérifier ma demande'));
-        await requests.tapForm(t, find.text('Publier ma demande'));
+        await requests.tapForm(
+          t,
+          find.text('Publier ma demande et mes photos'),
+        );
         expect(repo.publishIds, ['request-1']);
         expect(repo.items.single.photoIds, hasLength(1));
+        expect(repo.publishedDraft!.toMap()['photosPublic'], true);
         expect(repo.discarded, hasLength(1));
         expect(repo.uploaded, hasLength(1));
         await requests.tapForm(t, find.text('Voir ma demande'));
         expect(find.text('Photos de la demande'), findsOneWidget);
+        expect(repo.publicReads, hasLength(1));
+        expect(repo.reads, 0);
         await capture(t, '07-detail-publie');
         final zoom = find.byWidgetPredicate(
           (w) => w is Semantics && w.properties.label == 'Agrandir la photo 1',
@@ -374,6 +534,109 @@ void main() {
         await t.pumpWidget(const SizedBox());
         await repo.changes.close();
       }
+    },
+  );
+
+  testWidgets(
+    'Explorer shows public photos to a guest, hides older photos and expands text in place',
+    (t) async {
+      final repo = PhotoRequests();
+      final photo = 'a' * 32, second = 'b' * 32, privatePhoto = 'c' * 32;
+      repo.uploaded.addAll({
+        photo: fixture('jpeg'),
+        second: fixture('png'),
+        privatePhoto: fixture('webp'),
+      });
+      final privateRequest = await repo.publish(
+        'old-request',
+        RequestDraft(
+          categoryId: 'c',
+          specialtyId: '',
+          zoneId: 'z',
+          title: 'Ancienne demande',
+          description: 'Une demande ancienne avec une photo privée.',
+          photoIds: [privatePhoto],
+        ),
+      );
+      final description = List.filled(
+        6,
+        'Je cherche un artisan pour réparer un meuble en bois dans mon salon.',
+      ).join(' ');
+      final published = await repo.publish(
+        'public-request',
+        RequestDraft(
+          categoryId: 'c',
+          specialtyId: '',
+          zoneId: 'z',
+          title: 'Réparer un meuble',
+          description: description,
+          photoIds: [photo, second],
+          photosPublic: true,
+        ),
+      );
+      await requests.runFlow(t, repo, (_, _) async {
+        final card = find.byKey(ValueKey(published.id));
+        final scrollable = find
+            .byWidgetPredicate(
+              (widget) =>
+                  widget is Scrollable &&
+                  widget.axisDirection == AxisDirection.down,
+            )
+            .first;
+        if (!captureEnabled) {
+          t.view.physicalSize = const Size(320, 780);
+          t.platformDispatcher.textScaleFactorTestValue = 1.7;
+          await t.pumpAndSettle();
+        }
+        await t.scrollUntilVisible(card, 120, scrollable: scrollable);
+        await t.pumpAndSettle();
+        final showMore = find.descendant(
+          of: card,
+          matching: find.text('Voir plus'),
+        );
+        expect(showMore, findsOneWidget);
+        expect(repo.publicReads.toSet(), {photo, second});
+        expect(repo.reads, 0);
+        final zoom = find.descendant(
+          of: card,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Semantics &&
+                widget.properties.label == 'Agrandir la photo 2',
+          ),
+        );
+        if (captureEnabled) {
+          await Scrollable.ensureVisible(
+            t.element(zoom),
+            alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+          );
+          await capture(
+            t,
+            '08-explorer-photos-publiques',
+            key: const ValueKey('v5Capture'),
+          );
+        }
+        await requests.tapForm(t, zoom);
+        expect(find.text('Photo 2'), findsOneWidget);
+        await fixtures.tap(t, find.text('Fermer'));
+        await requests.tapForm(t, showMore);
+        expect(find.text('Voir moins'), findsOneWidget);
+        expect(find.text('Détail de la demande'), findsNothing);
+        await requests.tapForm(t, find.text('Voir moins'));
+        await t.scrollUntilVisible(
+          find.byKey(ValueKey(privateRequest.id)),
+          120,
+          scrollable: scrollable,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey(privateRequest.id)),
+            matching: find.byType(PublishedRequestPhotos),
+          ),
+          findsNothing,
+        );
+        expect(t.takeException(), isNull);
+      }, guest: true);
     },
   );
 }

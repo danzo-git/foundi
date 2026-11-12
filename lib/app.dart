@@ -9,6 +9,7 @@ import 'features/professional/presentation/professional_gate.dart';
 import 'features/navigation/presentation/foundi_shell.dart';
 import 'features/requests/domain/request_repository.dart';
 import 'features/requests/presentation/request_views.dart';
+import 'features/requests/presentation/direct_requests.dart';
 
 class FoundiApp extends StatefulWidget {
   const FoundiApp({
@@ -39,6 +40,43 @@ class _FoundiAppState extends State<FoundiApp> {
   }
 
   bool _authRequested = false;
+  final _directNavigation = ValueNotifier<DirectRequestIntent?>(null);
+  DirectProfessionalTarget? _pendingDirect;
+  @override
+  void dispose() {
+    _directNavigation.dispose();
+    super.dispose();
+  }
+
+  void _requestDirect(DirectProfessionalTarget target) {
+    final user = authRepository.currentUser;
+    if (user?.id == target.id) return;
+    if (user == null ||
+        !user.emailVerified ||
+        user.needsClassicProfile ||
+        user.needsGoogleConfirmation ||
+        user.needsPasswordSetup) {
+      _pendingDirect = target;
+      _navigator.currentState?.popUntil((route) => route.isFirst);
+      setState(() => _authRequested = true);
+      return;
+    }
+    final catalog = professionalRepository;
+    final requests = widget.requestRepository;
+    if (catalog == null || requests is! DirectRequestRepository) return;
+    _navigator.currentState?.push(
+      MaterialPageRoute<void>(
+        builder: (_) => DirectRequestFormPage(
+          repository: requests!,
+          catalog: catalog,
+          target: target,
+          user: user,
+          navigation: _directNavigation,
+        ),
+      ),
+    );
+  }
+
   AuthRepository get authRepository => widget.authRepository;
   ProfessionalRepository? get professionalRepository =>
       widget.professionalRepository;
@@ -48,6 +86,16 @@ class _FoundiAppState extends State<FoundiApp> {
     navigatorKey: _navigator,
     title: 'Foundi',
     debugShowCheckedModeBanner: false,
+    builder: (context, child) => DirectRequestsScope(
+      auth: authRepository,
+      navigation: _directNavigation,
+      onRequest:
+          widget.requestRepository is DirectRequestRepository &&
+              professionalRepository != null
+          ? _requestDirect
+          : null,
+      child: child!,
+    ),
     theme: ThemeData(
       useMaterial3: true,
       scaffoldBackgroundColor: const Color(0xFFF6F9F7),
@@ -149,6 +197,15 @@ class _FoundiAppState extends State<FoundiApp> {
             user: user,
             repository: authRepository,
           );
+        }
+        final pending = _pendingDirect;
+        if (pending != null) {
+          _pendingDirect = null;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && authRepository.currentUser?.id == user.id) {
+              _requestDirect(pending);
+            }
+          });
         }
         return professionalRepository == null
             ? FoundiShell(
