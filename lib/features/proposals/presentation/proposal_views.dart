@@ -6,6 +6,8 @@ import '../../requests/domain/request_repository.dart';
 import '../../requests/presentation/request_action_bar.dart';
 import '../../requests/presentation/request_views.dart';
 import '../domain/proposal_repository.dart';
+import '../../safety/domain/safety_repository.dart';
+import '../../safety/presentation/safety_widgets.dart';
 
 class ProposalAction extends StatefulWidget {
   const ProposalAction({
@@ -113,7 +115,24 @@ class _ProposalActionState extends State<ProposalAction> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SafetyContactGate(
+    target: SafetyTarget('request', widget.request.id),
+    builder: (context, safety) {
+      if (safety?.contactAllowed != true && !widget.ownRequest) {
+        return widget.compact
+            ? const RequestActionButton(
+                icon: Icons.block,
+                label: 'Contact indisponible',
+              )
+            : const RequestNotice(
+                'Contact indisponible',
+                'Un blocage ou une restriction empêche une nouvelle proposition.',
+              );
+      }
+      return _build(context);
+    },
+  );
+  Widget _build(BuildContext context) {
     if (widget.compact) {
       return RequestActionButton(
         icon: Icons.chat_bubble_outline,

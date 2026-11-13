@@ -13,6 +13,11 @@ function messagePushContent(message, name, preview) {
   return {title,body};
 }
 const catalog = Object.freeze({
+  'safety.warned': ['account', 'Avertissement Foundi', 'Un comportement contraire aux règles a été constaté. Consulte les règles d’utilisation ou contacte l’assistance.'],
+  'safety.content_hidden': ['account', 'Contenu masqué par Foundi', 'Un de tes contenus publics a été masqué après examen. Contacte l’assistance pour une explication ou une contestation.'],
+  'safety.suspended': ['account', 'Compte Foundi suspendu', 'Ton compte a été suspendu après examen. Contacte l’assistance pour une explication ou une contestation.'],
+  'safety.content_restored': ['account', 'Contenu restauré par Foundi', 'La mesure de masquage concernant ton contenu a été levée.'],
+  'safety.account_restored': ['account', 'Suspension Foundi levée', 'La suspension de ton compte a été levée. Tu peux de nouveau utiliser Foundi.'],
   'professional.approved': ['account', 'Profil professionnel approuvé', 'Ton statut professionnel a été mis à jour.'],
   'professional.rejected': ['account', 'Décision concernant ton dossier', 'Consulte le suivi de ton dossier professionnel.'],
   'professional.more_info_requested': ['account', 'Dossier à compléter', 'Consulte le suivi de ton dossier professionnel.'],

@@ -6,7 +6,7 @@ const { getFirestore } = require("firebase-admin/firestore");
 
 const { getStorage } = require("firebase-admin/storage");
 
-const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
+const { onCall: firebaseOnCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 
 const { defineSecret, defineString, defineInt, defineBoolean } = require("firebase-functions/params");
@@ -25,6 +25,18 @@ const { createProfessionalShowcaseService } = require('./professional-showcase-s
 
 
 initializeApp();
+
+// Covers every existing callable, including older clients, without trusting token age.
+function onCall(options, operation, {allowSuspended=false}={}) {
+  return firebaseOnCall(options, request => handle(async () => {
+    if (request.auth) {
+      const user = await getAuth().getUser(request.auth.uid);
+      const restriction = (await getFirestore().doc(`accountSafety/${request.auth.uid}`).get()).data();
+      if (user.disabled || (!allowSuspended && restriction?.suspended)) throw new HttpsError('permission-denied','Ce compte est suspendu ou indisponible. Contacte l’assistance.');
+    }
+    return operation(request);
+  }));
+}
 
 const smtpPassword = defineSecret("SMTP_PASSWORD");
 
@@ -439,7 +451,8 @@ function authenticatedMediaHttp(req,res,operation){
     const token=/^Bearer (\S+)$/.exec(req.get('authorization')||'');
     if(!token)throw new OtpError('unauthenticated','Connexion nécessaire.');
     let identity;try{identity=await getAuth().verifyIdToken(token[1],true);}catch{throw new OtpError('unauthenticated','Reconnecte-toi pour continuer.');}
-    await operation(identity.uid);
+    if ((await getFirestore().doc(`accountSafety/${identity.uid}`).get()).data()?.suspended) throw new OtpError('permission-denied','Ce compte est suspendu.');
+    await operation(identity.uid,identity);
   });
 }
 exports.uploadConversationAttachment=onRequest({...attachmentOptions,cors:true},(req,res)=>authenticatedMediaHttp(req,res,async uid=>{
@@ -518,5 +531,32 @@ exports.deliverNotificationPush=onDocumentCreated({...eventOptions,document:'not
 exports.drainNotifications=onSchedule({region:'europe-west1',schedule:'every 1 minutes',maxInstances:1,timeoutSeconds:540},()=>notifications.drain({push:pushEnabled.value()}));
 exports.registerNotificationDevice=onCall(proOptions,r=>handle(()=>notifications.register(r.auth?.uid,r.data)));
 exports.unregisterNotificationDevice=onCall(proOptions,r=>handle(()=>notifications.unregister(r.auth?.uid,r.data?.deviceId)));
-exports.resolveNotification=onCall(proOptions,r=>handle(()=>notifications.resolve(r.auth?.uid,r.data?.notificationId)));
+exports.resolveNotification=onCall(proOptions,r=>handle(()=>notifications.resolve(r.auth?.uid,r.data?.notificationId)),{allowSuspended:true});
 exports.markConversationRead=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>notifications.markConversationRead(r.auth?.uid,r.data)));
+
+const {createSafetyService}=require('./safety-service');
+const {createSafetyStore}=require('./safety-store');
+const {createSafetyEvidence}=require('./safety-evidence');
+const safetyEvidence=createSafetyEvidence({files:{read:async(path,generation)=>{
+  const file=getStorage().bucket().file(path,{generation}),[metadata]=await file.getMetadata();
+  if(metadata.metadata?.firebaseStorageDownloadTokens || Number(metadata.size)>15*1048576)throw new OtpError('not-found','Preuve indisponible.');
+  return (await file.download())[0];
+}}});
+const safety=createSafetyService({store:createSafetyStore(getFirestore()),auth:getAuth(),ownerForRequest:proposals.owner,evidence:safetyEvidence});
+exports.submitSafetyReport=onCall(proOptions,r=>handle(()=>safety.submit(r.auth?.uid,r.data)));
+exports.readSafetyContext=onCall(proOptions,r=>handle(()=>safety.context(r.auth?.uid,r.data)));
+exports.blockUser=onCall(proOptions,r=>handle(()=>safety.block(r.auth?.uid,r.data)));
+exports.unblockUser=onCall(proOptions,r=>handle(()=>safety.unblock(r.auth?.uid,r.data)));
+exports.unblockSafetyTarget=onCall(proOptions,r=>handle(()=>safety.unblockTarget(r.auth?.uid,r.data)));
+exports.listBlockedUsers=onCall(proOptions,r=>handle(()=>safety.listBlocks(r.auth?.uid,r.data)));
+exports.listSafetyReports=onCall(proOptions,r=>handle(()=>safety.list(r.auth?.uid,r.auth?.token,r.data)));
+exports.readSafetyReport=onCall(proOptions,r=>handle(()=>safety.detail(r.auth?.uid,r.auth?.token,r.data)));
+exports.decideSafetyReport=onCall(proOptions,r=>handle(()=>safety.decide(r.auth?.uid,r.auth?.token,r.data)));
+exports.listSafetyNotices=onCall(proOptions,r=>handle(()=>safety.notices(r.auth?.uid)),{allowSuspended:true});
+exports.acknowledgeSafetyNotice=onCall(proOptions,r=>handle(()=>safety.acknowledgeNotice(r.auth?.uid,r.data)),{allowSuspended:true});
+exports.cleanupSafetyEvidence=onSchedule({...proOptions,maxInstances:1,schedule:'every 24 hours'},()=>safety.purgeEvidence());
+exports.readSafetyReportAttachment=onRequest({...attachmentOptions,cors:true},(req,res)=>authenticatedMediaHttp(req,res,async(uid,token)=>{
+  if(req.method!=='GET')throw new OtpError('invalid-argument','Méthode invalide.');
+  const file=await safety.readAttachment(uid,token,{reportId:req.query.reportId});
+  res.set('Content-Type',file.contentType);res.set('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.originalName)}`);res.status(200).send(file.bytes);
+}));

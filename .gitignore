@@ -56,3 +56,4 @@ functions/.secret*
 /admin/build/
 
 /.firebase-integration.json
+/.firebase-safety-integration.json

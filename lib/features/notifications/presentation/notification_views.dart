@@ -462,7 +462,7 @@ class _NotificationSettingsState extends State<NotificationSettings>
                   'messages': 'Messages',
                   'proposals': 'Propositions, décisions et recommandations',
                   'opportunities': 'Opportunités « Pour moi »',
-                  'account': 'Compte professionnel',
+                  'account': 'Compte et sécurité',
                   'messagePreview':
                       'Afficher l’aperçu des messages dans les notifications',
                 }.entries)

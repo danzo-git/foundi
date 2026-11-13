@@ -6,6 +6,7 @@ import '../../auth/presentation/legal_acceptance_screen.dart';
 import '../../professional/domain/professional_repository.dart';
 import '../../professional/presentation/professional_status_label.dart';
 import 'space_widgets.dart';
+import '../../safety/presentation/safety_widgets.dart';
 
 class FoundiSettings extends StatelessWidget {
   const FoundiSettings({
@@ -50,6 +51,12 @@ class FoundiSettings extends StatelessWidget {
           ),
         ),
         heading('MON PROFIL'),
+        if (SafetyScope.maybeOf(context) != null)
+          SafetyNoticesPanel(
+            key: ValueKey('safety-notices-${user.id}'),
+            repository: SafetyScope.maybeOf(context)!.repository,
+            showHistoryLink: true,
+          ),
         group([
           row(
             Icons.person_outline,
@@ -84,6 +91,31 @@ class FoundiSettings extends StatelessWidget {
         ]),
         heading('PRÉFÉRENCES ET SÉCURITÉ'),
         group([
+          if (SafetyScope.maybeOf(context) != null)
+            row(
+              Icons.block,
+              'Comptes bloqués',
+              'Gérer les contacts bloqués',
+              () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => BlockedUsersScreen(
+                    repository: SafetyScope.maybeOf(context)!.repository,
+                    onChanged: () =>
+                        SafetyScope.maybeOf(context)!.revision.value++,
+                  ),
+                ),
+              ),
+            ),
+          row(
+            Icons.help_outline,
+            'Aide / Signaler un problème',
+            'Assistance et règles d’utilisation',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const SafetyHelpScreen()),
+            ),
+          ),
           row(
             Icons.lock_outline,
             'Sécurité',

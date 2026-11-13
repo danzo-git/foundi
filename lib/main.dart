@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'app.dart';
+import 'features/safety/data/firebase_safety_repository.dart';
 import 'features/auth/data/firebase_auth_repository.dart';
 import 'firebase_options.dart';
 import 'features/professional/data/firebase_professional_repository.dart';
@@ -112,6 +113,7 @@ class _BootstrapState extends State<_Bootstrap> {
           intent: _notificationIntent,
           permission: _push,
           child: FoundiApp(
+            safetyRepository: FirebaseSafetyRepository(),
             authRepository: snapshot.requireData,
             professionalRepository: FirebaseProfessionalRepository(),
             requestRepository: FirebaseRequestRepository(

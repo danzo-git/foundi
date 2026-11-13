@@ -20,6 +20,7 @@ import '../../requests/presentation/request_composer.dart';
 import '../../requests/presentation/request_views.dart';
 import '../../requests/presentation/direct_requests.dart';
 import '../../notifications/presentation/notification_views.dart';
+import '../../safety/presentation/safety_widgets.dart';
 import '../../notifications/domain/notification_repository.dart';
 
 class FoundiShell extends StatefulWidget {
@@ -125,6 +126,18 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
       if (push) await scope.repository.markRead(widget.user.id, id);
       if (!mounted) return;
       switch (target.type) {
+        case 'safetyNotice':
+          final safety = SafetyScope.maybeOf(context);
+          if (safety == null) {
+            _notificationUnavailable();
+            return;
+          }
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  SafetyNoticesScreen(repository: safety.repository),
+            ),
+          );
         case 'directRequest':
           if (!widget.professional.approved ||
               widget.requestRepository is! DirectRequestRepository) {

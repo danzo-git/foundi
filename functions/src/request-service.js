@@ -4,6 +4,7 @@ const { createHash } = require('node:crypto');
 const { activeZones } = require('./catalog-service');
 const { photoIds: validatePhotoIds } = require('./request-photo-service');
 const { directRequestActivity, accountRequesterName } = require('./direct-request-context');
+const { assertActive, assertContact, publicProfileAllowed } = require('./safety-guard');
 
 const fail = (code, message) => { throw new OtpError(code, message); };
 
@@ -46,7 +47,11 @@ function text(value, min, max) {
 
   }
 
-  return value.trim();
+  const result=value.trim();
+  if (/(.)\1{79}/u.test(result) || /(?:\b(\p{L}{2,})\b[\s,;.!]*)\1(?:[\s,;.!]+\1){28}/iu.test(result)) {
+    fail('invalid-argument','Ce texte contient une répétition excessive. Décris ton besoin avec des phrases utiles.');
+  }
+  return result;
 
 }
 
@@ -86,6 +91,12 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
     if (account.emailVerified !== true) fail('failed-precondition', 'Vérifie ton adresse e-mail avant de publier une demande.');
 
     return store.transaction(async tx => {
+
+      await assertActive(tx,uid);
+      if (professionalId) {
+        await assertContact(tx,uid,professionalId);
+        if (!await publicProfileAllowed(tx,professionalId)) fail('permission-denied','Ce professionnel est indisponible.');
+      }
 
       const ownPath = `userRequests/${uid}/items/${requestId}`;
 
@@ -226,6 +237,9 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
       const existing = await tx.get(path);
 
+      await assertActive(tx,uid);
+      const moderation = await tx.get(`safetyContent/request_${requestId}`);
+
       if (!existing) fail('permission-denied', 'Cette demande ne t’appartient pas.');
 
       const target = action === 'close' ? 'closed' : 'deleted';
@@ -315,7 +329,7 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
         if (saved.photosPublic === true) fail('invalid-argument', 'Les photos d’une demande directe restent privées.');
         tx.set(`directRequests/${requestId}`, {...saved, clientUid: uid});
       } else {
-        tx.set(`requests/${requestId}`, Object.fromEntries(publicFields.map(key => [key, saved[key]])));
+        if (!moderation?.hidden) tx.set(`requests/${requestId}`, Object.fromEntries(publicFields.filter(key=>saved[key]!==undefined).map(key => [key, saved[key]])));
       }
 
       return { id: requestId, ...saved };

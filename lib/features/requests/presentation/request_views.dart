@@ -9,6 +9,8 @@ import 'request_photos.dart';
 import 'request_respondents.dart';
 import '../domain/request_interaction_repository.dart';
 import 'request_action_bar.dart';
+import '../../safety/domain/safety_repository.dart';
+import '../../safety/presentation/safety_widgets.dart';
 
 const requestPrivacy =
     'Le texte est visible publiquement. Évite les numéros de téléphone, e-mails et adresses exactes.';
@@ -343,7 +345,11 @@ class RequestCard extends StatelessWidget {
     const padding = EdgeInsets.all(17);
     final actionBar = footer;
     if (actionBar == null) {
-      return FoundiPanel(onTap: onTap, padding: padding, child: _content());
+      return FoundiPanel(
+        onTap: onTap,
+        padding: padding,
+        child: _content(context),
+      );
     }
     return FoundiPanel(
       padding: EdgeInsets.zero,
@@ -354,7 +360,7 @@ class RequestCard extends StatelessWidget {
             onTap: onTap,
             child: Padding(
               padding: padding.copyWith(bottom: 8),
-              child: _content(),
+              child: _content(context),
             ),
           ),
           Padding(
@@ -366,9 +372,14 @@ class RequestCard extends StatelessWidget {
     );
   }
 
-  Widget _content() => Column(
+  Widget _content(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      if (!showDescription && !request.isDirect)
+        Align(
+          alignment: Alignment.centerRight,
+          child: SafetyActionMenu(target: SafetyTarget('request', request.id)),
+        ),
       if (showDescription || request.isDirect) ...[
         Row(
           children: [
@@ -391,6 +402,8 @@ class RequestCard extends StatelessWidget {
                 ),
               ),
             ),
+            if (!request.isDirect)
+              SafetyActionMenu(target: SafetyTarget('request', request.id)),
           ],
         ),
         const SizedBox(height: 12),
@@ -928,6 +941,8 @@ class RequestContent extends StatelessWidget {
         spacing: 10,
         runSpacing: 8,
         children: [
+          if (!request.isDirect)
+            SafetyActionMenu(target: SafetyTarget('request', request.id)),
           RequestTag(request.category),
           if (request.isDirect) const RequestTag('Privée'),
           if (showStatus) RequestTag(request.statusLabel),

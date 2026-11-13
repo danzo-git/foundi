@@ -6,6 +6,7 @@ import '../domain/professional_repository.dart';
 import 'professional_onboarding.dart';
 import 'professional_status_label.dart';
 import '../../requests/domain/request_repository.dart';
+import '../../safety/presentation/safety_widgets.dart';
 
 class ProfessionalGate extends StatefulWidget {
   const ProfessionalGate({
@@ -202,6 +203,8 @@ class _ProfessionalGateState extends AuthActionState<ProfessionalGate> {
           () => _stream = widget.repository.watchProfile(widget.user.id),
         ),
       ),
+      const SizedBox(height: 12),
+      const SafetyAppealButton(),
       TextButton(
         onPressed: () => perform(widget.auth.signOut),
         child: const Text('Se déconnecter'),

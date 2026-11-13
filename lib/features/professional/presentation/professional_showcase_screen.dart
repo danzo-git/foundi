@@ -13,6 +13,8 @@ import '../domain/professional_showcase.dart';
 import 'professional_profile_widgets.dart';
 import '../../requests/domain/request_repository.dart';
 import '../../requests/presentation/direct_requests.dart';
+import '../../safety/domain/safety_repository.dart';
+import '../../safety/presentation/safety_widgets.dart';
 
 enum ShowcaseEditSection { portrait, cover, gallery }
 
@@ -270,6 +272,14 @@ class _ProfessionalShowcaseScreenState extends State<ProfessionalShowcaseScreen>
         return ListView(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 28),
           children: [
+            if (!_own && professionalId != null)
+              Align(
+                alignment: Alignment.centerRight,
+                child: SafetyActionMenu(
+                  target: SafetyTarget('professional', professionalId),
+                  allowBlock: true,
+                ),
+              ),
             if (_own) ...[
               Wrap(
                 alignment: WrapAlignment.spaceBetween,
@@ -318,31 +328,52 @@ class _ProfessionalShowcaseScreenState extends State<ProfessionalShowcaseScreen>
                               context,
                             )?.auth.currentUser?.id !=
                             professionalId
-                    ? OutlinedButton.icon(
-                        key: const ValueKey('requestProfessionalDirectly'),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(0, 38),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          backgroundColor: FoundiUi.soft,
-                          foregroundColor: FoundiUi.green,
-                          side: const BorderSide(color: FoundiUi.green),
-                          textStyle: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
+                    ? SafetyContactGate(
+                        target: SafetyTarget('professional', professionalId),
+                        builder: (context, safety) => Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (safety?.contactAllowed != true)
+                              Text(
+                                safety?.blocked == true
+                                    ? 'Utilisateur bloqué'
+                                    : 'Contact indisponible',
                               ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                            OutlinedButton.icon(
+                              key: const ValueKey(
+                                'requestProfessionalDirectly',
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(0, 38),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                backgroundColor: FoundiUi.soft,
+                                foregroundColor: FoundiUi.green,
+                                side: const BorderSide(color: FoundiUi.green),
+                                textStyle: Theme.of(context)
+                                    .textTheme
+                                    .labelLarge
+                                    ?.copyWith(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed:
+                                  !_verified ||
+                                      _requesting ||
+                                      safety?.contactAllowed != true
+                                  ? null
+                                  : () => _request(profile, professionalId),
+                              icon: const Icon(Icons.send_outlined, size: 17),
+                              label: const Text('Faire une demande'),
+                            ),
+                          ],
                         ),
-                        onPressed: !_verified || _requesting
-                            ? null
-                            : () => _request(profile, professionalId),
-                        icon: const Icon(Icons.send_outlined, size: 17),
-                        label: const Text('Faire une demande'),
                       )
                     : null,
                 footer: ProfessionalProfileTabs(

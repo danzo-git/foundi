@@ -121,7 +121,7 @@ test('publication is atomic and idempotent under double clicks, lost responses a
   c.reads.length = 0;
   c.setTime(123456 + 8 * 86400000);
   assert.deepEqual(await c.publish('u', id, null), results[0]);
-  assert.deepEqual(c.reads, [`userRequests/u/items/${id}`]);
+  assert.deepEqual(c.reads, ['accountSafety/u', `userRequests/u/items/${id}`]);
   assert.deepEqual(c.data.get('requestPublicationLimits/u').createdAtMs, [123456]);
 
   assert.equal([...c.data.keys()].filter(p => p.startsWith('requests/')).length, 1);

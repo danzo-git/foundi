@@ -3,6 +3,7 @@ const { key, internalId } = require('./notification-policy');
 const { activeZones } = require('./catalog-service');
 const { showcaseProjection } = require('./professional-showcase-service');
 const { directRequestActivity } = require('./direct-request-context');
+const { assertContact, publicProfileAllowed } = require('./safety-guard');
 
 const dayMs = 86400000;
 const pageSize = 24;
@@ -114,7 +115,7 @@ function createRequestInteractionService({ store, auth, ownerForRequest, clock =
       .sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name, 'fr'));
     const accounts = matches.length
       ? await auth.getUsers(matches.map(({ entry }) => ({ uid: entry.id }))) : { users: [] };
-    const enabled = new Set(accounts.users.filter(active).map((account) => account.uid));
+    const enabled = new Set((await Promise.all(accounts.users.filter(active).map(async account=>await publicProfileAllowed(store,account.uid)?account.uid:null))).filter(Boolean));
     return {
       items: matches.filter(({ entry }) => enabled.has(entry.id)).map(({ entry }) => entry),
       cursor: rows.length > pageSize ? page.at(-1).id : null,
@@ -134,6 +135,10 @@ function createRequestInteractionService({ store, auth, ownerForRequest, clock =
         tx.get(`requests/${id}`), tx.get(`userRequests/${ownerUid}/items/${id}`),
         tx.get(`professionalProfiles/${professionalUid}`), tx.get(path),
       ]);
+      await assertContact(tx,uid,ownerUid);
+      await assertContact(tx,uid,professionalUid);
+      await assertContact(tx,ownerUid,professionalUid);
+      if (!await publicProfileAllowed(tx,professionalUid)) fail('permission-denied','Ce professionnel est indisponible.');
       open(request);
       if (own?.status !== 'published' || own.createdAt !== request.createdAt) {
         fail('failed-precondition', 'Le propriétaire de cette demande ne peut pas être confirmé.');
@@ -165,6 +170,7 @@ function createRequestInteractionService({ store, auth, ownerForRequest, clock =
         tx.get(`professionalProfiles/${rec.professionalUid}/showcase/profile`),
       ]);
       const entry = profile && directoryEntry(rec.professionalUid, profile, catalog);
+      if (!await publicProfileAllowed(tx,rec.professionalUid)) fail('not-found','Ce professionnel est indisponible.');
       if (!own || own.status === 'deleted' || !entry || !await isActive(rec.professionalUid)) {
         fail('not-found', 'Ce professionnel n’est plus disponible.');
       }

@@ -1,3 +1,5 @@
+import '../../safety/domain/safety_repository.dart';
+import '../../safety/presentation/safety_widgets.dart';
 export 'proposal_negotiation.dart' show SelectionPanel;
 import 'proposal_negotiation.dart';
 import 'dart:math';
@@ -471,350 +473,401 @@ class _ConversationViewState extends State<ConversationView> {
       }
       if (!c.hasData) return const Center(child: CircularProgressIndicator());
       final chat = c.requireData!;
-      final canSend =
-          chat.active &&
-          [chat.clientUid, chat.professionalUid].contains(widget.uid);
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          final keyboardOpen =
-              MediaQuery.viewInsetsOf(context).bottom > 0 ||
-              constraints.maxHeight < 480;
-          return Column(
-            children: [
-              if (keyboardOpen)
-                Row(
-                  children: [
-                    IconButton(
-                      onPressed: widget.onBack,
-                      tooltip: 'Retour',
-                      icon: const Icon(Icons.chevron_left),
-                    ),
-                    Expanded(
-                      child: Text(
-                        chat.otherName(widget.uid),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Voir la demande liée',
-                      onPressed: () => _request(chat),
-                      icon: const Icon(Icons.info_outline),
-                    ),
-                    if (widget.proposals != null)
-                      IconButton(
-                        tooltip: 'Voir la proposition',
-                        onPressed: () => _offer(chat),
-                        icon: const Icon(Icons.description_outlined),
-                      ),
-                  ],
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: RequestHeading(
-                    chat.otherName(widget.uid),
-                    onBack: widget.onBack,
-                  ),
-                ),
-              if (!keyboardOpen)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 22),
-                  child: FoundiPanel(
-                    onTap: () => _request(chat),
-                    color: FoundiUi.tint,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+      return SafetyContactGate(
+        target: SafetyTarget('conversation', widget.id),
+        builder: (context, safety) {
+          final canSend =
+              chat.active &&
+              safety?.contactAllowed == true &&
+              [chat.clientUid, chat.professionalUid].contains(widget.uid);
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final keyboardOpen =
+                  MediaQuery.viewInsetsOf(context).bottom > 0 ||
+                  constraints.maxHeight < 480;
+              return Column(
+                children: [
+                  if (keyboardOpen)
+                    Row(
                       children: [
-                        Text(
-                          chat.requestTitle,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        IconButton(
+                          onPressed: widget.onBack,
+                          tooltip: 'Retour',
+                          icon: const Icon(Icons.chevron_left),
                         ),
-                        const SizedBox(height: 6),
-                        RequestTag(
-                          chat.active
-                              ? proposalStatusLabel(chat.proposalStatus)
-                              : 'Lecture seule',
+                        Expanded(
+                          child: Text(
+                            chat.otherName(widget.uid),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
-                        const Text(
-                          'Voir la demande liée',
-                          style: TextStyle(fontSize: 11, color: FoundiUi.green),
+                        IconButton(
+                          tooltip: 'Voir la demande liée',
+                          onPressed: () => _request(chat),
+                          icon: const Icon(Icons.info_outline),
                         ),
+                        if (widget.proposals != null)
+                          IconButton(
+                            tooltip: 'Voir la proposition',
+                            onPressed: () => _offer(chat),
+                            icon: const Icon(Icons.description_outlined),
+                          ),
                       ],
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: RequestHeading(
+                        chat.otherName(widget.uid),
+                        onBack: widget.onBack,
+                      ),
+                    ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: SafetyActionMenu(
+                      target: SafetyTarget('conversation', widget.id),
+                      allowBlock: true,
                     ),
                   ),
-                ),
-              if (chat.active &&
-                  widget.proposals != null &&
-                  widget.uid == chat.clientUid &&
-                  !keyboardOpen)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => _decisions(chat),
-                    icon: const Icon(Icons.more_horiz),
-                    label: const Text('Retenir ou refuser'),
-                  ),
-                ),
-              if (!keyboardOpen && widget.proposals != null) _offerHeader(chat),
-              Expanded(
-                child: StreamBuilder<MessageBatch>(
-                  key: ValueKey((widget.uid, widget.id, widget.repository)),
-                  stream: _messages,
-                  builder: (context, s) {
-                    if (!s.hasError && !s.hasData && _outbox.items.isEmpty) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final batch = s.hasError
-                        ? const MessageBatch([])
-                        : s.data ?? const MessageBatch([]);
-                    final messages = _outbox.merge(batch);
-                    return ConversationReadTracker(
-                      conversationId: widget.id,
-                      uid: widget.uid,
-                      batch: batch,
-                      scroll: _scroll,
-                      active: widget.active && !s.hasError,
-                      child: Column(
-                        children: [
-                          if (s.hasError) ...[
-                            const AuthNotice(
-                              'Messages indisponibles. Vérifie ta connexion.',
-                            ),
-                            TextButton(
-                              onPressed: () =>
-                                  setState(() => _messages = _watchMessages()),
-                              child: const Text('Réessayer les messages'),
-                            ),
-                          ],
-                          if (batch.fromCache)
-                            const Text(
-                              'Historique local — connexion en cours…',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: FoundiUi.muted,
+                  if (safety?.contactAllowed != true)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        safety?.blocked == true
+                            ? 'Utilisateur bloqué · Historique conservé'
+                            : 'Contact indisponible · Vérification ou restriction en cours',
+                      ),
+                    ),
+                  if (!keyboardOpen)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 22),
+                      child: FoundiPanel(
+                        onTap: () => _request(chat),
+                        color: FoundiUi.tint,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              chat.requestTitle,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                          Expanded(
-                            child: ListView.builder(
-                              controller: _scroll,
-                              reverse: true,
-                              padding: const EdgeInsets.all(20),
-                              itemCount: messages.length + 1,
-                              findChildIndexCallback: (key) {
-                                if (key == const ValueKey('history-footer')) {
-                                  return messages.length;
-                                }
-                                final index = messages.indexWhere(
-                                  (m) =>
-                                      key == ValueKey('${widget.uid}:${m.id}'),
-                                );
-                                return index < 0 ? null : index;
-                              },
-                              itemBuilder: (context, index) {
-                                if (index < messages.length) {
-                                  final m = messages[index];
-                                  final outgoing = _outbox.item(m.id);
-                                  WidgetsBinding.instance.addPostFrameCallback((
-                                    _,
-                                  ) {
-                                    if (mounted) {
-                                      MessageSendTrace.bubbleFrame(m.id);
+                            const SizedBox(height: 6),
+                            RequestTag(
+                              chat.active
+                                  ? proposalStatusLabel(chat.proposalStatus)
+                                  : 'Lecture seule',
+                            ),
+                            const Text(
+                              'Voir la demande liée',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: FoundiUi.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (chat.active &&
+                      widget.proposals != null &&
+                      widget.uid == chat.clientUid &&
+                      !keyboardOpen)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => _decisions(chat),
+                        icon: const Icon(Icons.more_horiz),
+                        label: const Text('Retenir ou refuser'),
+                      ),
+                    ),
+                  if (!keyboardOpen && widget.proposals != null)
+                    _offerHeader(chat),
+                  Expanded(
+                    child: StreamBuilder<MessageBatch>(
+                      key: ValueKey((widget.uid, widget.id, widget.repository)),
+                      stream: _messages,
+                      builder: (context, s) {
+                        if (!s.hasError &&
+                            !s.hasData &&
+                            _outbox.items.isEmpty) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        final batch = s.hasError
+                            ? const MessageBatch([])
+                            : s.data ?? const MessageBatch([]);
+                        final messages = _outbox.merge(batch);
+                        return ConversationReadTracker(
+                          conversationId: widget.id,
+                          uid: widget.uid,
+                          batch: batch,
+                          scroll: _scroll,
+                          active: widget.active && !s.hasError,
+                          child: Column(
+                            children: [
+                              if (s.hasError) ...[
+                                const AuthNotice(
+                                  'Messages indisponibles. Vérifie ta connexion.',
+                                ),
+                                TextButton(
+                                  onPressed: () => setState(
+                                    () => _messages = _watchMessages(),
+                                  ),
+                                  child: const Text('Réessayer les messages'),
+                                ),
+                              ],
+                              if (batch.fromCache)
+                                const Text(
+                                  'Historique local — connexion en cours…',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: FoundiUi.muted,
+                                  ),
+                                ),
+                              Expanded(
+                                child: ListView.builder(
+                                  controller: _scroll,
+                                  reverse: true,
+                                  padding: const EdgeInsets.all(20),
+                                  itemCount: messages.length + 1,
+                                  findChildIndexCallback: (key) {
+                                    if (key ==
+                                        const ValueKey('history-footer')) {
+                                      return messages.length;
                                     }
-                                  });
-                                  return Align(
-                                    key: ValueKey('${widget.uid}:${m.id}'),
-                                    alignment: m.senderUid == widget.uid
-                                        ? Alignment.centerRight
-                                        : Alignment.centerLeft,
-                                    child: Container(
-                                      constraints: const BoxConstraints(
-                                        maxWidth: 320,
-                                      ),
-                                      margin: const EdgeInsets.only(bottom: 14),
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: m.senderUid == widget.uid
-                                            ? FoundiUi.tint
-                                            : Colors.white,
-                                        border: Border.all(
-                                          color: FoundiUi.line,
-                                        ),
-                                        borderRadius: BorderRadius.circular(18),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.end,
-                                        children: [
-                                          RichMessageBody(
-                                            key: ValueKey(
-                                              '${widget.uid}:${m.id}',
-                                            ),
-                                            message: m,
-                                            id: widget.id,
-                                            uid: widget.uid,
-                                            repository:
-                                                widget.repository
-                                                    is RichConversationRepository
-                                                ? widget.repository
-                                                      as RichConversationRepository
-                                                : null,
-                                            actions: widget.mediaActions,
+                                    final index = messages.indexWhere(
+                                      (m) =>
+                                          key ==
+                                          ValueKey('${widget.uid}:${m.id}'),
+                                    );
+                                    return index < 0 ? null : index;
+                                  },
+                                  itemBuilder: (context, index) {
+                                    if (index < messages.length) {
+                                      final m = messages[index];
+                                      final outgoing = _outbox.item(m.id);
+                                      WidgetsBinding.instance
+                                          .addPostFrameCallback((_) {
+                                            if (mounted) {
+                                              MessageSendTrace.bubbleFrame(
+                                                m.id,
+                                              );
+                                            }
+                                          });
+                                      return Align(
+                                        key: ValueKey('${widget.uid}:${m.id}'),
+                                        alignment: m.senderUid == widget.uid
+                                            ? Alignment.centerRight
+                                            : Alignment.centerLeft,
+                                        child: Container(
+                                          constraints: const BoxConstraints(
+                                            maxWidth: 320,
                                           ),
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            _time(m.createdAt),
-                                            style: const TextStyle(
-                                              fontSize: 10,
+                                          margin: const EdgeInsets.only(
+                                            bottom: 14,
+                                          ),
+                                          padding: const EdgeInsets.all(16),
+                                          decoration: BoxDecoration(
+                                            color: m.senderUid == widget.uid
+                                                ? FoundiUi.tint
+                                                : Colors.white,
+                                            border: Border.all(
+                                              color: FoundiUi.line,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              18,
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              if (m.senderUid != widget.uid)
+                                                SafetyActionMenu(
+                                                  target: SafetyTarget(
+                                                    'message',
+                                                    m.id,
+                                                    conversationId: widget.id,
+                                                  ),
+                                                ),
+                                              RichMessageBody(
+                                                key: ValueKey(
+                                                  '${widget.uid}:${m.id}',
+                                                ),
+                                                message: m,
+                                                id: widget.id,
+                                                uid: widget.uid,
+                                                repository:
+                                                    widget.repository
+                                                        is RichConversationRepository
+                                                    ? widget.repository
+                                                          as RichConversationRepository
+                                                    : null,
+                                                actions: widget.mediaActions,
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                _time(m.createdAt),
+                                                style: const TextStyle(
+                                                  fontSize: 10,
+                                                  color: FoundiUi.muted,
+                                                ),
+                                              ),
+                                              if (m.senderUid == widget.uid &&
+                                                  m.type == 'text') ...[
+                                                Text(
+                                                  switch (outgoing?.delivery) {
+                                                    TextDelivery.sending =>
+                                                      'Envoi en cours',
+                                                    TextDelivery.failed =>
+                                                      'Échec de l’envoi',
+                                                    _ => 'Envoyé',
+                                                  },
+                                                  key: ValueKey(
+                                                    'delivery-${m.id}',
+                                                  ),
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: FoundiUi.muted,
+                                                  ),
+                                                ),
+                                                if (outgoing?.delivery ==
+                                                    TextDelivery.failed) ...[
+                                                  Text(
+                                                    outgoing!.error!,
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                  if (canSend)
+                                                    TextButton(
+                                                      key: ValueKey(
+                                                        'retry-${m.id}',
+                                                      ),
+                                                      onPressed: () =>
+                                                          _outbox.retry(m.id),
+                                                      child: const Text(
+                                                        'Réessayer',
+                                                      ),
+                                                    ),
+                                                ],
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return Column(
+                                      key: const ValueKey('history-footer'),
+                                      children: [
+                                        if (messages.isEmpty && !s.hasError)
+                                          Padding(
+                                            padding: const EdgeInsets.all(30),
+                                            child: Text(
+                                              chat.active
+                                                  ? 'La discussion est prête. Écrivez votre premier message.'
+                                                  : 'Aucun message dans cet historique.',
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          ),
+                                        if (batch.messages.length >= _limit &&
+                                            _limit < 100)
+                                          TextButton(
+                                            onPressed: () => setState(() {
+                                              _limit = min(100, _limit + 30);
+                                              _messages = _watchMessages();
+                                            }),
+                                            child: const Text(
+                                              'Charger les anciens messages',
+                                            ),
+                                          ),
+                                        if (_limit == 100 &&
+                                            batch.messages.length == 100)
+                                          const Text(
+                                            'Les 100 messages les plus récents sont affichés.',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: 11,
                                               color: FoundiUi.muted,
                                             ),
                                           ),
-                                          if (m.senderUid == widget.uid &&
-                                              m.type == 'text') ...[
-                                            Text(
-                                              switch (outgoing?.delivery) {
-                                                TextDelivery.sending =>
-                                                  'Envoi en cours',
-                                                TextDelivery.failed =>
-                                                  'Échec de l’envoi',
-                                                _ => 'Envoyé',
-                                              },
-                                              key: ValueKey('delivery-${m.id}'),
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                color: FoundiUi.muted,
-                                              ),
-                                            ),
-                                            if (outgoing?.delivery ==
-                                                TextDelivery.failed) ...[
-                                              Text(
-                                                outgoing!.error!,
-                                                style: const TextStyle(
-                                                  fontSize: 11,
-                                                ),
-                                              ),
-                                              if (canSend)
-                                                TextButton(
-                                                  key: ValueKey(
-                                                    'retry-${m.id}',
-                                                  ),
-                                                  onPressed: () =>
-                                                      _outbox.retry(m.id),
-                                                  child: const Text(
-                                                    'Réessayer',
-                                                  ),
-                                                ),
-                                            ],
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                }
-                                return Column(
-                                  key: const ValueKey('history-footer'),
-                                  children: [
-                                    if (messages.isEmpty && !s.hasError)
-                                      Padding(
-                                        padding: const EdgeInsets.all(30),
-                                        child: Text(
-                                          chat.active
-                                              ? 'La discussion est prête. Écrivez votre premier message.'
-                                              : 'Aucun message dans cet historique.',
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      ),
-                                    if (batch.messages.length >= _limit &&
-                                        _limit < 100)
-                                      TextButton(
-                                        onPressed: () => setState(() {
-                                          _limit = min(100, _limit + 30);
-                                          _messages = _watchMessages();
-                                        }),
-                                        child: const Text(
-                                          'Charger les anciens messages',
-                                        ),
-                                      ),
-                                    if (_limit == 100 &&
-                                        batch.messages.length == 100)
-                                      const Text(
-                                        'Les 100 messages les plus récents sont affichés.',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: FoundiUi.muted,
-                                        ),
-                                      ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-              if (!chat.active)
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: RequestNotice(
-                    chat.proposalStatus == 'rejected'
-                        ? 'Proposition refusée · Lecture seule'
-                        : 'Discussion en lecture seule',
-                    chat.proposalStatus == 'rejected'
-                        ? 'Cette discussion est archivée après refus de la proposition. L’historique reste consultable.'
-                        : 'La demande a été supprimée. L’historique reste consultable.',
-                  ),
-                ),
-              if (canSend)
-                SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                    child: Column(
-                      children: [
-                        AuthNotice(error),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (widget.repository is RichConversationRepository)
-                              ConversationExtrasButton(
-                                repository: widget.repository,
-                                id: widget.id,
-                                uid: widget.uid,
-                                phone: widget.ownPhone,
-                                actions: widget.mediaActions,
-                              ),
-                            Expanded(
-                              child: TextField(
-                                key: const ValueKey('messageText'),
-                                controller: _text,
-                                minLines: 1,
-                                maxLines: keyboardOpen ? 2 : 4,
-                                maxLength: 2000,
-                                decoration: const InputDecoration(
-                                  hintText: 'Écrire un message…',
-                                  counterText: '',
+                                      ],
+                                    );
+                                  },
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton.filled(
-                              key: const ValueKey('sendMessage'),
-                              tooltip: 'Envoyer le message',
-                              onPressed: () => _send(chat),
-                              icon: const Icon(Icons.send),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  if (!chat.active)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: RequestNotice(
+                        chat.proposalStatus == 'rejected'
+                            ? 'Proposition refusée · Lecture seule'
+                            : 'Discussion en lecture seule',
+                        chat.proposalStatus == 'rejected'
+                            ? 'Cette discussion est archivée après refus de la proposition. L’historique reste consultable.'
+                            : 'La demande a été supprimée. L’historique reste consultable.',
+                      ),
+                    ),
+                  if (canSend)
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                        child: Column(
+                          children: [
+                            AuthNotice(error),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                if (widget.repository
+                                    is RichConversationRepository)
+                                  ConversationExtrasButton(
+                                    repository: widget.repository,
+                                    id: widget.id,
+                                    uid: widget.uid,
+                                    phone: widget.ownPhone,
+                                    actions: widget.mediaActions,
+                                  ),
+                                Expanded(
+                                  child: TextField(
+                                    key: const ValueKey('messageText'),
+                                    controller: _text,
+                                    minLines: 1,
+                                    maxLines: keyboardOpen ? 2 : 4,
+                                    maxLength: 2000,
+                                    decoration: const InputDecoration(
+                                      hintText: 'Écrire un message…',
+                                      counterText: '',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton.filled(
+                                  key: const ValueKey('sendMessage'),
+                                  tooltip: 'Envoyer le message',
+                                  onPressed: () => _send(chat),
+                                  icon: const Icon(Icons.send),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-            ],
+                ],
+              );
+            },
           );
         },
       );

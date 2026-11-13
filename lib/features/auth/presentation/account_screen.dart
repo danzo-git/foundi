@@ -3,6 +3,7 @@ import '../domain/auth_repository.dart';
 import '../domain/auth_validators.dart';
 import 'auth_widgets.dart';
 import 'password_reset_screen.dart';
+import '../../safety/presentation/safety_widgets.dart';
 
 export 'account_view.dart';
 
@@ -274,6 +275,8 @@ class _AccountLoadErrorScreenState
         busy: busy,
         onPressed: () => perform(widget.repository.refreshUser),
       ),
+      const SizedBox(height: 12),
+      const SafetyAppealButton(),
       const SizedBox(height: 12),
       TextButton(
         onPressed: busy ? null : () => perform(widget.repository.signOut),

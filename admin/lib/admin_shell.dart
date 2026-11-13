@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'catalog_page.dart';
 import 'applications_page.dart';
+import 'moderation_page.dart';
 
 class AdminShell extends StatefulWidget {
   const AdminShell({super.key});
@@ -62,6 +63,7 @@ class _AdminShellState extends State<AdminShell> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               children: [
                 nav('dashboard', 'Tableau de bord', Icons.dashboard_outlined),
+                nav('reports', 'Signalements', Icons.flag_outlined),
                 nav(
                   'applications',
                   'Candidatures pro',
@@ -176,7 +178,9 @@ class _AdminShellState extends State<AdminShell> {
   @override
   Widget build(BuildContext context) {
     final desktop = MediaQuery.sizeOf(context).width >= 1000;
-    final content = section == 'dashboard' || section == 'applications'
+    final content = section == 'reports'
+        ? const ModerationPage()
+        : section == 'dashboard' || section == 'applications'
         ? Dashboard(
             key: ValueKey(section),
             embedded: true,
@@ -215,6 +219,8 @@ class _AdminShellState extends State<AdminShell> {
                         child: Text(
                           section == 'dashboard'
                               ? 'Vue d’ensemble'
+                              : section == 'reports'
+                              ? 'Sécurité et modération'
                               : section == 'applications'
                               ? 'Vérification professionnelle'
                               : 'Gestion du catalogue',

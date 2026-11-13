@@ -8,6 +8,7 @@ import 'package:foundi/app.dart';
 import 'package:foundi/features/notifications/domain/notification_repository.dart';
 import 'package:foundi/features/notifications/presentation/notification_views.dart';
 import 'widget_test.dart' as fixtures;
+import 'safety_test.dart' as safety_fixtures;
 
 class InboxFake implements NotificationRepository {
   final changes = StreamController<List<FoundiNotification>>.broadcast();
@@ -419,6 +420,43 @@ void main() {
         await capture(t, file);
       }
       await t.pumpWidget(const SizedBox());
+      await r.close();
+    },
+  );
+  testWidgets(
+    'SEC a moderation push opens own decisions and appeal information',
+    (t) async {
+      final r = InboxFake()
+        ..target = const NotificationTarget('safetyNotice', 'decision');
+      final safety = safety_fixtures.SafetyFake()
+        ..noticeTexts.add(
+          'Avertissement Foundi. Consulte les règles d’utilisation.',
+        );
+      final auth = fixtures.FakeAuth(), pro = fixtures.FakePro();
+      final intent = ValueNotifier<NotificationIntent?>(null);
+      await t.pumpWidget(
+        NotificationScope(
+          repository: r,
+          intent: intent,
+          child: FoundiApp(
+            authRepository: auth,
+            professionalRepository: pro,
+            safetyRepository: safety,
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      auth.emit(fixtures.account());
+      await t.pumpAndSettle();
+      intent.value = const NotificationIntent('uid', 'moderation-notification');
+      await t.pumpAndSettle();
+      expect(find.text('Décisions de modération'), findsOneWidget);
+      expect(find.textContaining('Avertissement Foundi'), findsOneWidget);
+      expect(r.reads, contains('moderation-notification'));
+      expect(find.text('Aide et contestation'), findsOneWidget);
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+      intent.dispose();
       await r.close();
     },
   );

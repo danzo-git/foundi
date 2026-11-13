@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../domain/auth_repository.dart';
 import 'auth_widgets.dart';
+import '../../safety/presentation/safety_widgets.dart';
 
 class LegalAcceptanceScreen extends StatefulWidget {
   const LegalAcceptanceScreen({super.key, required this.repository});
@@ -35,6 +36,8 @@ class _LegalAcceptanceScreenState
           ),
       ],
       children: [
+        const Text(foundiConductRules),
+        const SizedBox(height: 16),
         const AuthHeading(
           title: 'Tes conditions d’utilisation',
           description: 'Consulte les textes publiés par Foundi.',

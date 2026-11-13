@@ -1,5 +1,6 @@
 const { OtpError, requireUid } = require('./auth-validation');
 const { requestRecord } = require('./request-access');
+const { contactAllowed, assertContact } = require('./safety-guard');
 const fail = (code, message) => { throw new OtpError(code, message); };
 const idOK = id => typeof id === 'string' && /^[a-zA-Z0-9_-]{20,80}$/.test(id);
 const proposalIdOK = id => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id);
@@ -15,7 +16,8 @@ async function readConversation(tx, uid, id) {
   const p = await tx.get(`proposals/${proposalOf(chat)}`);
   const writable = chat.status === 'active' && own && ['published','closed','in_discussion'].includes(own.status) &&
     p && linked(chat,p,proposalOf(chat)) && p.conversationId === id && ['discussing','retained','selected'].includes(p.status);
-  return {chat,own,p,writable:!!writable};
+  const allowed = await contactAllowed(tx,chat.clientUid,chat.professionalUid);
+  return {chat,own,p,writable:!!writable && allowed};
 }
 function createConversationService({ store, auth, clock = () => Date.now(), onSendTiming = () => {} }) {
   async function account(uid) {
@@ -33,6 +35,7 @@ function createConversationService({ store, auth, clock = () => Date.now(), onSe
       const p = await tx.get(`proposals/${proposalId}`);
       const own = await tx.get(`userRequests/${uid}/items/${requestId}`);
       if (!own || !p || p.clientUid !== uid || p.requestId !== requestId || p.professionalUid === uid) fail('permission-denied', 'Seul l’auteur peut ouvrir la discussion pour une proposition reçue.');
+      await assertContact(tx,uid,p.professionalUid);
       const conversationId = p.conversationId || proposalId;
       const chat = await tx.get(`conversations/${conversationId}`);
       if (chat) {

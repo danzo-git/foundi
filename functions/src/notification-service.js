@@ -1,26 +1,37 @@
 const {FieldValue, FieldPath} = require('firebase-admin/firestore');
 const {OtpError, requireUid} = require('./auth-validation');
+const {contactAllowed,publicProfileAllowed} = require('./safety-guard');
+const {matchesSafetyNotice} = require('./safety-notification');
 const {key, internalId, catalog, matchesOpportunity, professionalType, decisionType, isPrivateMessage, messagePushContent} = require('./notification-policy');
 const PAGE = 40, MAX_DEVICES = 10, WINDOW = 60 * 60 * 1000;
 const fail = (code, message) => {throw new OtpError(code, message);};
 
 function createNotificationService({db, auth, messaging, clock = Date.now, logger = {info(){}, warn(){}}}) {
   const doc = path => db.doc(path);
-  async function active(uid) {
+  const reader = tx => ({get:async path=>(await (tx ? tx.get(doc(path)) : doc(path).get())).data()});
+  async function allowed(actor,recipient,tx) {
+    return !actor || actor===recipient || await contactAllowed(reader(tx),actor,recipient);
+  }
+  async function active(uid, allowSuspended=false) {
     if (!internalId(uid)) return false;
-    try { const user = await auth.getUser(uid); return !user.disabled && user.emailVerified; }
+    try { const user = await auth.getUser(uid); return !user.disabled && user.emailVerified && (allowSuspended || !(await doc(`accountSafety/${uid}`).get()).data()?.suspended); }
     catch(e) { if (e.code === 'auth/user-not-found') return false; throw e; }
   }
   async function requireAccount(uid) {
     requireUid(uid);
     if (!await active(uid)) fail('permission-denied', 'Un compte actif et vérifié est nécessaire.');
   }
-  async function emit({eventId, type, recipientUid, actorUid, resourceType, resourceId, requestId = null, proposalId = null, conversationId = null, occurredAt}) {
+  async function safetyNotice(uid,id,n) {
+    if(n?.resourceType!=='safetyNotice' || !internalId(n.resourceId))return false;
+    return matchesSafetyNotice(uid,id,n,(await doc(`users/${uid}/safetyNotices/${n.resourceId}`).get()).data());
+  }
+  async function emit({eventId, type, recipientUid, actorUid, safetyActorUid=actorUid, resourceType, resourceId, requestId = null, proposalId = null, conversationId = null, occurredAt}) {
     if (isPrivateMessage({type}) || !catalog[type] || ![recipientUid,resourceId].every(internalId) || !await active(recipientUid)) return false;
     const id = key(eventId, recipientUid), ref = doc(`users/${recipientUid}/notifications/${id}`);
     return db.runTransaction(async tx => {
       const existing = await tx.get(ref);
       if (existing.exists) return false;
+      if (!await allowed(safetyActorUid,recipientUid,tx) || (safetyActorUid && !await active(safetyActorUid))) return false;
       const [category,title,bodySafe] = catalog[type];
       const value = {eventId, type, category, title, bodySafe, recipientUid, actorUid:actorUid || null,
         resourceType, resourceId, requestId, proposalId, conversationId, occurredAt:occurredAt || clock(),
@@ -28,7 +39,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       tx.create(ref, value);
       tx.set(doc(`users/${recipientUid}/notificationState/inbox`), {unreadCount:FieldValue.increment(1)}, {merge:true});
       if (recipientUid !== actorUid) tx.create(doc(`notificationOutbox/${id}`), {
-        notificationId:id, uid:recipientUid, category, title, bodySafe, conversationId,
+        notificationId:id, uid:recipientUid, actorUid:safetyActorUid || null, category, title, bodySafe, conversationId,
         state:'pending', dueAt:clock() + (category === 'opportunities' ? 60000 : 0), createdAt:clock(),
       });
       return true;
@@ -60,6 +71,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
   }
   async function availableRecommendation(value) {
     if (!value || ![value.ownerUid, value.requestId, value.professionalUid].every(internalId)) return false;
+    if(!await allowed(value.ownerUid,value.professionalUid) || !await allowed(value.actorUid,value.ownerUid) || !await allowed(value.actorUid,value.professionalUid) || !await publicProfileAllowed(reader(),value.professionalUid))return false;
     const [own, professional] = await Promise.all([
       doc(`userRequests/${value.ownerUid}/items/${value.requestId}`).get(),
       doc(`professionalProfiles/${value.professionalUid}`).get(),
@@ -87,7 +99,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     }
     const professionalNotified = await emit({
       ...event, type: 'request.recommendation_received', recipientUid: value.professionalUid,
-      resourceType: 'recommendedRequest',
+      resourceType: 'recommendedRequest', safetyActorUid:value.actorUid,
     });
     return ownerNotified || professionalNotified;
   }
@@ -118,10 +130,11 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       const outbox=doc(`notificationOutbox/${eventKey}`);
       const [existing,read,queued]=await Promise.all([tx.get(receipt),tx.get(cursor),tx.get(outbox)]);
       if(existing.exists)return false;
+      if(!await allowed(value.senderUid,uid,tx) || !await active(value.senderUid))return false;
       const unread=!legacyRead && value.createdAt>(read.data()?.readThroughAt || 0);
       tx.create(receipt,{conversationId,messageId:id,senderUid:value.senderUid,createdAt:value.createdAt,unread,eventId,recipientUid:uid,schemaVersion:91});
       if(unread)tx.set(doc(`users/${uid}/messageState/inbox`),{unreadCount:FieldValue.increment(1),schemaVersion:91},{merge:true});
-      if(push && !queued.exists)tx.create(outbox,{notificationId:eventKey,uid,category:'messages',kind:'chat_message',conversationId,messageId:id,state:'pending',dueAt:clock(),createdAt:clock()});
+      if(push && !queued.exists)tx.create(outbox,{notificationId:eventKey,uid,actorUid:value.senderUid,category:'messages',kind:'chat_message',conversationId,messageId:id,state:'pending',dueAt:clock(),createdAt:clock()});
       return true;
     });
   }
@@ -246,9 +259,12 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     return {removed:true};
   }
   async function resolve(uid, id) {
-    await requireAccount(uid);
+    requireUid(uid);
+    if(!await active(uid,true))fail('permission-denied','Un compte vérifié est nécessaire.');
     if (!internalId(id)) fail('invalid-argument','Notification invalide.');
     let n=(await doc(`users/${uid}/notifications/${id}`).get()).data();
+    if(await safetyNotice(uid,id,n))return {resourceType:'safetyNotice',resourceId:n.resourceId};
+    await requireAccount(uid);
     if(!n){
       const job=(await doc(`notificationOutbox/${id}`).get()).data();
       if(job?.kind==='chat_message' && job.uid===uid){
@@ -330,7 +346,12 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     });
     if(!job)return;
     if(job.createdAt<clock()-24*60*60*1000){await ref.update({state:'skipped',reason:'expired'});return;}
-    if (!await active(job.uid)) {await ref.update({state:'skipped',reason:'account'});return;}
+    const stored=(await doc(`users/${job.uid}/notifications/${job.notificationId}`).get()).data();
+    const moderation=job.actorUid===null && await safetyNotice(job.uid,job.notificationId,stored);
+    if(moderation && stored.readAt!=null){await ref.update({state:'skipped',reason:'read'});return;}
+    if (!await active(job.uid,moderation)) {await ref.update({state:'skipped',reason:'account'});return;}
+    const source = job.actorUid || (job.kind==='chat_message' ? (await messageContext(job)).message.senderUid : (await doc(`users/${job.uid}/notifications/${job.notificationId}`).get()).data()?.actorUid);
+    if(source && (!await active(source) || !await allowed(source,job.uid))) {await ref.update({state:'skipped',reason:'safety'});return;}
     if(job.kind==='chat_message'){
       const receipt=(await doc(`users/${job.uid}/messageInbox/${id}`).get()).data();
       if(receipt && !receipt.unread){await ref.update({state:'skipped',reason:'read'});return;}
@@ -352,6 +373,8 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       const claimed=await db.runTransaction(async tx => {
         const [a,owner,latestDevice,latestPrefs] = await Promise.all([tx.get(attempt),tx.get(doc(`notificationTokens/${key(value.token)}`)),tx.get(device.ref),tx.get(doc(`users/${job.uid}/notificationPreferences/push`))]);
         const prior=a.data();
+        if(moderation && (await tx.get(doc(`users/${job.uid}/notifications/${job.notificationId}`))).data()?.readAt!=null)return false;
+        if(source && !await allowed(source,job.uid,tx))return false;
         if (prior && (prior.state !== 'retry' || prior.attempts >= 3)) {
           if(prior.state==='sending' && prior.claimedAt<=clock()-120000)tx.update(attempt,{state:'unknown',code:'interrupted',finishedAt:clock()});
           return false;
@@ -373,7 +396,9 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
         // Read the current preference again just before constructing display data.
         const currentPrefs=(await doc(`users/${job.uid}/notificationPreferences/push`).get()).data();
         if(currentPrefs?.[job.category]===false){await attempt.update({state:'skipped',reason:'preference'});continue;}
-        const notification=await pushContent(job,currentPrefs);
+        if(moderation && (await doc(`users/${job.uid}/notifications/${job.notificationId}`).get()).data()?.readAt!=null){await attempt.update({state:'skipped',reason:'read'});continue;}
+        if(!await active(job.uid,moderation) || (source && (!await active(source) || !await allowed(source,job.uid)))){await attempt.update({state:'skipped',reason:'safety'});continue;}
+        const notification=moderation ? {title:catalog[stored.type][1],body:catalog[stored.type][2]} : await pushContent(job,currentPrefs);
         await messaging.send({token:value.token,notification,
           data:{notificationId:job.notificationId,recipientUid:job.uid,...(job.kind==='chat_message'?{type:'chat_message',conversationId:job.conversationId,messageId:job.messageId}:{})},
           android:{priority:'normal',collapseKey:job.category === 'opportunities' ? 'foundi-opportunities' : id,notification:{tag:id}},

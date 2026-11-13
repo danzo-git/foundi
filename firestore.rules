@@ -1,11 +1,18 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function admin() { return request.auth != null && request.auth.token.get('admin', false) == true; }
+    function activeAccount() {
+      return request.auth != null && (!exists(/databases/$(database)/documents/accountSafety/$(request.auth.uid))
+        || get(/databases/$(database)/documents/accountSafety/$(request.auth.uid)).data.get('suspended', false) != true);
+    }
+    function admin() { return activeAccount() && request.auth.token.get('admin', false) == true; }
     match /professionalAudit/{id} { allow read: if admin(); allow write: if false; }
     function owner(uid) {
-      return request.auth != null && request.auth.uid == uid;
+      return activeAccount() && request.auth.uid == uid;
     }
+    // Suspension prevents activity, while own notification history and appeal
+    // information remain readable. No profile, contact or chat access is added.
+    function notificationOwner(uid) { return request.auth != null && request.auth.uid == uid; }
     function validProfile(data) {
       return data.keys().hasAll(['fullName', 'phone', 'registrationConfirmed', 'createdAt', 'updatedAt'])
         && data.fullName is string && data.fullName.size() <= 100
@@ -43,19 +50,20 @@ service cloud.firestore {
           'preferredMode', 'termsVersion', 'termsAcceptedAt', 'updatedAt'
         ]);
       match /notifications/{id} {
-        allow get: if owner(uid);
-        allow list: if owner(uid) && request.query.limit != null && request.query.limit <= 100;
+        allow get: if notificationOwner(uid);
+        allow list: if notificationOwner(uid) && request.query.limit != null && request.query.limit <= 100;
         allow create, delete: if false;
-        allow update: if owner(uid) && resource.data.get('schemaVersion', 0) == 9
+        allow update: if notificationOwner(uid) && resource.data.get('schemaVersion', 0) == 9
           && resource.data.recipientUid == uid && resource.data.readAt == null
           && request.resource.data.readAt == request.time
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']);
       }
-      match /notificationState/{id} { allow get: if owner(uid); allow list, write: if false; }
+      match /notificationState/{id} { allow get: if notificationOwner(uid) && id == 'inbox'; allow list, write: if false; }
       match /messageState/{id} { allow get: if owner(uid) && id == 'inbox'; allow list, write: if false; }
       match /messageReads/{id} { allow get: if owner(uid); allow list, write: if false; }
       match /messageInbox/{id} { allow read, write: if false; }
       match /devices/{id} { allow read, write: if false; }
+      match /safetyNotices/{id} { allow read: if notificationOwner(uid); allow write: if false; }
       match /notificationPreferences/{id} {
         allow get: if owner(uid) && id == 'push';
         allow create, update: if owner(uid) && id == 'push'
@@ -91,7 +99,7 @@ service cloud.firestore {
     match /requestOwnership/{id} { allow read, write: if false; }
     match /directRequests/{id} {
       function recipient() {
-        return request.auth != null && resource.data.directProfessionalId == request.auth.uid
+        return activeAccount() && resource.data.directProfessionalId == request.auth.uid
           && resource.data.status in ['published', 'closed', 'in_discussion']
           && get(/databases/$(database)/documents/professionalProfiles/$(request.auth.uid)).data.status == 'approved';
       }
@@ -116,13 +124,13 @@ service cloud.firestore {
     match /requestPhotoFiles/{id} { allow read, write: if false; }
     match /requestPhotoLimits/{id} { allow read, write: if false; }
     match /proposals/{id} {
-      function party() { return request.auth != null && (resource.data.professionalUid == request.auth.uid || resource.data.clientUid == request.auth.uid); }
+      function party() { return activeAccount() && (resource.data.professionalUid == request.auth.uid || resource.data.clientUid == request.auth.uid); }
       allow get: if party();
       allow list: if party() && request.query.limit != null && request.query.limit <= 50;
       allow write: if false;
     }
     match /conversations/{id} {
-      function participant(data) { return request.auth != null && (data.clientUid == request.auth.uid || data.professionalUid == request.auth.uid); }
+      function participant(data) { return activeAccount() && (data.clientUid == request.auth.uid || data.professionalUid == request.auth.uid); }
       allow get: if participant(resource.data);
       allow list: if participant(resource.data) && request.query.limit != null && request.query.limit <= 50;
       allow write: if false;
@@ -143,6 +151,11 @@ service cloud.firestore {
     match /requestPublicationLimits/{uid} {
       allow read, write: if false;
     }
+    // Even administrators use the fresh-claim, active-account server APIs.
+    match /safetyReports/{id} { allow read, write: if false; }
+    match /safetyAudit/{id} { allow read, write: if false; }
+    match /accountSafety/{uid} { allow read, write: if false; }
+    match /userBlocks/{uid}/items/{id} { allow read, write: if false; }
     match /{document=**} {
       allow read, write: if false;
     }

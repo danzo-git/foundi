@@ -6,6 +6,7 @@ const {activeZones}=require('./catalog-service');
 const {directoryEntry}=require('./request-interaction-service');
 const {showcaseProjection}=require('./professional-showcase-service');
 const {directRequestActivity}=require('./direct-request-context');
+const {publicProfileAllowed}=require('./safety-guard');
 const pageSize=12,chunkSize=40,scanLimit=120,leaseMs=30000;
 const fail=(code,message)=>{throw new OtpError(code,message);};
 const unavailable=()=>fail('not-found','Ce professionnel n’est plus disponible.');
@@ -49,7 +50,8 @@ function createProfessionalDirectoryService({store,auth,clock=Date.now,newCursor
   async function accounts(ids){
     if(!ids.length)return new Set();
     const result=await auth.getUsers(ids.map(uid=>({uid})));
-    return new Set(result.users.filter(u=>u.emailVerified&&!u.disabled).map(u=>u.uid));
+    const enabled=await Promise.all(result.users.filter(u=>u.emailVerified&&!u.disabled).map(async u=>await publicProfileAllowed(store,u.uid)?u.uid:null));
+    return new Set(enabled.filter(Boolean));
   }
   function summary(id,profile,texts,c){
     const entry=directoryEntry(id,profile,c),activity=directRequestActivity(profile,c);
@@ -77,6 +79,7 @@ function createProfessionalDirectoryService({store,auth,clock=Date.now,newCursor
     if(!profile||!directoryEntry(id,profile,c)||!directRequestActivity(profile,c))unavailable();
     let user;try{user=await auth.getUser(id);}catch(error){if(error.code==='auth/user-not-found')unavailable();throw error;}
     if(!user.emailVerified||user.disabled)unavailable();
+    if(!await publicProfileAllowed(store,id))unavailable();
     return {c,profile};
   }
   async function search(actor,input={}){

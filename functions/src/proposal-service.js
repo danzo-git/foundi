@@ -1,5 +1,6 @@
 const { createHash } = require('node:crypto');
 const { requestRecord } = require('./request-access');
+const { assertContact } = require('./safety-guard');
 const { OtpError, requireUid } = require('./auth-validation');
 const fail = (code, message) => { throw new OtpError(code, message); };
 const validId = id => typeof id === 'string' && /^[a-zA-Z0-9_-]{20,80}$/.test(id);
@@ -29,6 +30,7 @@ function createProposalService({store,auth,clock=()=>Date.now()}) {
     return candidates[0];
   }
   async function context(tx,uid,requestId,clientUid) {
+    await assertContact(tx,uid,clientUid);
     const request=await requestRecord(tx,requestId);
     const own=await tx.get(`userRequests/${clientUid}/items/${requestId}`);
     const profile=await tx.get(`professionalProfiles/${uid}`);

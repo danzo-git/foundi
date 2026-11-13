@@ -12,7 +12,9 @@ service firebase.storage {
     }
     match /professionalDocuments/{uid}/{kind}/{file} {
       // Uploads are validated by the backend; no public download tokens.
-      allow get: if request.auth != null && request.auth.uid == uid;
+      allow get: if request.auth != null && request.auth.uid == uid
+        && (!firestore.exists(/databases/(default)/documents/accountSafety/$(uid))
+          || firestore.get(/databases/(default)/documents/accountSafety/$(uid)).data.get('suspended', false) != true);
       allow list, write: if false;
     }
     match /{allPaths=**} { allow read, write: if false; }

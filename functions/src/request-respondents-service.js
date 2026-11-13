@@ -4,6 +4,7 @@ const { directoryEntry } = require('./request-interaction-service');
 const { proposalId } = require('./proposal-service');
 const { showcaseProjection } = require('./professional-showcase-service');
 const { directRequestActivity } = require('./direct-request-context');
+const { publicProfileAllowed } = require('./safety-guard');
 
 const pageSize = 20;
 const requestIdPattern = /^[a-zA-Z0-9_-]{20,80}$/;
@@ -49,6 +50,7 @@ function createRequestRespondentsService({ db, auth }) {
         const active = new Set(accounts.users.filter((user) => user.emailVerified && !user.disabled).map((user) => user.uid));
         for (const record of records) {
           if (!record.exists || !active.has(record.id)) continue;
+          if (!await publicProfileAllowed({get:async p=>(await db.doc(p).get()).data()},record.id)) continue;
           const entry = directoryEntry(record.id, record.data(), catalog.data());
           if (entry) items.push({ professionalId: record.id, name: entry.name,
             activity: entry.specialties.length ? entry.specialties : entry.categories });
@@ -88,6 +90,7 @@ function createRequestRespondentsService({ db, auth }) {
         throw error;
       }
       if (!account.emailVerified || account.disabled) unavailable();
+      if (!await publicProfileAllowed({get:async p=>(await tx.get(db.doc(p))).data()},professionalId)) unavailable();
       return { ...(showcaseProjection(showcase.data()) ?? {
         revision: 0, name: entry.name, trade: [...entry.categories, ...entry.specialties].join(' · '),
         area: entry.zones.join(' · '), bio: '', portrait: null, cover: null, gallery: [],

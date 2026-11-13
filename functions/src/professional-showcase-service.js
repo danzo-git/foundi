@@ -1,6 +1,7 @@
 const { createHash } = require('node:crypto');
 const sharp = require('sharp');
 const { OtpError, requireUid } = require('./auth-validation');
+const { publicProfileAllowed } = require('./safety-guard');
 
 const maxInputBytes = 2 * 1024 * 1024;
 // Eight base64 photos at this cap leave room under Firestore's 1 MiB limit.
@@ -103,6 +104,7 @@ function createProfessionalShowcaseService({ store, auth }) {
         professionalUid = proposal.professionalUid;
       }
       const professional = await tx.get(`professionalProfiles/${professionalUid}`);
+      if (proposalId !== undefined && !await publicProfileAllowed(tx,professionalUid)) return null;
       if (professional?.status !== 'approved') {
         if (proposalId !== undefined) return null;
         fail('permission-denied', 'Ton dossier professionnel doit être approuvé.');

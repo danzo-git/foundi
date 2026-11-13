@@ -10,6 +10,8 @@ import 'features/navigation/presentation/foundi_shell.dart';
 import 'features/requests/domain/request_repository.dart';
 import 'features/requests/presentation/request_views.dart';
 import 'features/requests/presentation/direct_requests.dart';
+import 'features/safety/domain/safety_repository.dart';
+import 'features/safety/presentation/safety_widgets.dart';
 
 class FoundiApp extends StatefulWidget {
   const FoundiApp({
@@ -17,22 +19,26 @@ class FoundiApp extends StatefulWidget {
     required this.authRepository,
     this.professionalRepository,
     this.requestRepository,
+    this.safetyRepository,
   });
   final AuthRepository authRepository;
   final ProfessionalRepository? professionalRepository;
   final RequestRepository? requestRepository;
+  final SafetyRepository? safetyRepository;
   @override
   State<FoundiApp> createState() => _FoundiAppState();
 }
 
 class _FoundiAppState extends State<FoundiApp> {
   final _navigator = GlobalKey<NavigatorState>();
+  final _safetyRevision = ValueNotifier<int>(0);
   late String? _sessionUid = widget.authRepository.currentUser?.id;
   void _sessionChanged(String? uid) {
     if (_sessionUid == uid) return;
     _sessionUid = uid;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      _safetyRevision.value++;
       _navigator.currentState?.popUntil((route) => route.isFirst);
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();
@@ -45,6 +51,7 @@ class _FoundiAppState extends State<FoundiApp> {
   @override
   void dispose() {
     _directNavigation.dispose();
+    _safetyRevision.dispose();
     super.dispose();
   }
 
@@ -94,7 +101,18 @@ class _FoundiAppState extends State<FoundiApp> {
               professionalRepository != null
           ? _requestDirect
           : null,
-      child: child!,
+      child: widget.safetyRepository == null
+          ? child!
+          : SafetyScope(
+              repository: widget.safetyRepository!,
+              uid: () => authRepository.currentUser?.id,
+              onAuthenticate: () {
+                _navigator.currentState?.popUntil((route) => route.isFirst);
+                setState(() => _authRequested = true);
+              },
+              revision: _safetyRevision,
+              child: child!,
+            ),
     ),
     theme: ThemeData(
       useMaterial3: true,
