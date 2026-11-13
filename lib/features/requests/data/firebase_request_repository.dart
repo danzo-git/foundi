@@ -9,6 +9,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../../professional/domain/professional_showcase.dart';
+import '../../professional/domain/professional_directory.dart';
+import '../../professional/data/firebase_professional_directory_repository.dart';
 import '../domain/request_repository.dart';
 import '../domain/request_photo_repository.dart';
 import '../domain/request_interaction_repository.dart';
@@ -18,6 +20,7 @@ import 'firebase_request_photo_repository.dart';
 class FirebaseRequestRepository
     implements
         RequestRepository,
+        ProfessionalDirectoryRepository,
         DirectRequestRepository,
         RequestRespondentsRepository,
         RequestRespondentProfileRepository,
@@ -39,6 +42,26 @@ class FirebaseRequestRepository
            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
+  late final _directory = FirebaseProfessionalDirectoryRepository(_functions);
+  @override
+  Future<ProfessionalDirectoryPage> searchProfessionals(
+    ProfessionalDirectoryFilters filters, {
+    String? cursor,
+  }) => _directory.searchProfessionals(filters, cursor: cursor);
+  @override
+  Future<ProfessionalShowcase> readDirectoryProfessional(String id) =>
+      _directory.readDirectoryProfessional(id);
+  @override
+  Future<Set<String>> checkDirectoryProfessionals(List<String> ids) =>
+      _directory.checkDirectoryProfessionals(ids);
+  @override
+  Future<ProfessionalMediaManifest> directoryMediaManifest(String id) =>
+      _directory.directoryMediaManifest(id);
+  @override
+  Future<Uint8List> readDirectoryThumbnail(String id, String photoId) =>
+      _directory.readDirectoryThumbnail(id, photoId);
+  @override
+  void clearDirectoryMedia(String id) => _directory.clearDirectoryMedia(id);
   @override
   late final interactions = FirebaseRequestInteractionRepository(
     _db,

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../professional/domain/professional_repository.dart';
+import '../../professional/domain/professional_directory.dart';
+import '../../professional/presentation/professional_directory_view.dart';
 import '../../navigation/presentation/space_widgets.dart';
 import '../domain/request_repository.dart';
 import '../domain/request_photo_repository.dart';
@@ -19,20 +21,64 @@ class ExplorerView extends StatefulWidget {
     this.initialForMe = false,
     this.onProfile,
     this.footerBuilder,
+    this.active = true,
+    this.onSectionChanged,
   });
   final RequestRepository repository;
   final ProfessionalRepository? catalog;
   final ProfessionalProfile profile;
   final bool professionalSpace, initialForMe;
+  final bool active;
+  final VoidCallback? onSectionChanged;
   final ValueChanged<FoundiRequest> onOpen;
   final VoidCallback onPublish;
   final VoidCallback? onProfile;
   final Widget Function(FoundiRequest)? footerBuilder;
   @override
-  State<ExplorerView> createState() => _ExplorerViewState();
+  State<ExplorerView> createState() => ExplorerViewState();
 }
 
-class _ExplorerViewState extends State<ExplorerView> {
+class ExplorerViewState extends State<ExplorerView> {
+  bool _professionals = false, _hasDirectory = false;
+  bool get showingProfessionals => _professionals;
+  bool handleBack() {
+    if (!_professionals) return false;
+    _select(false);
+    return true;
+  }
+
+  void _select(bool professionals) {
+    setState(() {
+      _professionals = professionals;
+      _hasDirectory |= professionals;
+    });
+    widget.onSectionChanged?.call();
+  }
+
+  Widget _selector() => SegmentedButton<bool>(
+    key: const ValueKey('explorerSection'),
+    segments: const [
+      ButtonSegment(
+        value: false,
+        icon: Icon(Icons.assignment_outlined),
+        label: Text('Demandes'),
+      ),
+      ButtonSegment(
+        value: true,
+        icon: Icon(Icons.people_outline),
+        label: Text('Professionnels'),
+      ),
+    ],
+    selected: {_professionals},
+    showSelectedIcon: false,
+    onSelectionChanged: (values) => _select(values.single),
+    style: SegmentedButton.styleFrom(
+      selectedBackgroundColor: FoundiUi.green,
+      selectedForegroundColor: Colors.white,
+      minimumSize: const Size(0, 48),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+    ),
+  );
   bool get _eligible => widget.professionalSpace && widget.profile.approved;
   late bool _forMe = _eligible && widget.initialForMe;
   ExplorerFilters _public = const ExplorerFilters(),
@@ -345,6 +391,36 @@ class _ExplorerViewState extends State<ExplorerView> {
 
   @override
   Widget build(BuildContext context) {
+    final repo = widget.repository;
+    return IndexedStack(
+      index: _professionals ? 1 : 0,
+      children: [
+        _requestsBody(context),
+        if (_hasDirectory)
+          ProfessionalDirectoryView(
+            active: widget.active && _professionals,
+            repository: repo is ProfessionalDirectoryRepository
+                ? repo as ProfessionalDirectoryRepository
+                : null,
+            catalog: widget.catalog,
+            heading: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const RequestHeading(
+                  'Explorer',
+                  subtitle: 'Trouvez le professionnel pour votre besoin.',
+                ),
+                _selector(),
+              ],
+            ),
+          )
+        else
+          const SizedBox.shrink(),
+      ],
+    );
+  }
+
+  Widget _requestsBody(BuildContext context) {
     final catalog = _catalog;
     return ListView(
       padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
@@ -355,6 +431,8 @@ class _ExplorerViewState extends State<ExplorerView> {
               ? 'Découvrez les besoins publiés par les clients.'
               : 'Les besoins publiés par la communauté.',
         ),
+        _selector(),
+        const SizedBox(height: 16),
         if (_eligible) ...[
           const FoundiActionBanner.professional(),
           const SizedBox(height: 12),

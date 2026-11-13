@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -32,8 +33,12 @@ Future<ProfessionalShowcase?> editProfessionalShowcase(
   ),
 );
 
-void openShowcasePhoto(BuildContext context, ShowcasePhoto photo, int index) {
-  showDialog<void>(
+Future<void> openShowcasePhoto(
+  BuildContext context,
+  ShowcasePhoto photo,
+  int index,
+) {
+  return showDialog<void>(
     context: context,
     builder: (dialogContext) => Dialog(
       clipBehavior: Clip.antiAlias,
@@ -72,12 +77,16 @@ class ProfessionalShowcaseScreen extends StatefulWidget {
     this.businessName = '',
     this.onPersonal,
     this.professionalId,
-  }) : loadRecommended = null;
+  }) : loadRecommended = null,
+       checkAvailability = null,
+       onUnavailable = null;
 
   const ProfessionalShowcaseScreen.recommended({
     super.key,
     required Future<ProfessionalShowcase> Function() this.loadRecommended,
     this.professionalId,
+    this.checkAvailability,
+    this.onUnavailable,
   }) : repository = null,
        proposalId = null,
        businessName = '',
@@ -89,21 +98,117 @@ class ProfessionalShowcaseScreen extends StatefulWidget {
   final String businessName;
   final VoidCallback? onPersonal;
   final String? professionalId;
+  final Future<bool> Function()? checkAvailability;
+  final VoidCallback? onUnavailable;
 
   @override
   State<ProfessionalShowcaseScreen> createState() =>
       _ProfessionalShowcaseScreenState();
 }
 
-class _ProfessionalShowcaseScreenState
-    extends State<ProfessionalShowcaseScreen> {
+class _ProfessionalShowcaseScreenState extends State<ProfessionalShowcaseScreen>
+    with WidgetsBindingObserver {
   bool get _own => widget.proposalId == null && widget.loadRecommended == null;
   late Future<ProfessionalShowcase?> _profile = _load();
   int _section = 0;
+  Timer? _lease;
+  Object? _failure;
+  bool _verified = true,
+      _checking = false,
+      _requesting = false,
+      _photoOpen = false;
+  @override
+  void initState() {
+    super.initState();
+    if (widget.checkAvailability != null) {
+      WidgetsBinding.instance.addObserver(this);
+      _lease = Timer.periodic(const Duration(seconds: 30), (_) => _check());
+    }
+  }
 
-  Future<ProfessionalShowcase?> _load() =>
-      widget.loadRecommended?.call() ??
-      widget.repository!.readShowcase(proposalId: widget.proposalId);
+  @override
+  void dispose() {
+    _lease?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.checkAvailability == null) return;
+    if (state == AppLifecycleState.resumed) {
+      _check();
+    } else if (mounted) {
+      setState(() => _verified = false);
+    }
+  }
+
+  Future<void> _check() async {
+    if (_checking ||
+        !mounted ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused) {
+      return;
+    }
+    _checking = true;
+    setState(() => _verified = false);
+    try {
+      final available = await widget.checkAvailability!();
+      if (!mounted) return;
+      if (!available) {
+        widget.onUnavailable?.call();
+        if (_photoOpen) Navigator.of(context).pop();
+        setState(
+          () => _failure = const AuthFailure(
+            'Ce professionnel n’est plus disponible.',
+          ),
+        );
+      } else {
+        setState(() => _verified = true);
+      }
+    } catch (_) {
+      /* A failed lease never leaves a verified badge or an enabled request action. */
+    } finally {
+      _checking = false;
+    }
+  }
+
+  Future<void> _request(ProfessionalShowcase profile, String id) async {
+    if (_requesting) return;
+    setState(() => _requesting = true);
+    try {
+      final current = widget.checkAvailability == null
+          ? profile
+          : await _load();
+      if (!mounted || current == null) return;
+      if (widget.checkAvailability != null) {
+        setState(() {
+          _profile = Future.value(current);
+          _verified = true;
+        });
+      }
+      DirectRequestsScope.maybeOf(context)?.onRequest?.call(
+        DirectProfessionalTarget(
+          id,
+          current.name,
+          activity: current.requestActivity,
+        ),
+      );
+    } catch (e) {
+      if (mounted) setState(() => _failure = e);
+    } finally {
+      if (mounted) setState(() => _requesting = false);
+    }
+  }
+
+  Future<ProfessionalShowcase?> _load() async {
+    final profile =
+        await (widget.loadRecommended?.call() ??
+            widget.repository!.readShowcase(proposalId: widget.proposalId));
+    if (mounted && widget.checkAvailability != null) {
+      setState(() => _verified = true);
+    }
+    return profile;
+  }
 
   Future<void> _edit(ProfessionalShowcase? profile) async {
     final saved = await editProfessionalShowcase(
@@ -121,8 +226,10 @@ class _ProfessionalShowcaseScreenState
     );
   }
 
-  void _openPhoto(ShowcasePhoto photo, int index) {
-    openShowcasePhoto(context, photo, index);
+  Future<void> _openPhoto(ShowcasePhoto photo, int index) async {
+    _photoOpen = true;
+    await openShowcasePhoto(context, photo, index);
+    _photoOpen = false;
   }
 
   @override
@@ -131,11 +238,12 @@ class _ProfessionalShowcaseScreenState
     child: FutureBuilder<ProfessionalShowcase?>(
       future: _profile,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
+        if (_failure == null &&
+            snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
-          final failure = snapshot.error;
+        if (_failure != null || snapshot.hasError) {
+          final failure = _failure ?? snapshot.error;
           return ListView(
             padding: const EdgeInsets.all(22),
             children: [
@@ -148,6 +256,7 @@ class _ProfessionalShowcaseScreenState
                 onPressed: () {
                   final profile = _load();
                   setState(() {
+                    _failure = null;
                     _profile = profile;
                   });
                 },
@@ -198,6 +307,7 @@ class _ProfessionalShowcaseScreenState
             else ...[
               ProfessionalShowcaseHeader(
                 profile: profile,
+                showVerified: _verified,
                 showBio: true,
                 action:
                     !_own &&
@@ -228,14 +338,9 @@ class _ProfessionalShowcaseScreenState
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        onPressed: () =>
-                            DirectRequestsScope.maybeOf(context)!.onRequest!(
-                              DirectProfessionalTarget(
-                                professionalId,
-                                profile.name,
-                                activity: profile.requestActivity,
-                              ),
-                            ),
+                        onPressed: !_verified || _requesting
+                            ? null
+                            : () => _request(profile, professionalId),
                         icon: const Icon(Icons.send_outlined, size: 17),
                         label: const Text('Faire une demande'),
                       )
@@ -247,6 +352,12 @@ class _ProfessionalShowcaseScreenState
                 ),
               ),
               const SizedBox(height: 14),
+              if (!_verified && widget.checkAvailability != null)
+                TextButton.icon(
+                  onPressed: _checking ? null : _check,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Revérifier la disponibilité'),
+                ),
               ProfessionalProfileSection(
                 profile: profile,
                 section: _section,

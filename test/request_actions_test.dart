@@ -367,7 +367,8 @@ void main() {
         repo,
         (_, _) async {
           expect(find.text('Pour moi'), findsWidgets);
-          await t.ensureVisible(footerAction('Répondre'));
+          // The Explorer section selector can place this lazy card below the viewport.
+          await t.scrollUntilVisible(footerAction('Répondre'), 160);
           await t.pumpAndSettle();
           await capture(t, '02-explorer-professionnel');
           expect(repo.accessCalls, 0);

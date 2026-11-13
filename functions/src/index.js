@@ -358,6 +358,14 @@ const requestEngagement = createRequestEngagementService({ db: getFirestore() })
 exports.readRequestEngagement = onCall(proOptions, (r) =>
   handle(() => requestEngagement.read(r.data?.requestId)));
 
+const {createProfessionalDirectoryStore}=require('./professional-directory-store');
+const {createProfessionalDirectoryService,directoryActor}=require('./professional-directory-service');
+const professionalDirectory=createProfessionalDirectoryService({store:createProfessionalDirectoryStore(getFirestore()),auth:getAuth()});
+exports.listPublicProfessionals=onCall(proOptions,r=>handle(()=>professionalDirectory.search(directoryActor(r),r.data)));
+exports.readPublicProfessionalProfile=onCall(proOptions,r=>handle(()=>professionalDirectory.readProfile(directoryActor(r),r.data)));
+exports.readPublicProfessionalMedia=onCall({...proOptions,concurrency:1,memory:'512MiB'},r=>handle(()=>professionalDirectory.readMedia(directoryActor(r),r.data)));
+exports.checkPublicProfessionals=onCall(proOptions,r=>handle(()=>professionalDirectory.check(directoryActor(r),r.data)));
+
 const { createRequestInteractionService } = require('./request-interaction-service');
 const requestInteractions = createRequestInteractionService({
   auth: getAuth(),

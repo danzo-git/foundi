@@ -47,6 +47,7 @@ class FoundiShell extends StatefulWidget {
 }
 
 class _FoundiShellState extends AuthActionState<FoundiShell> {
+  final _explorerKey = GlobalKey<ExplorerViewState>();
   String? get _requestAccountName {
     final name = widget.user.profile.fullName.trim();
     return name.isEmpty ? widget.user.displayName : name;
@@ -572,6 +573,9 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           key: const ValueKey('explorerHost'),
           offstage: _requestPage != 'explore',
           child: ExplorerView(
+            key: _explorerKey,
+            active: widget.active && _requestPage == 'explore',
+            onSectionChanged: () => setState(() {}),
             repository: widget.requestRepository!,
             catalog: widget.catalogRepository,
             profile: widget.professional,
@@ -896,9 +900,18 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
         ),
       ),
       child: PopScope(
-        canPop: !widget.active || _requestPage == _landing,
+        canPop:
+            !widget.active ||
+            (_requestPage == _landing &&
+                !(_requestPage == 'explore' &&
+                    _explorerKey.currentState?.showingProfessionals == true)),
         onPopInvokedWithResult: (didPop, _) {
-          if (didPop || !widget.active || _requestPage == _landing) return;
+          if (didPop || !widget.active) return;
+          if (_requestPage == 'explore' &&
+              _explorerKey.currentState?.handleBack() == true) {
+            return;
+          }
+          if (_requestPage == _landing) return;
           // The active form handles its own steps and in-flight submissions.
           if (const {
             'publish',

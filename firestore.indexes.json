@@ -413,6 +413,18 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "professionalDirectoryCursors",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "professionalDirectoryLimits",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "items",
       "fieldPath": "createdAt",
       "indexes": [

@@ -1227,6 +1227,7 @@ class GuestRequests extends StatefulWidget {
 }
 
 class _GuestRequestsState extends State<GuestRequests> {
+  final _explorerKey = GlobalKey<ExplorerViewState>();
   String? _detail;
   Widget _actions(FoundiRequest request) => RequestActionBar(
     request: request,
@@ -1236,9 +1237,17 @@ class _GuestRequestsState extends State<GuestRequests> {
   );
   @override
   Widget build(BuildContext context) => PopScope(
-    canPop: _detail == null,
+    canPop:
+        _detail == null &&
+        _explorerKey.currentState?.showingProfessionals != true,
     onPopInvokedWithResult: (didPop, _) {
-      if (!didPop) setState(() => _detail = null);
+      if (!didPop) {
+        if (_detail == null &&
+            _explorerKey.currentState?.handleBack() == true) {
+          return;
+        }
+        setState(() => _detail = null);
+      }
     },
     child: Scaffold(
       backgroundColor: FoundiUi.background,
@@ -1256,6 +1265,9 @@ class _GuestRequestsState extends State<GuestRequests> {
                       Offstage(
                         offstage: _detail != null,
                         child: ExplorerView(
+                          key: _explorerKey,
+                          active: _detail == null,
+                          onSectionChanged: () => setState(() {}),
                           repository: widget.repository,
                           catalog: widget.catalog,
                           onOpen: (r) => setState(() => _detail = r.id),

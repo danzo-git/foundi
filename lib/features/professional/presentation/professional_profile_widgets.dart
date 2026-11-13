@@ -214,12 +214,13 @@ class ProfessionalShowcaseHeader extends StatelessWidget {
     this.onCover,
     this.onPortrait,
     this.showBio = false,
+    this.showVerified = true,
     this.footer,
     this.action,
   });
   final ProfessionalShowcase profile;
   final VoidCallback? onEdit, onCover, onPortrait;
-  final bool showBio;
+  final bool showBio, showVerified;
   final Widget? footer, action;
 
   @override
@@ -277,7 +278,8 @@ class ProfessionalShowcaseHeader extends StatelessWidget {
                             ),
                           ],
                           const SizedBox(height: 8),
-                          const RequestTag('Professionnel vérifié'),
+                          if (showVerified)
+                            const RequestTag('Professionnel vérifié'),
                         ],
                       ),
                     ),
