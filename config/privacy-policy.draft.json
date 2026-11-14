@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "approved": false,
+  "version": "A_VALIDER",
+  "sharedMessages": "erase_author_keep_counterparty",
+  "preserveOtherMembersMeasures": true,
+  "providerRetentionAcknowledged": false,
+  "receiptSeconds": null,
+  "auditSeconds": null,
+  "tombstoneSeconds": null,
+  "moderationEvidenceDays": null,
+  "moderationMetadataDays": null
+}

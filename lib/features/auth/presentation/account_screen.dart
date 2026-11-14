@@ -1,3 +1,4 @@
+import '../../privacy/privacy_views.dart';
 import 'package:flutter/material.dart';
 import '../domain/auth_repository.dart';
 import '../domain/auth_validators.dart';
@@ -264,6 +265,16 @@ class _AccountLoadErrorScreenState
   Widget build(BuildContext context) => AuthLayout(
     title: 'Chargement du compte',
     children: [
+      if (PrivacyScope.maybeOf(context) case final privacy?)
+        TextButton(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => DeleteAccountScreen(repository: privacy),
+            ),
+          ),
+          child: const Text('Supprimer mon compte'),
+        ),
       const AuthHeading(
         title: 'Le compte est indisponible',
         description:

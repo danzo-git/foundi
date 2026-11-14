@@ -1,3 +1,4 @@
+import '../../privacy/privacy_views.dart';
 import 'package:flutter/material.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../../auth/presentation/account_screen.dart';
@@ -132,17 +133,71 @@ class FoundiSettings extends StatelessWidget {
           ),
           row(
             Icons.shield_outlined,
-            'Confidentialité et CGU',
+            'Politique de confidentialité',
             'Données, sécurité, conditions',
             () => Navigator.push(
               context,
               MaterialPageRoute<void>(
-                builder: (_) =>
-                    LegalAcceptanceScreen(repository: AuthScope.of(context)),
+                builder: (_) => LegalAcceptanceScreen(
+                  repository: AuthScope.of(context),
+                  readOnly: true,
+                  document: 'privacy',
+                ),
               ),
             ),
           ),
         ]),
+        if (PrivacyScope.maybeOf(context) case final privacy?)
+          row(
+            Icons.person_remove_outlined,
+            'Supprimer mon compte',
+            'Compte et données associées',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => DeleteAccountScreen(repository: privacy),
+              ),
+            ),
+          ),
+        row(
+          Icons.description_outlined,
+          'Conditions générales d’utilisation',
+          'Consulter la version publiée',
+          () => Navigator.push(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => LegalAcceptanceScreen(
+                repository: AuthScope.of(context),
+                readOnly: true,
+                document: 'terms',
+              ),
+            ),
+          ),
+        ),
+        FutureBuilder<LegalDocuments>(
+          future: AuthScope.of(context).loadLegalDocuments(),
+          builder: (context, s) =>
+              s.data?.requiresAcceptance == true &&
+                  s.data!.version != user.profile.termsVersion
+              ? ListTile(
+                  title: const Text('Les textes ont évolué'),
+                  subtitle: const Text(
+                    'Une nouvelle acceptation explicite est demandée pour cette version.',
+                  ),
+                  trailing: TextButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => LegalAcceptanceScreen(
+                          repository: AuthScope.of(context),
+                        ),
+                      ),
+                    ),
+                    child: const Text('Consulter et accepter'),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
         AuthNotice(error),
         const SizedBox(height: 18),
         TextButton(

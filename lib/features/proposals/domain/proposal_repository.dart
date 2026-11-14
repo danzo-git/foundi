@@ -62,6 +62,7 @@ String proposalStatusLabel(String status) => switch (status) {
   'selected' || 'discussing' => 'En discussion',
   'retained' => 'Retenue',
   'rejected' => 'Refusée',
+  'account_deleted' => 'Compte supprimé · Proposition indisponible',
   _ => 'Statut indisponible',
 };
 

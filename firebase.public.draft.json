@@ -1,0 +1,35 @@
+{
+  "hosting": {
+    "public": "public-privacy",
+    "ignore": [
+      "firebase.public.draft.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "cleanUrls": true,
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "no-referrer"
+          },
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; script-src 'self' https://www.gstatic.com https://apis.google.com; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.googleapis.com https://*.cloudfunctions.net https://*.firebaseapp.com; frame-src https://*.firebaseapp.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+          }
+        ]
+      }
+    ],
+    "target": "publicPrivacy"
+  }
+}

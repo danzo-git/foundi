@@ -15,7 +15,7 @@ function createSafetyStore(db) {
     });},
     async expiredEvidence(now){return (await db.collection('safetyReports').where('evidenceExpiresAt','<=',now).orderBy('evidenceExpiresAt').limit(100).get()).docs.map(d=>d.id);},
     async heldAudits(){return (await db.collection('safetyAudit').where('deleteAt','==',null).limit(100).get()).docs.map(d=>({id:d.id,...d.data()}));},
-    transaction:operation=>db.runTransaction(t=>operation({get:async path=>(await t.get(db.doc(path))).data(),set:(path,value)=>t.set(db.doc(path),value),delete:path=>t.delete(db.doc(path))})),
+    transaction:operation=>require('./privacy-guard').guardedTransaction(db,operation),
     async listBlocks(uid,cursor){
       let q=db.collection(`userBlocks/${uid}/items`).orderBy('__name__');
       if(cursor)q=q.startAfter(cursor);

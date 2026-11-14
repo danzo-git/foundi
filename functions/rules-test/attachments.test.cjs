@@ -17,7 +17,7 @@ before(async()=>{if(!enabled)return;
  });
  const bucket=getStorage(admin).bucket();
  for(const [p,messageId]of [[object,mid],[`conversations/${cid}/attachments/pending/pending`,'pending'],[raw,mid]]){
-  await bucket.file(p).save(bytes,{resumable:false,contentType:'image/png',metadata:{metadata:{messageid:messageId,validation:'clean-v1'}}});
+  await bucket.file(p).save(bytes,{resumable:false,contentType:'image/png',metadata:{metadata:{owneruid:'alice',messageid:messageId,validation:'clean-v1'}}});
   const [metadata]=await bucket.file(p).getMetadata();assert.equal(metadata.metadata.messageid,messageId);assert.equal(metadata.metadata.validation,'clean-v1');
  }
 });

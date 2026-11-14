@@ -37,8 +37,14 @@ class AccountProfile {
 }
 
 class LegalDocuments {
-  const LegalDocuments({this.version = '', this.terms = '', this.privacy = ''});
+  const LegalDocuments({
+    this.version = '',
+    this.terms = '',
+    this.privacy = '',
+    this.requiresAcceptance = false,
+  });
   final String version, terms, privacy;
+  final bool requiresAcceptance;
   bool get published =>
       version.isNotEmpty && terms.isNotEmpty && privacy.isNotEmpty;
 }

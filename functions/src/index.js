@@ -25,6 +25,7 @@ const { createProfessionalShowcaseService } = require('./professional-showcase-s
 
 
 initializeApp();
+const {context:privacyContext,assertOpen,guardedTransaction}=require('./privacy-guard');
 
 // Covers every existing callable, including older clients, without trusting token age.
 function onCall(options, operation, {allowSuspended=false}={}) {
@@ -34,7 +35,8 @@ function onCall(options, operation, {allowSuspended=false}={}) {
       const restriction = (await getFirestore().doc(`accountSafety/${request.auth.uid}`).get()).data();
       if (user.disabled || (!allowSuspended && restriction?.suspended)) throw new HttpsError('permission-denied','Ce compte est suspendu ou indisponible. Contacte l’assistance.');
     }
-    return operation(request);
+    await assertOpen({get:async p=>(await getFirestore().doc(p).get()).data()},request.auth?.uid);
+    return privacyContext.run({uid:request.auth?.uid},()=>operation(request));
   }));
 }
 
@@ -56,15 +58,7 @@ const smtpRequireTls = defineBoolean("SMTP_REQUIRE_TLS", { default: true });
 
 const store = {
 
-  transaction: (operation) => getFirestore().runTransaction((transaction) => operation({
-
-    get: async (path) => (await transaction.get(getFirestore().doc(path))).data(),
-    conversationsForRequest: async (id) => (await transaction.get(getFirestore().collection('conversations').where('requestId', '==', id))).docs.map(d => ({ id: d.id, ...d.data() })),
-
-    set: (path, value) => transaction.set(getFirestore().doc(path), value),
-    delete: (path) => transaction.delete(getFirestore().doc(path)),
-
-  })),
+  transaction: operation => guardedTransaction(getFirestore(),operation),
 
 };
 
@@ -209,6 +203,24 @@ const professional = createProfessionalService({
 });
 
 const proOptions = { region: 'europe-west1', maxInstances: 3, concurrency: 4, timeoutSeconds: 120, memory: '256MiB' };
+
+// Sprint 2 stays inert until both the runtime switch and a reviewed policy exist.
+const deletionEnabled=defineBoolean('ACCOUNT_DELETION_ENABLED',{default:false});
+const {createPrivacyService}=require('./privacy-service');
+const {createPrivacyStore}=require('./privacy-store');
+const {createPrivacyPurger}=require('./privacy-purge');
+function privacy(){return createPrivacyService({store:createPrivacyStore(getFirestore()),auth:getAuth(),purger:createPrivacyPurger({db:getFirestore(),bucket:getStorage().bucket()}),enabled:()=>deletionEnabled.value(),emailKey:email=>email?require('node:crypto').createHmac('sha256',otpKey.value()).update(JSON.stringify(['email',email.trim().toLowerCase()])).digest('hex'):null});}
+exports.requestAccountDeletion=onCall({...proOptions,secrets:[otpKey]},r=>privacy().request(r.auth?.uid,r.auth?.token.auth_time,r.data),{allowSuspended:true});
+function receiptHttp(action){return onRequest({...proOptions,cors:true},(req,res)=>mediaHttp(res,async()=>{
+  if(req.method!=='POST' || !req.is('application/json') || req.rawBody.length>1024)throw new OtpError('invalid-argument','Requête invalide.');
+  res.status(200).json(await privacy()[action](req.body));
+}));}
+exports.readAccountDeletionStatus=receiptHttp('status');
+exports.retryAccountDeletion=receiptHttp('retry');
+exports.listAccountDeletions=onCall(proOptions,r=>privacy().list(r.auth?.uid,r.auth?.token,r.data));
+exports.readAccountDeletion=onCall(proOptions,r=>privacy().detail(r.auth?.uid,r.auth?.token,r.data));
+exports.resumeAccountDeletion=onCall(proOptions,r=>privacy().resume(r.auth?.uid,r.auth?.token,r.data));
+exports.runAccountDeletion=onSchedule({...proOptions,maxInstances:1,concurrency:1,timeoutSeconds:540,schedule:'every 1 minutes'},()=>privacy().drain());
 
 const showcase = createProfessionalShowcaseService({ store, auth: getAuth() });
 exports.readProfessionalShowcase = onCall(proOptions, r =>
@@ -452,7 +464,8 @@ function authenticatedMediaHttp(req,res,operation){
     if(!token)throw new OtpError('unauthenticated','Connexion nécessaire.');
     let identity;try{identity=await getAuth().verifyIdToken(token[1],true);}catch{throw new OtpError('unauthenticated','Reconnecte-toi pour continuer.');}
     if ((await getFirestore().doc(`accountSafety/${identity.uid}`).get()).data()?.suspended) throw new OtpError('permission-denied','Ce compte est suspendu.');
-    await operation(identity.uid,identity);
+    await assertOpen({get:async p=>(await getFirestore().doc(p).get()).data()},identity.uid);
+    await privacyContext.run({uid:identity.uid},()=>operation(identity.uid,identity));
   });
 }
 exports.uploadConversationAttachment=onRequest({...attachmentOptions,cors:true},(req,res)=>authenticatedMediaHttp(req,res,async uid=>{
@@ -497,7 +510,10 @@ exports.cleanupRequestPhotos = onSchedule({
 });
 
 // V9 observes durable server-owned events; business operations remain V8.1/V8.2.
-const {onDocumentCreated,onDocumentUpdated,onDocumentWritten}=require('firebase-functions/v2/firestore');
+const {onDocumentCreated:firebaseCreated,onDocumentUpdated:firebaseUpdated,onDocumentWritten}=require('firebase-functions/v2/firestore');
+// A late/tombstone event must not recreate notifications during a purge.
+const onDocumentCreated=(settings,operation)=>firebaseCreated(settings,e=>e.data?.data?.()?operation(e):undefined);
+const onDocumentUpdated=(settings,operation)=>firebaseUpdated(settings,e=>e.data?.before?.data?.()&&e.data?.after?.data?.()?operation(e):undefined);
 const {getMessaging}=require('firebase-admin/messaging');
 const {createNotificationService}=require('./notification-service');
 const pushEnabled=defineBoolean('NOTIFICATION_PUSH_ENABLED',{default:false});
@@ -523,7 +539,7 @@ exports.notifyRequestPublished=onDocumentCreated({...eventOptions,document:'requ
 });
 exports.notifyRequestClosed=onDocumentUpdated({...eventOptions,document:'userRequests/{uid}/items/{requestId}'},e=>{
   const before=e.data.before.data(),after=e.data.after.data();
-  if(['published','in_discussion'].includes(before.status)&&after.status==='closed')return notifications.enqueueRequest('closed',e.params.uid,e.params.requestId,after,after.updatedAt);
+  if(before && after && ['published','in_discussion'].includes(before.status)&&after.status==='closed')return notifications.enqueueRequest('closed',e.params.uid,e.params.requestId,after,after.updatedAt);
 });
 exports.countNotificationRead=onDocumentUpdated({...eventOptions,document:'users/{uid}/notifications/{id}'},e=>notifications.read(e.params.uid,e.params.id,e.data.before.data(),e.data.after.data()));
 exports.runNotificationJob=onDocumentCreated({...eventOptions,document:'notificationJobs/{id}'},e=>notifications.processJob(e.params.id));

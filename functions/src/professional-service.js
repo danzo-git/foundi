@@ -213,6 +213,7 @@ function createProfessionalService({ store, auth, files, clock = () => Date.now(
     reason = text(reason, 2000);
     if (status !== 'approved' && reason.length < 5) fail('invalid-argument', 'Un motif de 5 caractères minimum est requis.');
     return store.transaction(async tx => {
+      await require('./privacy-guard').assertOpen(tx,uid);
       const path = profilePath(uid);
       const profile = await tx.get(path);
       if (expectedRevision !== undefined && profile?.revision !== expectedRevision) fail('aborted', 'Le dossier a changé. Actualise-le.');

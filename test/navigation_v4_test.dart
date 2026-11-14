@@ -325,7 +325,7 @@ void main() {
         await fixtures.fill(t, 'fullName', 'Awa Actualisée');
         await fixtures.tap(t, find.text('Enregistrer'));
         expect(auth.saved!.fullName, 'Awa Actualisée');
-        await fixtures.tap(t, find.text('Confidentialité et CGU'));
+        await fixtures.tap(t, find.text('Politique de confidentialité'));
         expect(find.text('Tes conditions d’utilisation'), findsOneWidget);
         await t.pageBack();
         await t.pumpAndSettle();

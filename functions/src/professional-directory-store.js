@@ -28,12 +28,13 @@ function createProfessionalDirectoryStore(db){
       const refs=[db.doc(`professionalDirectoryLimits/${hash(actor+':'+kind)}`),db.doc(`professionalDirectoryLimits/${hash('global:'+kind)}`)];
       await db.runTransaction(async tx=>{
         const docs=await tx.getAll(...refs);
+        await require('./privacy-guard').assertOpen({get:async p=>(await tx.get(db.doc(p))).data()},require('./privacy-guard').context.getStore()?.uid);
         const counts=docs.map(d=>d.data()?.bucket===bucket?d.data().count:0);
         if(counts.some((n,i)=>!Number.isSafeInteger(n)||n<0||n>=limits[kind][i]))throw new OtpError('resource-exhausted','La recherche est très sollicitée. Réessaie dans une minute.');
-        refs.forEach((ref,i)=>tx.set(ref,{bucket,count:counts[i]+1,expiresAt:Timestamp.fromMillis(now+86400000)}));
+        refs.forEach((ref,i)=>tx.set(ref,{...(i===0&&require('./privacy-guard').context.getStore()?.uid?{uid:require('./privacy-guard').context.getStore().uid}:{}),bucket,count:counts[i]+1,expiresAt:Timestamp.fromMillis(now+86400000)}));
       });
     },
-    putCursor:async(token,value)=>db.doc(`professionalDirectoryCursors/${token}`).create({...value,expiresAt:Timestamp.fromMillis(value.expiresAt)}),
+    putCursor:async(token,value)=>db.doc(`professionalDirectoryCursors/${token}`).create({...value,...(require('./privacy-guard').context.getStore()?.uid?{uid:require('./privacy-guard').context.getStore().uid}:{}),expiresAt:Timestamp.fromMillis(value.expiresAt)}),
     async cursor(token){
       const value=(await db.doc(`professionalDirectoryCursors/${token}`).get()).data();
       return value?{...value,expiresAt:value.expiresAt.toMillis()}:null;

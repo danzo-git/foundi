@@ -12,9 +12,9 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
   async function allowed(actor,recipient,tx) {
     return !actor || actor===recipient || await contactAllowed(reader(tx),actor,recipient);
   }
-  async function active(uid, allowSuspended=false) {
+  async function active(uid, allowSuspended=false, tx=null) {
     if (!internalId(uid)) return false;
-    try { const user = await auth.getUser(uid); return !user.disabled && user.emailVerified && (allowSuspended || !(await doc(`accountSafety/${uid}`).get()).data()?.suspended); }
+    try { const user = await auth.getUser(uid); return !(await reader(tx).get(`accountLifecycle/${uid}`)) && !user.disabled && user.emailVerified && (allowSuspended || !(await doc(`accountSafety/${uid}`).get()).data()?.suspended); }
     catch(e) { if (e.code === 'auth/user-not-found') return false; throw e; }
   }
   async function requireAccount(uid) {
@@ -30,8 +30,8 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     const id = key(eventId, recipientUid), ref = doc(`users/${recipientUid}/notifications/${id}`);
     return db.runTransaction(async tx => {
       const existing = await tx.get(ref);
-      if (existing.exists) return false;
-      if (!await allowed(safetyActorUid,recipientUid,tx) || (safetyActorUid && !await active(safetyActorUid))) return false;
+      if (existing.exists || !await active(recipientUid,false,tx)) return false;
+      if (!await allowed(safetyActorUid,recipientUid,tx) || (safetyActorUid && !await active(safetyActorUid,false,tx))) return false;
       const [category,title,bodySafe] = catalog[type];
       const value = {eventId, type, category, title, bodySafe, recipientUid, actorUid:actorUid || null,
         resourceType, resourceId, requestId, proposalId, conversationId, occurredAt:occurredAt || clock(),
@@ -130,7 +130,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       const outbox=doc(`notificationOutbox/${eventKey}`);
       const [existing,read,queued]=await Promise.all([tx.get(receipt),tx.get(cursor),tx.get(outbox)]);
       if(existing.exists)return false;
-      if(!await allowed(value.senderUid,uid,tx) || !await active(value.senderUid))return false;
+      if(!await allowed(value.senderUid,uid,tx) || !await active(value.senderUid,false,tx) || !await active(uid,false,tx))return false;
       const unread=!legacyRead && value.createdAt>(read.data()?.readThroughAt || 0);
       tx.create(receipt,{conversationId,messageId:id,senderUid:value.senderUid,createdAt:value.createdAt,unread,eventId,recipientUid:uid,schemaVersion:91});
       if(unread)tx.set(doc(`users/${uid}/messageState/inbox`),{unreadCount:FieldValue.increment(1),schemaVersion:91},{merge:true});
@@ -167,7 +167,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       const ref=doc(`users/${uid}/notifications/${id}`), receipt=doc(`notificationReceipts/${key(uid,id)}`), counter=doc(`users/${uid}/notificationState/inbox`);
       const [notification,prior,state]=await Promise.all([tx.get(ref),tx.get(receipt),tx.get(counter)]);
       const n=notification.data();
-      if(!n || !isPrivateMessage(n))return false;
+      if(!n || !isPrivateMessage(n) || !await active(uid,true,tx))return false;
       tx.update(ref,{isGeneral:false});
       // This is the same decrement receipt used by V9 read triggers. Claiming it
       // also protects against late V9 trigger retries and concurrent migrations.
@@ -184,7 +184,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     if(isPrivateMessage(after))return excludeLegacyMessage(uid,id);
     const receipt = doc(`notificationReceipts/${key(uid,id)}`);
     await db.runTransaction(async tx => {
-      if ((await tx.get(receipt)).exists) return;
+      if ((await tx.get(receipt)).exists || !await active(uid,true,tx)) return;
       tx.create(receipt,{uid,notificationId:id,createdAt:clock()});
       tx.set(doc(`users/${uid}/notificationState/inbox`),{unreadCount:FieldValue.increment(-1)},{merge:true});
     });
@@ -194,7 +194,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     const id = key(kind,uid,requestId,String(version));
     const ref = doc(`notificationJobs/${id}`);
     await db.runTransaction(async tx => {
-      if ((await tx.get(ref)).exists) return;
+      if ((await tx.get(ref)).exists || !await active(uid,false,tx)) return;
       tx.create(ref,{kind,uid,requestId,request,version,cursor:null,state:'pending',dueAt:clock(),createdAt:clock()});
     });
   }
@@ -207,6 +207,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       tx.update(ref,{leaseUntil:clock()+120000}); return j;
     });
     if (!job) return;
+    if(!await active(job.uid)){await ref.delete();return;}
     try {
       let query = job.kind === 'matched'
         ? db.collection('professionalProfiles').where('status','==','approved').orderBy(FieldPath.documentId())

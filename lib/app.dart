@@ -1,3 +1,5 @@
+import 'features/privacy/privacy_repository.dart';
+import 'features/privacy/privacy_views.dart';
 import 'package:flutter/material.dart';
 
 import 'features/auth/domain/auth_repository.dart';
@@ -20,11 +22,13 @@ class FoundiApp extends StatefulWidget {
     this.professionalRepository,
     this.requestRepository,
     this.safetyRepository,
+    this.privacyRepository,
   });
   final AuthRepository authRepository;
   final ProfessionalRepository? professionalRepository;
   final RequestRepository? requestRepository;
   final SafetyRepository? safetyRepository;
+  final PrivacyRepository? privacyRepository;
   @override
   State<FoundiApp> createState() => _FoundiAppState();
 }
@@ -84,6 +88,13 @@ class _FoundiAppState extends State<FoundiApp> {
     );
   }
 
+  Widget _privacyScope(Widget child) => widget.privacyRepository == null
+      ? child
+      : PrivacyScope(repository: widget.privacyRepository!, child: child);
+  Widget _privacyGate(Widget child) => widget.privacyRepository == null
+      ? child
+      : PrivacySessionGate(repository: widget.privacyRepository!, child: child);
+
   AuthRepository get authRepository => widget.authRepository;
   ProfessionalRepository? get professionalRepository =>
       widget.professionalRepository;
@@ -93,26 +104,28 @@ class _FoundiAppState extends State<FoundiApp> {
     navigatorKey: _navigator,
     title: 'Foundi',
     debugShowCheckedModeBanner: false,
-    builder: (context, child) => DirectRequestsScope(
-      auth: authRepository,
-      navigation: _directNavigation,
-      onRequest:
-          widget.requestRepository is DirectRequestRepository &&
-              professionalRepository != null
-          ? _requestDirect
-          : null,
-      child: widget.safetyRepository == null
-          ? child!
-          : SafetyScope(
-              repository: widget.safetyRepository!,
-              uid: () => authRepository.currentUser?.id,
-              onAuthenticate: () {
-                _navigator.currentState?.popUntil((route) => route.isFirst);
-                setState(() => _authRequested = true);
-              },
-              revision: _safetyRevision,
-              child: child!,
-            ),
+    builder: (context, child) => _privacyScope(
+      DirectRequestsScope(
+        auth: authRepository,
+        navigation: _directNavigation,
+        onRequest:
+            widget.requestRepository is DirectRequestRepository &&
+                professionalRepository != null
+            ? _requestDirect
+            : null,
+        child: widget.safetyRepository == null
+            ? child!
+            : SafetyScope(
+                repository: widget.safetyRepository!,
+                uid: () => authRepository.currentUser?.id,
+                onAuthenticate: () {
+                  _navigator.currentState?.popUntil((route) => route.isFirst);
+                  setState(() => _authRequested = true);
+                },
+                revision: _safetyRevision,
+                child: child!,
+              ),
+      ),
     ),
     theme: ThemeData(
       useMaterial3: true,
@@ -163,83 +176,85 @@ class _FoundiAppState extends State<FoundiApp> {
         ),
       ),
     ),
-    home: StreamBuilder<FoundiUser?>(
-      stream: authRepository.authStateChanges(),
-      initialData: authRepository.currentUser,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return AccountLoadErrorScreen(repository: authRepository);
-        }
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-        final user = snapshot.data;
-        _sessionChanged(user?.id);
-        if (user == null) {
-          if (widget.requestRepository != null && !_authRequested) {
-            return GuestRequests(
-              catalog: professionalRepository,
-              repository: widget.requestRepository!,
-              onAuthenticate: () => setState(() => _authRequested = true),
+    home: _privacyGate(
+      StreamBuilder<FoundiUser?>(
+        stream: authRepository.authStateChanges(),
+        initialData: authRepository.currentUser,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return AccountLoadErrorScreen(repository: authRepository);
+          }
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
             );
           }
-          return AuthScreen(
-            repository: authRepository,
-            onExplore: widget.requestRepository == null
-                ? null
-                : () => setState(() => _authRequested = false),
-          );
-        }
-        if (user.needsGoogleConfirmation) {
-          return GoogleRegistrationScreen(
-            user: user,
-            repository: authRepository,
-          );
-        }
-        if (user.needsPasswordSetup) {
-          return PasswordSetupScreen(user: user, repository: authRepository);
-        }
-        if (user.needsClassicProfile) {
-          return ProfileScreen(
-            user: user,
-            repository: authRepository,
-            onboarding: true,
-          );
-        }
-        if (!user.emailVerified) {
-          return VerificationScreen(
-            key: ValueKey('${user.id}-${user.email}'),
-            user: user,
-            repository: authRepository,
-          );
-        }
-        final pending = _pendingDirect;
-        if (pending != null) {
-          _pendingDirect = null;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && authRepository.currentUser?.id == user.id) {
-              _requestDirect(pending);
-            }
-          });
-        }
-        return professionalRepository == null
-            ? FoundiShell(
-                user: user,
-                auth: authRepository,
-                requestRepository: widget.requestRepository,
-                catalogRepository: professionalRepository,
-              )
-            : ProfessionalGate(
-                key: ValueKey(user.id),
-                user: user,
-                auth: authRepository,
-                repository: professionalRepository!,
-                requestRepository: widget.requestRepository,
+          final user = snapshot.data;
+          _sessionChanged(user?.id);
+          if (user == null) {
+            if (widget.requestRepository != null && !_authRequested) {
+              return GuestRequests(
+                catalog: professionalRepository,
+                repository: widget.requestRepository!,
+                onAuthenticate: () => setState(() => _authRequested = true),
               );
-      },
+            }
+            return AuthScreen(
+              repository: authRepository,
+              onExplore: widget.requestRepository == null
+                  ? null
+                  : () => setState(() => _authRequested = false),
+            );
+          }
+          if (user.needsGoogleConfirmation) {
+            return GoogleRegistrationScreen(
+              user: user,
+              repository: authRepository,
+            );
+          }
+          if (user.needsPasswordSetup) {
+            return PasswordSetupScreen(user: user, repository: authRepository);
+          }
+          if (user.needsClassicProfile) {
+            return ProfileScreen(
+              user: user,
+              repository: authRepository,
+              onboarding: true,
+            );
+          }
+          if (!user.emailVerified) {
+            return VerificationScreen(
+              key: ValueKey('${user.id}-${user.email}'),
+              user: user,
+              repository: authRepository,
+            );
+          }
+          final pending = _pendingDirect;
+          if (pending != null) {
+            _pendingDirect = null;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && authRepository.currentUser?.id == user.id) {
+                _requestDirect(pending);
+              }
+            });
+          }
+          return professionalRepository == null
+              ? FoundiShell(
+                  user: user,
+                  auth: authRepository,
+                  requestRepository: widget.requestRepository,
+                  catalogRepository: professionalRepository,
+                )
+              : ProfessionalGate(
+                  key: ValueKey(user.id),
+                  user: user,
+                  auth: authRepository,
+                  repository: professionalRepository!,
+                  requestRepository: widget.requestRepository,
+                );
+        },
+      ),
     ),
   );
 }

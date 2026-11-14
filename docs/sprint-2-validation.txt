@@ -1,0 +1,53 @@
+Validation locale Sprint 2
+UTC : 2026-11-14T00:05:30.454214+00:00
+Branche : codex/foundi-sprint-2-confidentialite-suppression
+
+Node 185/185 : OK
+  .dart_tool/sprint2-node-delivery.log
+  # tests 185
+  # pass 185
+  # fail 0
+  # cancelled 0
+  # skipped 0
+
+Flutter complet 188 : OK
+  .dart_tool/sprint2-flutter-validation.log
+  05:06 +188: All tests passed!
+
+Flutter parcours final 6 : OK
+  .dart_tool/sprint2-flutter-delivery.log
+  00:04 +6: All tests passed!
+
+Admin complet 15 : OK
+  .dart_tool/sprint2-admin-full.log
+  00:43 +15: All tests passed!
+
+Admin final 1 : OK
+  .dart_tool/sprint2-admin-delivery.log
+  00:03 +1: All tests passed!
+
+Analyse generale : OK
+  .dart_tool/sprint2-analyze-validation.log
+  No issues found! (ran in 94.1s)
+
+Analyse derniers fichiers : OK
+  .dart_tool/sprint2-analyze-delivery.log
+  No issues found!
+
+Emulators 39 regles + 3 integrations : OK
+  .dart_tool/sprint2-emulators-delivery.log
+  # tests 39
+  # pass 39
+  # fail 0
+  # cancelled 0
+  # skipped 0
+  # tests 3
+  # pass 3
+  # fail 0
+  # cancelled 0
+  # skipped 0
+  +  Script exited successfully (code 0)
+
+Syntaxe serveur et scripts : OK
+Controle local de publication : refus attendu, artefacts inactifs
+Aucun deploiement / APK / suppression de compte reel.

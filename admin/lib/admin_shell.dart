@@ -1,3 +1,4 @@
+import 'deletions_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'catalog_page.dart';
@@ -64,6 +65,11 @@ class _AdminShellState extends State<AdminShell> {
               children: [
                 nav('dashboard', 'Tableau de bord', Icons.dashboard_outlined),
                 nav('reports', 'Signalements', Icons.flag_outlined),
+                nav(
+                  'deletions',
+                  'Suppressions de compte',
+                  Icons.person_remove_outlined,
+                ),
                 nav(
                   'applications',
                   'Candidatures pro',
@@ -178,7 +184,9 @@ class _AdminShellState extends State<AdminShell> {
   @override
   Widget build(BuildContext context) {
     final desktop = MediaQuery.sizeOf(context).width >= 1000;
-    final content = section == 'reports'
+    final content = section == 'deletions'
+        ? const DeletionsPage()
+        : section == 'reports'
         ? const ModerationPage()
         : section == 'dashboard' || section == 'applications'
         ? Dashboard(

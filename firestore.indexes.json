@@ -511,6 +511,20 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "accountDeletionJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "runnable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dueAt",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -562,6 +576,108 @@
     },
     {
       "collectionGroup": "safetyAudit",
+      "fieldPath": "deleteAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "notifications",
+      "fieldPath": "actorUid",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "fieldPath": "requestId",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "messageInbox",
+      "fieldPath": "senderUid",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "items",
+      "fieldPath": "retainedProposalId",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "accountDeletionJobs",
+      "fieldPath": "deleteAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "accountDeletionHolds",
+      "fieldPath": "deleteAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "accountDeletionAudit",
+      "fieldPath": "deleteAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "accountLifecycle",
+      "fieldPath": "deleteAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "accountDeletionHoldChunks",
       "fieldPath": "deleteAt",
       "ttl": true,
       "indexes": []

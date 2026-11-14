@@ -2,9 +2,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function activeAccount() {
-      return request.auth != null && (!exists(/databases/$(database)/documents/accountSafety/$(request.auth.uid))
+      return openAccount() && (!exists(/databases/$(database)/documents/accountSafety/$(request.auth.uid))
         || get(/databases/$(database)/documents/accountSafety/$(request.auth.uid)).data.get('suspended', false) != true);
     }
+    function openAccount() { return request.auth != null && !exists(/databases/$(database)/documents/accountLifecycle/$(request.auth.uid)); }
     function admin() { return activeAccount() && request.auth.token.get('admin', false) == true; }
     match /professionalAudit/{id} { allow read: if admin(); allow write: if false; }
     function owner(uid) {
@@ -12,7 +13,7 @@ service cloud.firestore {
     }
     // Suspension prevents activity, while own notification history and appeal
     // information remain readable. No profile, contact or chat access is added.
-    function notificationOwner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function notificationOwner(uid) { return openAccount() && request.auth.uid == uid; }
     function validProfile(data) {
       return data.keys().hasAll(['fullName', 'phone', 'registrationConfirmed', 'createdAt', 'updatedAt'])
         && data.fullName is string && data.fullName.size() <= 100
@@ -63,6 +64,20 @@ service cloud.firestore {
       match /messageReads/{id} { allow get: if owner(uid); allow list, write: if false; }
       match /messageInbox/{id} { allow read, write: if false; }
       match /devices/{id} { allow read, write: if false; }
+      match /legalAcceptances/{version} {
+        allow get, list: if owner(uid);
+        allow create: if owner(uid) && request.resource.data.keys().hasOnly(['version','source','acceptedAt','recordedAt'])
+          && request.resource.data.version == version && version.size() <= 100
+          && request.resource.data.recordedAt == request.time
+          && ((request.resource.data.source == 'explicit'
+            && get(/databases/$(database)/documents/legalDocuments/current).data.published == true
+            && version == get(/databases/$(database)/documents/legalDocuments/current).data.version
+            && request.resource.data.acceptedAt == request.time)
+          || (request.resource.data.source == 'legacy_reference'
+            && get(/databases/$(database)/documents/users/$(uid)).data.get('termsVersion','') == version
+            && request.resource.data.acceptedAt == get(/databases/$(database)/documents/users/$(uid)).data.get('termsAcceptedAt',null)));
+        allow update, delete: if false;
+      }
       match /safetyNotices/{id} { allow read: if notificationOwner(uid); allow write: if false; }
       match /notificationPreferences/{id} {
         allow get: if owner(uid) && id == 'push';

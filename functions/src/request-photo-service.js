@@ -236,6 +236,7 @@ function createRequestPhotoService({ store, auth, files, clock = Date.now, newId
     }
     const photo = await tx.get(photoPath(requestId, photoId));
     if (photo?.state !== 'linked' || !photo.generation) fail('not-found', 'Cette photo est indisponible.');
+    await require('./privacy-guard').assertOpen(tx, photo.uid);
     return { ...photo, directRequest: request.visibility === 'direct' ? request : null };
   }
 

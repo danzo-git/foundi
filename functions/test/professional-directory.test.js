@@ -12,7 +12,7 @@ function fixture(count=1){
     profiles.set(id,{status:'approved',businessName:'Équipe '+i,categoryIds:['auto'],specialtyIds:['import'],zoneIds:['abidjan'],email:'private@example.test',documents:['secret']});
     users.set(id,{uid:id,emailVerified:true,disabled:false});
   }
-  const store={get:async p=>p==='referenceData/professionalOnboarding'?catalog:p.endsWith('/showcase/profile')?showcases.get(p.split('/')[1]):profiles.get(p.split('/')[1]),
+  const store={get:async p=>p==='referenceData/professionalOnboarding'?catalog:p.endsWith('/showcase/profile')?showcases.get(p.split('/')[1]):p.startsWith('professionalProfiles/')?profiles.get(p.split('/')[1]):undefined,
     profiles:async ids=>ids.filter(id=>profiles.has(id)).map(id=>({id,profile:profiles.get(id)})),
     texts:async ids=>new Map(ids.map(id=>[id,showcases.get(id)||{}])),
     approvedPage:async(after,size)=>{scans.push([after,size]);return [...profiles].filter(([id,p])=>p.status==='approved'&&(!after||id>after)).slice(0,size).map(([id,profile])=>({id,profile}));},

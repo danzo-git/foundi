@@ -46,7 +46,7 @@ function createAttachmentService({store,auth,files,scan=async()=> 'unavailable',
     if(item.state==='ready'||item.lease!==lease)return outcome(item);
     try{
       checkMagic(bytes,item.contentType);
-      await files.save(item.quarantinePath,bytes,'application/octet-stream',{messageid:m,sha256:digest});
+      await files.save(item.quarantinePath,bytes,'application/octet-stream',{owneruid:uid,messageid:m,sha256:digest});
       // Only server configuration can skip antivirus. Never label that path as scanned/clean.
       const mandatory=typeof requireScan==='function'?requireScan():requireScan;
       const verdict=mandatory===false?'skipped':await scan(bytes);
@@ -59,7 +59,7 @@ function createAttachmentService({store,auth,files,scan=async()=> 'unavailable',
         });
       }
       const validationMode=verdict==='skipped'?'structural-v1':'clean-v1';
-      const validated=await canonicalize(bytes,item),generation=await files.save(item.storagePath,validated,item.contentType,{messageid:m,sha256:hash(validated),validation:validationMode});
+      const validated=await canonicalize(bytes,item),generation=await files.save(item.storagePath,validated,item.contentType,{owneruid:uid,messageid:m,sha256:hash(validated),validation:validationMode});
       const result=await store.transaction(async tx=>{
         const {chat,writable}=await readConversation(tx,uid,c),current=await tx.get(recordPath(c,m)),existing=await tx.get(messagePath(c,m));
         if(current.state==='ready')return outcome(current);

@@ -1,3 +1,5 @@
+import 'features/privacy/firebase_privacy_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -31,6 +33,7 @@ class _Bootstrap extends StatefulWidget {
 class _BootstrapState extends State<_Bootstrap> {
   final _notificationIntent = ValueNotifier<NotificationIntent?>(null);
   NotificationPush? _push;
+  FirebasePrivacyRepository? _privacy;
   String? _attachmentEndpointBase;
   late Future<FirebaseAuthRepository> _initialization = _initialize();
 
@@ -59,6 +62,19 @@ class _BootstrapState extends State<_Bootstrap> {
             )
           : options,
     );
+    final privacyPreferences = await SharedPreferences.getInstance();
+    if (privacyPreferences.containsKey(FirebasePrivacyRepository.receiptKey) ||
+        privacyPreferences.getBool(FirebasePrivacyRepository.cacheCleanupKey) ==
+            true) {
+      try {
+        await FirebaseFirestore.instance.clearPersistence();
+        await privacyPreferences.remove(
+          FirebasePrivacyRepository.cacheCleanupKey,
+        );
+      } catch (_) {
+        debugPrint('Foundi : nettoyage du cache différé.');
+      }
+    }
     if (const bool.fromEnvironment('USE_FIREBASE_EMULATORS')) {
       const configuredHost = String.fromEnvironment('FIREBASE_EMULATOR_HOST');
       final host = configuredHost.isNotEmpty
@@ -100,7 +116,17 @@ class _BootstrapState extends State<_Bootstrap> {
         debugPrint('Foundi: push indisponibles, boîte in-app active.');
       }
     }
-    return FirebaseAuthRepository(beforeSignOut: _push?.beforeSignOut);
+    final repository = FirebaseAuthRepository(
+      beforeSignOut: _push?.beforeSignOut,
+    );
+    _privacy = FirebasePrivacyRepository(
+      signOut: repository.signOut,
+      endpointBase:
+          _attachmentEndpointBase ??
+          'https://europe-west1-${options.projectId}.cloudfunctions.net',
+    );
+    await _privacy!.initialize();
+    return repository;
   }
 
   @override
@@ -113,6 +139,7 @@ class _BootstrapState extends State<_Bootstrap> {
           intent: _notificationIntent,
           permission: _push,
           child: FoundiApp(
+            privacyRepository: _privacy,
             safetyRepository: FirebaseSafetyRepository(),
             authRepository: snapshot.requireData,
             professionalRepository: FirebaseProfessionalRepository(),

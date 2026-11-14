@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "approved": true,
+  "version": "foundi-deletion-2026-11-14-v1",
+  "sharedMessages": "erase_author_keep_counterparty",
+  "preserveOtherMembersMeasures": true,
+  "providerRetentionAcknowledged": true,
+  "receiptSeconds": 2592000,
+  "auditSeconds": 7776000,
+  "tombstoneSeconds": 604800,
+  "moderationEvidenceDays": 0,
+  "moderationMetadataDays": 0
+}

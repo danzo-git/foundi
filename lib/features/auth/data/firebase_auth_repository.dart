@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../domain/auth_repository.dart';
+import 'google_session.dart';
 
 class FirebaseAuthRepository implements AuthRepository {
   FirebaseAuthRepository({
@@ -38,7 +39,6 @@ class FirebaseAuthRepository implements AuthRepository {
   final _changes = StreamController<FoundiUser?>.broadcast();
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
   _profileSubscription;
-  Future<void>? _googleInitialization;
   FoundiUser? _currentUser;
   Object? _lastError;
   bool _ready = false;
@@ -178,12 +178,53 @@ class FirebaseAuthRepository implements AuthRepository {
     }
   }
 
+  // Immutable history: copying a legacy reference never invents an acceptance date.
+  Future<void> _journalConsent(
+    Transaction tx,
+    DocumentReference<Map<String, dynamic>> ref,
+    Map<String, dynamic>? old,
+    String version,
+  ) async {
+    final previous = old?['termsVersion'] as String? ?? '';
+    final versions = {
+      if (previous.isNotEmpty) previous,
+      if (version.isNotEmpty && version != previous) version,
+    };
+    final snapshots = <String, DocumentSnapshot<Map<String, dynamic>>>{};
+    for (final value in versions) {
+      if (value.contains('/') || value.length > 100) {
+        throw const AuthFailure('Version juridique invalide.');
+      }
+      snapshots[value] = await tx.get(
+        ref.collection('legalAcceptances').doc(value),
+      );
+    }
+    for (final value in versions) {
+      if (snapshots[value]!.exists) continue;
+      final legacy = value == previous;
+      tx.set(snapshots[value]!.reference, {
+        'version': value,
+        'source': legacy ? 'legacy_reference' : 'explicit',
+        'acceptedAt': legacy
+            ? (old?['termsAcceptedAt'])
+            : FieldValue.serverTimestamp(),
+        'recordedAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
   Future<void> _writeProfile(AccountProfile profile) async {
     final user = _auth.currentUser;
     if (user == null) throw const AuthFailure('Reconnecte-toi pour continuer.');
     final ref = _profile(user.uid);
     await _firestore.runTransaction((transaction) async {
       final existing = await transaction.get(ref);
+      await _journalConsent(
+        transaction,
+        ref,
+        existing.data(),
+        profile.termsVersion,
+      );
       transaction.set(ref, {
         'fullName': profile.fullName.trim(),
         'phone': profile.phone,
@@ -322,13 +363,20 @@ class FirebaseAuthRepository implements AuthRepository {
         !user.providerData.any((p) => p.providerId == 'google.com')) {
       throw const AuthFailure('Reconnecte-toi avec Google.');
     }
-    await _profile(user.uid).update({
-      'registrationConfirmed': true,
-      'registrationPath': registrationPath,
-      'termsVersion': termsVersion,
-      if (termsVersion.isNotEmpty)
-        'termsAcceptedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
+    final ref = _profile(user.uid);
+    await _firestore.runTransaction((tx) async {
+      final old = await tx.get(ref);
+      await _journalConsent(tx, ref, old.data(), termsVersion);
+      tx.update(ref, {
+        'registrationConfirmed': true,
+        'registrationPath': registrationPath,
+        if (termsVersion.isNotEmpty &&
+            old.data()?['termsVersion'] != termsVersion) ...{
+          'termsVersion': termsVersion,
+          'termsAcceptedAt': FieldValue.serverTimestamp(),
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     });
   });
 
@@ -353,7 +401,7 @@ class FirebaseAuthRepository implements AuthRepository {
             'La connexion Google est disponible sur Android, iOS et le Web.',
           );
         }
-        await (_googleInitialization ??= GoogleSignIn.instance.initialize());
+        await initializeGoogleSession();
         final account = await GoogleSignIn.instance.authenticate();
         final token = account.authentication.idToken;
         if (token == null) {
@@ -380,6 +428,12 @@ class FirebaseAuthRepository implements AuthRepository {
     final name = user.displayName ?? '';
     await _firestore.runTransaction((transaction) async {
       final existing = await transaction.get(ref);
+      await _journalConsent(
+        transaction,
+        ref,
+        existing.data(),
+        registering ? termsVersion : '',
+      );
       if (!existing.exists) {
         transaction.set(ref, {
           'fullName': name.length > 100 ? name.substring(0, 100) : name,
@@ -418,16 +472,24 @@ class FirebaseAuthRepository implements AuthRepository {
       version: data?['version'] as String? ?? '',
       terms: data?['terms'] as String? ?? '',
       privacy: data?['privacy'] as String? ?? '',
+      requiresAcceptance: data?['requiresAcceptance'] == true,
     );
   });
   @override
   Future<void> acceptLegal(String version) => _pauseSession(() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw const AuthFailure('Reconnecte-toi pour continuer.');
-    await _profile(uid).update({
-      'termsVersion': version,
-      'termsAcceptedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
+    final ref = _profile(uid);
+    await _firestore.runTransaction((tx) async {
+      final old = await tx.get(ref);
+      await _journalConsent(tx, ref, old.data(), version);
+      if (old.data()?['termsVersion'] != version) {
+        tx.update(ref, {
+          'termsVersion': version,
+          'termsAcceptedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
     });
   });
   @override
@@ -444,9 +506,13 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Future<void> signOut() => _pauseSession(() async {
-    await beforeSignOut?.call();
+    try {
+      await beforeSignOut?.call().timeout(const Duration(seconds: 8));
+    } catch (_) {
+      /* Local sign-out must remain available. */
+    }
     await _auth.signOut();
-    if (!kIsWeb && _googleInitialization != null) {
+    if (!kIsWeb && googleSessionInitialized) {
       try {
         await GoogleSignIn.instance.signOut();
       } catch (_) {

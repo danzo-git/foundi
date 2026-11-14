@@ -1,0 +1,96 @@
+# Fichiers du Sprint 2
+
+Base : `f17cb54`, branche `codex/foundi-sprint-2-confidentialite-suppression`. Travail local, sans publication ni push du Sprint 2.
+
+## Application
+
+- [lib/app.dart](../lib/app.dart)
+- [lib/features/auth/data/firebase_auth_repository.dart](../lib/features/auth/data/firebase_auth_repository.dart)
+- [lib/features/auth/data/google_session.dart](../lib/features/auth/data/google_session.dart)
+- [lib/features/auth/domain/auth_repository.dart](../lib/features/auth/domain/auth_repository.dart)
+- [lib/features/auth/presentation/account_screen.dart](../lib/features/auth/presentation/account_screen.dart)
+- [lib/features/auth/presentation/legal_acceptance_screen.dart](../lib/features/auth/presentation/legal_acceptance_screen.dart)
+- [lib/features/navigation/presentation/settings_view.dart](../lib/features/navigation/presentation/settings_view.dart)
+- [lib/features/privacy/firebase_privacy_repository.dart](../lib/features/privacy/firebase_privacy_repository.dart)
+- [lib/features/privacy/privacy_repository.dart](../lib/features/privacy/privacy_repository.dart)
+- [lib/features/privacy/privacy_views.dart](../lib/features/privacy/privacy_views.dart)
+- [lib/features/proposals/domain/proposal_repository.dart](../lib/features/proposals/domain/proposal_repository.dart)
+- [lib/main.dart](../lib/main.dart)
+- [test/navigation_v4_test.dart](../test/navigation_v4_test.dart)
+- [test/privacy_test.dart](../test/privacy_test.dart)
+
+## Serveur et regles
+
+- [firestore.indexes.json](../firestore.indexes.json)
+- [firestore.rules](../firestore.rules)
+- [functions/integration-test/privacy-flow.test.cjs](../functions/integration-test/privacy-flow.test.cjs)
+- [functions/package.json](../functions/package.json)
+- [functions/rules-test/attachments.test.cjs](../functions/rules-test/attachments.test.cjs)
+- [functions/rules-test/privacy.test.cjs](../functions/rules-test/privacy.test.cjs)
+- [functions/scripts/test-v82-emulators.cjs](../functions/scripts/test-v82-emulators.cjs)
+- [functions/src/attachment-service.js](../functions/src/attachment-service.js)
+- [functions/src/index.js](../functions/src/index.js)
+- [functions/src/notification-service.js](../functions/src/notification-service.js)
+- [functions/src/privacy-guard.js](../functions/src/privacy-guard.js)
+- [functions/src/privacy-purge.js](../functions/src/privacy-purge.js)
+- [functions/src/privacy-service.js](../functions/src/privacy-service.js)
+- [functions/src/privacy-store.js](../functions/src/privacy-store.js)
+- [functions/src/professional-directory-store.js](../functions/src/professional-directory-store.js)
+- [functions/src/professional-service.js](../functions/src/professional-service.js)
+- [functions/src/request-photo-service.js](../functions/src/request-photo-service.js)
+- [functions/src/safety-guard.js](../functions/src/safety-guard.js)
+- [functions/src/safety-service.js](../functions/src/safety-service.js)
+- [functions/src/safety-store.js](../functions/src/safety-store.js)
+- [functions/test/privacy-events.test.js](../functions/test/privacy-events.test.js)
+- [functions/test/privacy-web.test.js](../functions/test/privacy-web.test.js)
+- [functions/test/privacy.test.js](../functions/test/privacy.test.js)
+- [functions/test/professional-directory.test.js](../functions/test/professional-directory.test.js)
+- [functions/test/request-service.test.js](../functions/test/request-service.test.js)
+- [storage.rules](../storage.rules)
+
+## Admin
+
+- [admin/lib/admin_shell.dart](../admin/lib/admin_shell.dart)
+- [admin/lib/deletions_page.dart](../admin/lib/deletions_page.dart)
+- [admin/test/deletions_test.dart](../admin/test/deletions_test.dart)
+
+## Web et configuration
+
+- [config/legal-documents.sprint-2.draft.json](../config/legal-documents.sprint-2.draft.json)
+- [config/privacy-policy.draft.json](../config/privacy-policy.draft.json)
+- [firebase.public.draft.json](../firebase.public.draft.json)
+- [public-privacy/assets/deletion.js](../public-privacy/assets/deletion.js)
+- [public-privacy/assets/runtime.json](../public-privacy/assets/runtime.json)
+- [public-privacy/assets/style.css](../public-privacy/assets/style.css)
+- [public-privacy/assistance/index.html](../public-privacy/assistance/index.html)
+- [public-privacy/conditions-utilisation/index.html](../public-privacy/conditions-utilisation/index.html)
+- [public-privacy/confidentialite/index.html](../public-privacy/confidentialite/index.html)
+- [public-privacy/index.html](../public-privacy/index.html)
+- [public-privacy/suppression-compte/index.html](../public-privacy/suppression-compte/index.html)
+- [scripts/build-privacy-pages.cjs](../scripts/build-privacy-pages.cjs)
+- [scripts/check-privacy-web.cjs](../scripts/check-privacy-web.cjs)
+- [scripts/preview-privacy.cjs](../scripts/preview-privacy.cjs)
+- [scripts/validate-privacy-release.cjs](../scripts/validate-privacy-release.cjs)
+
+## Dossier et captures
+
+- [docs/legal/sprint-2/cgu-v1-projet.md](../docs/legal/sprint-2/cgu-v1-projet.md)
+- [docs/legal/sprint-2/confidentialite-v1-projet.md](../docs/legal/sprint-2/confidentialite-v1-projet.md)
+- [docs/sprint-2-audit-initial.md](../docs/sprint-2-audit-initial.md)
+- [docs/sprint-2-captures/admin-suppressions.png](../docs/sprint-2-captures/admin-suppressions.png)
+- [docs/sprint-2-captures/app-confidentialite-lecture.png](../docs/sprint-2-captures/app-confidentialite-lecture.png)
+- [docs/sprint-2-captures/app-suivi-indisponible.png](../docs/sprint-2-captures/app-suivi-indisponible.png)
+- [docs/sprint-2-captures/app-suppression-confirmation.png](../docs/sprint-2-captures/app-suppression-confirmation.png)
+- [docs/sprint-2-captures/app-suppression-en-cours.png](../docs/sprint-2-captures/app-suppression-en-cours.png)
+- [docs/sprint-2-captures/app-suppression-reprise.png](../docs/sprint-2-captures/app-suppression-reprise.png)
+- [docs/sprint-2-captures/app-suppression-terminee.png](../docs/sprint-2-captures/app-suppression-terminee.png)
+- [docs/sprint-2-captures/app-verification-refusee.png](../docs/sprint-2-captures/app-verification-refusee.png)
+- [docs/sprint-2-captures/web-confidentialite.png](../docs/sprint-2-captures/web-confidentialite.png)
+- [docs/sprint-2-captures/web-suppression-520.png](../docs/sprint-2-captures/web-suppression-520.png)
+- [docs/sprint-2-decisions-et-conservation.md](../docs/sprint-2-decisions-et-conservation.md)
+- [docs/sprint-2-deploiement-a-valider.md](../docs/sprint-2-deploiement-a-valider.md)
+- [docs/sprint-2-fichiers.md](../docs/sprint-2-fichiers.md)
+- [docs/sprint-2-livraison.md](../docs/sprint-2-livraison.md)
+- [docs/sprint-2-matrice-et-stores.md](../docs/sprint-2-matrice-et-stores.md)
+- [docs/sprint-2-tests-resultats.md](../docs/sprint-2-tests-resultats.md)
+- [docs/sprint-2-validation.txt](../docs/sprint-2-validation.txt)

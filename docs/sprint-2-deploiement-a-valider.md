@@ -1,0 +1,45 @@
+# Plan de mise en production à valider
+
+**Aucune étape de publication n’est autorisée ni exécutée par cette livraison.** Aucun APK n’est généré ou distribué. Les commandes ci-dessous sont un plan à exécuter seulement après accord explicite, avec les projets, domaines et comptes de service revérifiés.
+
+## Conditions de passage
+
+1. Valider les éléments de `sprint-2-decisions-et-conservation.md` : identité sociale et adresse complètes, textes, bases/destinataires/transferts, durées justifiées, conservation de l’historique d’autrui, contacts et droits. Obtenir une relecture adaptée à la Côte d’Ivoire et à la France.
+2. Vérifier les journaux, sauvegardes/exportations, délais des prestataires et le paramétrage réel d’Auth/SMTP/FCM. La configuration locale de production indique Gmail SMTP ; les contrats et paramètres réellement déployés restent à vérifier. Le scan antivirus externe est actuellement désactivé dans le fichier local de production : ne pas annoncer un contrôle antivirus actif sans vérification de l’exploitation.
+3. Choisir et autoriser un domaine/site public distinct de Foundi Admin. `firebase.public.draft.json` contient le target non mappé `publicPrivacy` ; ne jamais réutiliser le site Admin par défaut. Vérifier HTTPS, identité de l’éditeur, accessibilité, liens et redirections. Aucun domaine nouveau n’est présumé réservé ou publié.
+4. Approuver une politique complète à partir de `config/privacy-policy.draft.json`. Tester d’abord les valeurs retenues sur un projet de préproduction dédié, avec données fictives et tous les services explicitement associés à ce projet. Les fixtures de `demo-foundi` ne sont pas des durées de production.
+
+## Ordre proposé, après autorisation
+
+1. Sauvegarder le code/configuration précédents et l’inventaire des dossiers techniques indispensables ; vérifier les droits IAM minimaux. Une sauvegarde ne doit pas permettre une republication automatique de données effacées. Préparer le registre d’effacement à appliquer après toute restauration.
+2. Déployer les index et TTL de `firestore.indexes.json`, attendre les états effectifs : index de jobs `runnable+dueAt`, champs de requêtes de groupes, TTL `accountDeletionJobs`, `accountDeletionHolds`, `accountDeletionHoldChunks`, `accountDeletionAudit`, `accountLifecycle`. Conserver les index/TTL du Sprint 1. Faire vérifier les requêtes de groupe sur le projet de préproduction : l’émulateur ne reproduit pas toutes les exigences d’index de production.
+3. Déployer les Functions **avec `ACCOUNT_DELETION_ENABLED=false`**, puis les règles Firestore et Storage incluant la barrière de fermeture. Il faut actualiser les callables existantes aussi, car elles utilisent le garde commun. Vérifier les identités et permissions du worker Auth/Firestore/Storage et l’accès au secret OTP déjà existant. Ne pas exposer les anciennes archives dans l’Admin SDK client.
+4. Tester les anciens jetons, anciens clients, uploads en cours, notifications tardives, suspension et décisions de modération concurrentes en préproduction. Vérifier les métriques : dossiers bloqués, retries, `needs_review`, temps de fermeture/retrait, coût des scans et erreurs d’objets non attribuables. Les anciens objets sans preuve de propriété exigent une revue ; aucune suppression arbitraire n’est permise. Le détail privé Admin indique la référence de l’objet à examiner. Attribuer un ancien fichier exige une preuve issue d’un enregistrement serveur ou d’une traçabilité fiable, et un contrôle de sa génération ; ne jamais deviner le propriétaire pour débloquer une purge. Reprendre sans corriger cette cause laissera le dossier en revue.
+5. Configurer la politique approuvée dans `privacyConfiguration/current`. Ce document reste inaccessible aux clients. Le worker photographie la politique dans chaque dossier ; un changement ultérieur ne réécrit pas silencieusement les durées déjà annoncées. Couper `enabled` suspend le travail sans rouvrir les comptes en fermeture.
+6. Mettre la même version relue des textes dans le payload juridique et les pages générées. Décider du champ `requiresAcceptance`, de la notice de changement et de la date d’effet. Publier le nouveau `legalDocuments/current` seulement après accord spécifique ; ne pas écraser les références historiques. Les nouveaux clients enregistrent des acceptations immuables, les anciens champs sont préservés.
+7. Préparer le runtime Web : `enabled:true`, configuration publique Firebase exacte, domaine Auth autorisé et endpoint Functions effectif. Activer et vérifier la protection Auth contre l’énumération des e-mails, les quotas/limitations, CSP/CORS et l’absence de données personnelles dans les URLs/journaux. La configuration publique contient une clé Web Firebase, jamais des clés Admin ni le secret OTP. Le parcours Google externe nécessite un essai sur un compte fictif de préproduction ; aucun vrai compte n’a été supprimé pour cette livraison.
+8. Construire la version Admin et la version applicative par les procédures habituelles, puis tester les liens et le suivi sur appareil. La génération/distribution d’APK et la publication Admin restent soumises à autorisation distincte. Publier les pages publiques avec le target séparé seulement après accord ; les fichiers livrés portent une mention de projet et ne doivent pas être envoyés tels quels en production.
+9. Activer `ACCOUNT_DELETION_ENABLED` et `privacyConfiguration.current.enabled` après vérification des étapes précédentes. Effectuer une recette avec compte fictif dédié, réauthentification, suppression des objets, fin réelle du dossier, suivi sans session et continuité des sanctions d’un autre membre. Toute action en production, même sur un compte de recette, requiert l’accord explicite demandé par l’utilisateur.
+10. Contrôler depuis un navigateur anonyme les URLs finales `/confidentialite`, `/conditions-utilisation`, `/suppression-compte`, `/assistance`, puis seulement renseigner les consoles Google Play / Apple. Valider la matrice stores sur l’artefact effectivement distribué et les SDK embarqués.
+
+Avant toute publication, lancer `node scripts/validate-privacy-release.cjs` : ce contrôle est uniquement local et refuse actuellement le passage, comme prévu. Il exige des textes validés sans mentions provisoires, une politique complète, un domaine/runtime réel et une attestation de vérification de la protection Auth anti-énumération. Il vérifie aussi que le target public est distinct de l’Admin. Il ne publie rien et ne remplace pas l’accord explicite demandé.
+
+## Exploitation, reprise et retour arrière
+
+Les jobs sont paginés et loués, avec reprise au même checkpoint, retries bornés puis `needs_review`. Le secret de suivi permet seulement de consulter le dossier et demander une reprise d’un état réessayable ; il n’autorise pas la suppression d’un autre UID. Les API Admin requièrent un claim Admin courant vérifié côté Auth et une justification pour reprendre un dossier existant. Elles n’offrent aucune saisie libre d’UID à supprimer.
+
+En cas d’incident, désactiver l’exécution, conserver les barrières de fermeture, diagnostiquer avec les codes techniques privés et contrôler la propriété/génération des objets. La reprise intervient après correction et motif journalisé. Ne pas restaurer automatiquement un profil ou lever une sanction pour débloquer la purge. Le retour à un ancien binaire serveur ne doit pas réintroduire des callables ignorant `accountLifecycle` : garder le garde de fermeture et les règles jusqu’à la fin des dossiers ouverts.
+
+Une suppression active est irréversible au niveau fonctionnel. Les copies fournisseur, notamment les sept jours de soft delete du bucket vérifiés, suivent leurs propres conditions. Le suivi affiche les échéances de conservation temporaires et ne promet pas l’effacement instantané des journaux, exports ou fichiers conservés par un destinataire. Prévoir la procédure d’information du demandeur, de réclamation et de contrôle des échéances des archives.
+
+## Vérifications locales reproductibles
+
+- `node scripts/build-privacy-pages.cjs` : génère les textes identiques pour l’app et le Web sans publier.
+- `node scripts/preview-privacy.cjs` : aperçu sur `http://127.0.0.1:8767`, runtime inactif par défaut.
+- `npm --prefix functions test` et `npm --prefix functions run check`.
+- `npm --prefix functions run test:privacy:emulators` : comptes et fichiers fictifs, ports locaux dynamiques, projet `demo-foundi`, paramètres de test restaurés après exécution.
+- `npm --prefix functions run test:sprint2:emulators` : recette combinée des règles, de la suppression et de la modération sur le même état local.
+- `npm --prefix functions run test:moderation:emulators` : non-régression des protections du Sprint 1.
+- `flutter analyze --no-pub` puis `flutter test --no-pub --concurrency=1` à la racine et dans `admin` ; captures via `--dart-define=PRIVACY_CAPTURE=true` pour les tests concernés.
+
+Les commandes de déploiement ne sont volontairement pas lancées par les scripts de génération ou d’aperçu. L’autorisation finale doit préciser les surfaces publiées et le projet cible.

@@ -14,6 +14,7 @@ async function main(){
   const required=!process.argv.includes('--without-antivirus');
   const preserved=original.toString('utf8').replace(/^ATTACHMENT_SCAN_(HOST|PORT)=.*\r?\n?/gm,'').replace(/^ATTACHMENT_REQUIRE_SCAN=.*\r?\n?/gm,'');
   fs.writeFileSync(envPath,preserved+`\nATTACHMENT_SCAN_HOST=127.0.0.1\nATTACHMENT_SCAN_PORT=${fixture.port}\nATTACHMENT_REQUIRE_SCAN=${required}\n`);
+  if(process.argv.includes('--privacy-only')||process.argv.includes('--sprint2-only'))fs.appendFileSync(envPath,'ACCOUNT_DELETION_ENABLED=true\n');
   const cli=process.env.FIREBASE_CLI_JS||path.join(process.env.APPDATA,'npm/node_modules/firebase-tools/lib/bin/firebase.js');
   const onlyRules=process.argv.includes('--rules-only');
   const safetyOnly=process.argv.includes('--safety-only');
@@ -31,7 +32,7 @@ async function main(){
     fs.writeFileSync(safetyRuntimePath,JSON.stringify(local,null,2));
     console.log('Safety emulators use dynamically selected local ports.');
   }
-  const testCommand=process.argv.includes('--moderation-only')?'npm.cmd --prefix functions run test:rules && node --test --test-concurrency=1 functions/integration-test/safety-flow.test.cjs functions/integration-test/safety-notifications-flow.test.cjs':onlyRules?'npm.cmd --prefix functions run test:rules':process.argv.includes('--v9-only')?'npm.cmd --prefix functions run test:v9:emulated':'npm.cmd --prefix functions run test:emulated';
+  const testCommand=process.argv.includes('--sprint2-only')?'npm.cmd --prefix functions run test:rules && node --test --test-concurrency=1 functions/integration-test/safety-flow.test.cjs functions/integration-test/safety-notifications-flow.test.cjs functions/integration-test/privacy-flow.test.cjs':process.argv.includes('--privacy-only')?'node --test --test-concurrency=1 functions/rules-test/privacy.test.cjs functions/integration-test/privacy-flow.test.cjs':process.argv.includes('--moderation-only')?'npm.cmd --prefix functions run test:rules && node --test --test-concurrency=1 functions/integration-test/safety-flow.test.cjs functions/integration-test/safety-notifications-flow.test.cjs':onlyRules?'npm.cmd --prefix functions run test:rules':process.argv.includes('--v9-only')?'npm.cmd --prefix functions run test:v9:emulated':'npm.cmd --prefix functions run test:emulated';
   child=spawn(process.execPath,[cli,'emulators:exec',...(onlyRules?[]:[`--inspect-functions=${inspector}`]),'--config',config,'--project','demo-foundi','--only',onlyRules?'firestore,storage':'auth,firestore,storage,functions',testCommand],
    {cwd:root,stdio:'inherit',env:{...process.env,
      // The installed CLI/SDK support file discovery. Avoid a flaky localhost

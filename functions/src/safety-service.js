@@ -89,6 +89,7 @@ function createSafetyService({store, auth, ownerForRequest, evidence, clock = Da
       }
     }
     if (!idOK(reportedUid) || (!allowOwn && uid === reportedUid)) fail('invalid-argument','Tu ne peux pas signaler ou bloquer ton propre compte.');
+    await require('./privacy-guard').assertOpen(tx,reportedUid);
     return {reportedUid,label:label || 'Membre Foundi',evidence};
   }
   async function submit(uid, input) {
@@ -191,6 +192,7 @@ function createSafetyService({store, auth, ownerForRequest, evidence, clock = Da
       if(prior){if(prior.fingerprint!==fingerprint)fail('already-exists','Identifiant utilisé pour une autre décision.');return {revision:prior.revision,duplicate:true};}
       if(!report)fail('not-found','Signalement indisponible.');
       if(report.revision!==input.expectedRevision)fail('aborted','Ce dossier a changé. Actualise avant de décider.');
+      await require('./privacy-guard').assertOpen(tx,report.reportedUid);
       const targetUser=await auth.getUser(report.reportedUid);
       if(['suspend','restore_account'].includes(input.action) && (report.reportedUid===uid || targetUser.customClaims?.admin===true))fail('permission-denied','La restriction d’un administrateur nécessite une procédure distincte.');
       const contentPath=`safetyContent/${report.targetType}_${report.targetId}`;
