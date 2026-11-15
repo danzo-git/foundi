@@ -221,7 +221,7 @@ function createSafetyService({store, auth, ownerForRequest, evidence, clock = Da
         if(report.targetType==='request'){
           if(hidden){tx.delete(`requests/${report.targetId}`);}
           else if(own.status==='published'){
-            const fields=['title','description','categoryId','categoryLabel','specialtyId','specialtyLabel','zoneId','zoneLabel','budget','status','createdAt','updatedAt','authorPublicName','photoIds','photosPublic'];
+            const fields=['title','description','categoryId','categoryLabel','specialtyId','specialtyLabel','zoneId','zoneLabel','zoneIds','zoneLabels','serviceDetail','budget','status','createdAt','updatedAt','authorPublicName','photoIds','photosPublic','interventionAddress'];
             tx.set(`requests/${report.targetId}`,Object.fromEntries(fields.filter(k=>own[k]!==undefined).map(k=>[k,own[k]])));
           }
         }

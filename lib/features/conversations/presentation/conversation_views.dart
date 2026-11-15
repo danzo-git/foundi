@@ -1,3 +1,7 @@
+import 'conversation_card.dart';
+import 'dart:async';
+import '../../auth/domain/account_photo_changes.dart';
+import '../../auth/domain/auth_repository.dart';
 import '../../safety/domain/safety_repository.dart';
 import '../../safety/presentation/safety_widgets.dart';
 export 'proposal_negotiation.dart' show SelectionPanel;
@@ -47,7 +51,10 @@ class _ConversationListViewState extends State<ConversationListView> {
   @override
   void didUpdateWidget(ConversationListView old) {
     super.didUpdateWidget(old);
-    if (!widget.canShowClients && _clients) {
+    if (old.repository != widget.repository || old.uid != widget.uid) {
+      _clients = widget.canShowClients && widget.initialProfessional;
+      _stream = _load();
+    } else if (!widget.canShowClients && _clients) {
       _clients = false;
       _stream = _load();
     }
@@ -82,6 +89,7 @@ class _ConversationListViewState extends State<ConversationListView> {
       ),
       const SizedBox(height: 20),
       StreamBuilder<List<Conversation>>(
+        key: ValueKey('${widget.uid}:$_clients'),
         stream: _stream,
         builder: (context, s) {
           if (s.hasError) {
@@ -139,51 +147,12 @@ class _ConversationListViewState extends State<ConversationListView> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final c in s.requireData)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: FoundiPanel(
-                    onTap: () => widget.onOpen(c.id),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          c.otherName(widget.uid),
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(c.requestTitle),
-                        const SizedBox(height: 10),
-                        Text(
-                          c.lastMessagePreview.isEmpty
-                              ? 'Discussion prête — écrire un message'
-                              : c.lastMessagePreview,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: FoundiUi.muted),
-                        ),
-                        const SizedBox(height: 8),
-                        RequestTag(
-                          c.active
-                              ? proposalStatusLabel(c.proposalStatus)
-                              : 'Lecture seule',
-                        ),
-                        Text(
-                          requestDate(
-                            DateTime.fromMillisecondsSinceEpoch(c.updatedAt),
-                          ),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: FoundiUi.muted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              _ConversationCards(
+                repository: widget.repository,
+                uid: widget.uid,
+                conversations: s.requireData,
+                onOpen: widget.onOpen,
+              ),
               const Text(
                 'Les 30 conversations les plus récentes.',
                 style: TextStyle(fontSize: 12, color: FoundiUi.muted),
@@ -193,6 +162,221 @@ class _ConversationListViewState extends State<ConversationListView> {
         },
       ),
     ],
+  );
+}
+
+class _ConversationCards extends StatefulWidget {
+  const _ConversationCards({
+    required this.repository,
+    required this.uid,
+    required this.conversations,
+    required this.onOpen,
+  });
+  final ConversationRepository repository;
+  final String uid;
+  final List<Conversation> conversations;
+  final ValueChanged<String> onOpen;
+  @override
+  State<_ConversationCards> createState() => _ConversationCardsState();
+}
+
+class _ConversationCardsState extends State<_ConversationCards>
+    with WidgetsBindingObserver {
+  final _deleting = <String>{};
+  bool _optionsOpen = false;
+  Future<void> _options(Conversation conversation) async {
+    final repository = widget.repository, uid = widget.uid;
+    if (_optionsOpen ||
+        _deleting.contains(conversation.id) ||
+        repository is! ConversationDeletionRepository) {
+      return;
+    }
+    _optionsOpen = true;
+    try {
+      final remove = await showModalBottomSheet<bool>(
+        context: context,
+        showDragHandle: true,
+        useSafeArea: true,
+        isScrollControlled: true,
+        builder: (sheet) => SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    conversation.otherName(uid),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: FoundiUi.ink,
+                    ),
+                  ),
+                ),
+                ListTile(
+                  key: const ValueKey('deleteConversationAction'),
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: const Text(
+                    'Supprimer la conversation',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  onTap: () => Navigator.pop(sheet, true),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(sheet, false),
+                  child: const Text('Annuler'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (remove != true ||
+          !mounted ||
+          widget.uid != uid ||
+          widget.repository != repository) {
+        return;
+      }
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          scrollable: true,
+          title: const Text('Supprimer la conversation ?'),
+          content: Text(
+            'Elle sera retirée de ta messagerie sur tous tes appareils. L’autre personne conserve son historique. Les nouveaux messages ne la feront pas réapparaître.${conversation.proposalStatus == 'retained' ? ' La proposition reste retenue.' : ''}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              key: const ValueKey('confirmDeleteConversation'),
+              onPressed: () => Navigator.pop(dialog, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Supprimer'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true ||
+          !mounted ||
+          widget.uid != uid ||
+          widget.repository != repository) {
+        return;
+      }
+      setState(() => _deleting.add(conversation.id));
+      try {
+        await (repository as ConversationDeletionRepository).deleteConversation(
+          conversation.id,
+          viewerUid: uid,
+        );
+        if (mounted && widget.uid == uid) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Conversation supprimée de ta messagerie.'),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted && widget.uid == uid) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                e is AuthFailure
+                    ? e.message
+                    : 'Suppression non confirmée. Réessaie.',
+              ),
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _deleting.remove(conversation.id));
+      }
+    } finally {
+      _optionsOpen = false;
+    }
+  }
+
+  late Future<Map<String, String>> _avatars = _load();
+  late final StreamSubscription<void> _changes;
+  String _identity(_ConversationCards value) =>
+      '${value.uid}:${value.conversations.map((c) => '${c.id}/${c.clientUid}/${c.professionalUid}').join(',')}';
+  Future<Map<String, String>> _load() async {
+    final repository = widget.repository;
+    if (repository is! ConversationAvatarRepository) return {};
+    try {
+      return await (repository as ConversationAvatarRepository)
+          .resolveConversationAvatars(
+            widget.conversations.map((c) => c.id).take(30).toList(),
+          );
+    } catch (_) {
+      return {};
+    }
+  }
+
+  void _refresh() {
+    if (mounted) setState(() => _avatars = _load());
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _changes = AccountPhotoChanges.stream.listen((_) => _refresh());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  @override
+  void didUpdateWidget(_ConversationCards old) {
+    super.didUpdateWidget(old);
+    if (old.repository != widget.repository ||
+        _identity(old) != _identity(widget) ||
+        old.conversations.map((c) => '${c.updatedAt}:${c.status}').join(',') !=
+            widget.conversations
+                .map((c) => '${c.updatedAt}:${c.status}')
+                .join(',')) {
+      _avatars = _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    _changes.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Map<String, String>>(
+    key: ValueKey(_identity(widget)),
+    future: _avatars,
+    builder: (context, s) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final c in widget.conversations)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: ConversationCard(
+              key: ValueKey('conversation-${c.id}'),
+              conversation: c,
+              viewerUid: widget.uid,
+              onOpen: () => widget.onOpen(c.id),
+              avatarKey: s.data?[c.id],
+              onLongPress: widget.repository is ConversationDeletionRepository
+                  ? () => _options(c)
+                  : null,
+              deleting: _deleting.contains(c.id),
+            ),
+          ),
+      ],
+    ),
   );
 }
 

@@ -132,3 +132,13 @@ abstract interface class ConversationRepository {
     String text,
   );
 }
+
+abstract interface class ConversationAvatarRepository {
+  Future<Map<String, String>> resolveConversationAvatars(
+    List<String> conversationIds,
+  );
+}
+
+abstract interface class ConversationDeletionRepository {
+  Future<void> deleteConversation(String id, {required String viewerUid});
+}

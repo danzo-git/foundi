@@ -7,7 +7,8 @@ const request={status:'published',categoryId:'c',specialtyId:'s',zoneId:'z'};
 test('V9 matches exactly FOUN-52 combinations including multiple specialties/zones',()=>{
  for(const specialtyId of ['s','s2'])for(const zoneId of ['z','z2'])assert.equal(matchesOpportunity({...request,specialtyId,zoneId},profile,reference),true);
  for(const p of [{...profile,status:'pending'},{...profile,zoneIds:['parent-of-z']},{...profile,specialtyIds:[]},{...profile,categoryIds:[]}])assert.equal(matchesOpportunity(request,p,reference),false);
- for(const r of [{...request,status:'closed'},{...request,status:'deleted'},{...request,specialtyId:''},{...request,zoneId:'child-of-z'}])assert.equal(matchesOpportunity(r,profile,reference),false);
+ for(const r of [{...request,status:'closed'},{...request,status:'deleted'},{...request,zoneId:'child-of-z'}])assert.equal(matchesOpportunity(r,profile,reference),false);
+ assert.equal(matchesOpportunity({...request,specialtyId:''},profile,reference),true);
  assert.equal(matchesOpportunity({...request,categoryId:'flat',specialtyId:''},profile,reference),true);
  assert.equal(matchesOpportunity(request,profile,{}),false);
 });
@@ -44,4 +45,16 @@ test('V9.1 previews obey privacy for every message type without disclosing share
  assert.equal(messagePushContent({type:'text'},' \u0000 ',true).title,'Un utilisateur Foundi');
  assert.equal(isPrivateMessage({type:'chat_message'}),true);assert.equal(isPrivateMessage({type:'message.created'}),true);
  assert.equal(isPrivateMessage({type:'conversation.opened'}),false);
+});
+
+
+test('Sprint 2.5 exact zone OR, category-wide and cross-category unclassified matching',()=>{
+ const reference={categories:[{id:'c',active:true,specialties:[{id:'s'}]},{id:'foundi_other',requestOnly:true,active:true,specialties:[]}]};
+ const p={status:'approved',categoryIds:['c'],specialtyIds:['s'],zoneIds:['z1','z2','z3']};
+ const base={status:'published',categoryId:'c',specialtyId:'s',zoneId:'z1',zoneIds:['z1','z2','z3']};
+ assert.equal(matchesOpportunity(base,p,reference),true);
+ assert.equal(matchesOpportunity({...base,specialtyId:''},{...p,specialtyIds:[]},reference),true);
+ assert.equal(matchesOpportunity({...base,categoryId:'foundi_other',specialtyId:''},{...p,categoryIds:['different'],specialtyIds:[]},reference),true);
+ for(const other of [{...p,zoneIds:['parent']},{...p,zoneIds:['outside']},{...p,status:'suspended'}])assert.equal(matchesOpportunity({...base,categoryId:'foundi_other',specialtyId:''},other,reference),false);
+ assert.equal(matchesOpportunity({...base,categoryId:'injected',specialtyId:''},p,reference),false);
 });

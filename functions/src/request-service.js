@@ -1,10 +1,12 @@
 const { OtpError, requireUid } = require('./auth-validation');
 const { createHash } = require('node:crypto');
 
+const {unclassified} = require('./request-matching');
 const { activeZones } = require('./catalog-service');
 const { photoIds: validatePhotoIds } = require('./request-photo-service');
 const { directRequestActivity, accountRequesterName } = require('./direct-request-context');
 const { assertActive, assertContact, publicProfileAllowed } = require('./safety-guard');
+const {addressMutation,assertAddressCountry,acknowledgement}=require('./request-address-service');
 
 const fail = (code, message) => { throw new OtpError(code, message); };
 
@@ -71,10 +73,30 @@ function requestInput(input) {
 
   }
 
-  return { categoryId: input.categoryId, specialtyId: input.specialtyId, zoneId: input.zoneId,
+  const zoneIds = input.zoneIds === undefined ? [input.zoneId] : input.zoneIds;
+  if (!Array.isArray(zoneIds) || zoneIds.length < 1 || zoneIds.length > 3 || new Set(zoneIds).size !== zoneIds.length || zoneIds.some(z => typeof z !== 'string' || !idPattern.test(z)) || zoneIds[0] !== input.zoneId) fail('invalid-argument', 'Choisis une à trois zones distinctes.');
+  const serviceDetail = input.serviceDetail == null ? '' : text(input.serviceDetail, 0, 120).replace(/[\p{Cc}\p{Cf}]/gu, '').replace(/\s+/gu, ' ').trim();
+  return { categoryId: input.categoryId, specialtyId: input.specialtyId, zoneId: input.zoneId, zoneIds: [...zoneIds], serviceDetail,
 
     title: text(input.title, 3, 120), description: text(input.description, 10, 3000), budget: input.budget };
 
+}
+
+
+function resolveReferences(catalog, value, direct = false) {
+  const category = catalog?.categories?.find(c => c.id === value.categoryId && c.active !== false);
+  const zones = activeZones(catalog?.zones);
+  if (!catalog?.enabled || !category || value.zoneIds.some(id => !zones.some(z => z.id === id)) ||
+      (value.specialtyId !== '' && !category.specialties?.some(s => s.id === value.specialtyId && s.active !== false))) fail('failed-precondition', 'Choisis des références actives.');
+  if (unclassified(category)) {
+    if (direct || value.specialtyId !== '' || value.serviceDetail.length < 3) fail('invalid-argument', 'Précise le service recherché en 3 à 120 caractères.');
+  } else value.serviceDetail = '';
+  const zoneLabels = value.zoneIds.map(id => {
+    const labels = []; let current = zones.find(z => z.id === id);
+    while (current) { labels.unshift(current.label); current = current.parentId ? catalog.zones.find(z => z.id === current.parentId) : null; }
+    return labels.join(' › ');
+  });
+  return {zoneLabel: zoneLabels[0], zoneLabels};
 }
 
 function createRequestService({ store, auth, photos, clock = () => Date.now() }) {
@@ -89,6 +111,7 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
     if (account.disabled) fail('permission-denied', 'Ce compte n’est pas disponible.');
     if (account.emailVerified !== true) fail('failed-precondition', 'Vérifie ton adresse e-mail avant de publier une demande.');
+    const interventionAddress=addressMutation(input);
 
     return store.transaction(async tx => {
 
@@ -106,7 +129,7 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
       if (existing) {
         if ((existing.directProfessionalId || null) !== professionalId) fail('already-exists', 'Cet identifiant correspond à une autre demande.');
-        return { id: requestId, ...existing };
+        return { id: requestId, ...existing, ...acknowledgement(existing,interventionAddress) };
       }
 
       const value = requestInput(input);
@@ -153,25 +176,8 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
       const specialty = specialties.find(s => s.id === value.specialtyId);
 
-      const zone = activeZones(catalog.zones).find(z => z.id === value.zoneId);
-
-      if (!category || !zone || (specialties.length ? !specialty : value.specialtyId !== '')) {
-
-        fail('failed-precondition', 'Une sélection n’est plus disponible. Actualise les catégories et zones.');
-
-      }
-
-      const labels = [zone.label];
-
-      let parent = zone.parentId;
-
-      while (parent) {
-
-        const ancestor = catalog.zones.find(z => z.id === parent);
-
-        labels.unshift(ancestor.label); parent = ancestor.parentId;
-
-      }
+      const references = resolveReferences(catalog, value, !!professionalId);
+      assertAddressCountry(interventionAddress.value,catalog,value.zoneIds);
 
       // The account-derived name is public; UID, contacts and internal metadata stay private.
 
@@ -186,10 +192,11 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
       const published = { ...value, categoryLabel: category.label, specialtyLabel: specialty?.label || '',
 
-        zoneLabel: labels.join(' › '), status: 'published', createdAt: now,
+        ...references, status: 'published', createdAt: now,
         ...(!professionalId && requesterName ? {authorPublicName: requesterName} : {}),
         ...(photoIds.length ? { photoIds } : {}),
         ...(input.photosPublic === true ? { photosPublic: true } : {}) };
+      if(interventionAddress.value)published.interventionAddress=interventionAddress.value;
       if (!published.authorPublicName) delete published.authorPublicName;
 
       if (professionalId) {
@@ -203,7 +210,8 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
       tx.set(`requestOwnership/${requestId}`, { ownerUid: uid });
       tx.set(quotaPath, { schemaVersion: 92, createdAtMs });
 
-      return { id: requestId, ...published };
+
+      return { id: requestId, ...published, ...acknowledgement(published,interventionAddress) };
 
     });
 
@@ -219,6 +227,7 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
     if (account.disabled) fail('permission-denied', 'Compte indisponible.');
 
     const value = action === 'edit' ? requestInput(input) : null;
+    const interventionAddress=action==='edit'?addressMutation(input):{provided:false,value:null};
     if (value && input.photoIds !== undefined) {
       value.photoIds = validatePhotoIds(input.photoIds);
       if (input.photosPublic !== undefined && typeof input.photosPublic !== 'boolean') {
@@ -228,14 +237,15 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
     }
 
     // Older clients may still send a per-request name. Ignore it completely.
-    if (value && Object.keys(input).some(k => k !== 'authorPublicName' && !Object.keys(value).includes(k))) fail('invalid-argument', 'Champ protégé.');
-    const editFingerprint = value && createHash('sha256').update(JSON.stringify(value)).digest('hex');
+    if (value && Object.keys(input).some(k => !['authorPublicName','interventionAddress'].includes(k) && !Object.keys(value).includes(k))) fail('invalid-argument', 'Champ protégé.');
+    const editFingerprint = value && createHash('sha256').update(JSON.stringify({...value,...(interventionAddress.provided?{interventionAddress:interventionAddress.value}:{})})).digest('hex');
 
     return store.transaction(async tx => {
 
       const path = `userRequests/${uid}/items/${requestId}`;
 
       const existing = await tx.get(path);
+
 
       await assertActive(tx,uid);
       const moderation = await tx.get(`safetyContent/request_${requestId}`);
@@ -244,13 +254,16 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
       const target = action === 'close' ? 'closed' : 'deleted';
 
-      if (action !== 'edit' && existing.status === target) return { id: requestId, ...existing };
+      if (action !== 'edit' && existing.status === target) {
+
+        return { id: requestId, ...existing };
+      }
 
       if (existing.status === 'deleted' || (action === 'edit' && existing.status !== 'published') || (action === 'close' && !['published','in_discussion'].includes(existing.status))) fail('failed-precondition', 'Cette demande n’est plus modifiable.');
 
       if (value && expectedRevision !== (existing.updatedAt ?? existing.createdAt)) {
         if (existing.lastEdit?.baseRevision === expectedRevision && existing.lastEdit.fingerprint === editFingerprint) {
-          return { id: requestId, ...existing };
+          return { id: requestId, ...existing, ...acknowledgement(existing,interventionAddress) };
         }
         fail('aborted', 'Cette demande a changé. Rouvre-la avant de modifier.');
       }
@@ -267,6 +280,11 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
       }
 
       if (value) {
+        if (input.serviceDetail === undefined && value.categoryId === existing.categoryId) value.serviceDetail = existing.serviceDetail || '';
+        if (input.zoneIds === undefined && existing.zoneIds?.length > 1) {
+          if (value.zoneId !== existing.zoneId) fail('failed-precondition', 'Actualise Foundi pour modifier les zones de cette demande.');
+          value.zoneIds = [...existing.zoneIds];
+        }
 
         const catalog = await tx.get('referenceData/professionalOnboarding');
 
@@ -276,15 +294,9 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
 
         const specialty = specialties.find(s => s.id === value.specialtyId);
 
-        const zone = activeZones(catalog?.zones).find(z => z.id === value.zoneId);
-
-        if (!catalog?.enabled || !category || !zone || (specialties.length ? !specialty : value.specialtyId !== '')) fail('failed-precondition', 'Choisis des références actives.');
-
-        const labels = [zone.label]; let parent = zone.parentId;
-
-        while (parent) { const ancestor = catalog.zones.find(z => z.id === parent); labels.unshift(ancestor.label); parent = ancestor.parentId; }
-
-        changed = { ...value, categoryLabel: category.label, specialtyLabel: specialty?.label || '', zoneLabel: labels.join(' › ') };
+        const references = resolveReferences(catalog, value, existing.visibility === 'direct');
+        assertAddressCountry(interventionAddress.provided?interventionAddress.value:existing.interventionAddress,catalog,value.zoneIds);
+        changed = { ...value, categoryLabel: category.label, specialtyLabel: specialty?.label || '', ...references };
 
       }
 
@@ -311,6 +323,11 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
         await photos.scheduleDelete(tx, uid, requestId, existing.photoIds);
       }
 
+      if(interventionAddress.provided){
+        if(interventionAddress.value)saved.interventionAddress=interventionAddress.value;
+        else delete saved.interventionAddress;
+      }
+      if(action==='delete')delete saved.interventionAddress;
       tx.set(path, saved);
       for (const {id, ...conversation} of conversations) {
         if (conversation.clientUid !== uid) fail('failed-precondition', 'Discussion incohérente.');
@@ -319,7 +336,8 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
           requestSnapshot:{...conversation.requestSnapshot,status:target}});
       }
 
-      const publicFields = ['title','description','categoryId','categoryLabel','specialtyId','specialtyLabel','zoneId','zoneLabel','budget','status','createdAt','updatedAt'];
+      const publicFields = ['title','description','categoryId','categoryLabel','specialtyId','specialtyLabel','zoneId','zoneLabel','zoneIds','zoneLabels','serviceDetail','budget','status','createdAt','updatedAt'];
+      if(saved.interventionAddress&&action!=='delete')publicFields.push('interventionAddress');
       if (saved.authorPublicName && action !== 'delete') publicFields.push('authorPublicName');
       if (saved.photoIds?.length && action !== 'delete') {
         publicFields.push('photoIds');
@@ -332,7 +350,7 @@ function createRequestService({ store, auth, photos, clock = () => Date.now() })
         if (!moderation?.hidden) tx.set(`requests/${requestId}`, Object.fromEntries(publicFields.filter(key=>saved[key]!==undefined).map(key => [key, saved[key]])));
       }
 
-      return { id: requestId, ...saved };
+      return { id: requestId, ...saved, ...acknowledgement(saved,interventionAddress) };
 
     });
 

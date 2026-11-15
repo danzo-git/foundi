@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const { initializeApp, applicationDefault } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { requiredDocuments } = require('../src/professional-service');
+const { validateCatalog } = require('../src/catalog-service');
 const args = process.argv.slice(2);
 const value = flag => { const i = args.indexOf(flag); return i < 0 ? null : args[i + 1]; };
 const read = flag => { const path = value(flag); return path ? JSON.parse(fs.readFileSync(path, 'utf8')) : null; };
@@ -9,11 +10,12 @@ async function main() {
   const projectId = value('--project');
   const catalog = read('--catalog'), legal = read('--legal');
   if (!projectId || (!catalog && !legal)) throw new Error('Use --project ID and --catalog FILE and/or --legal FILE. Add --apply to publish.');
+  if(catalog)validateCatalog(catalog,catalog.enabled===true);
   if (catalog?.enabled === true) {
     const validChoices = list => Array.isArray(list) && list.every(c => typeof c.id === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(c.id) && typeof c.label === 'string' && c.label.trim() && c.label.length <= 150) && new Set(list.map(c => c.id)).size === list.length;
     if (!validChoices(catalog.categories) || !validChoices(catalog.zones) || !validChoices(catalog.documentTypes) ||
         catalog.categories.some(c => !validChoices(c.specialties))) throw new Error('Invalid catalog choices or duplicate identifiers.');
-    for (const c of catalog.categories.filter(c => c.active !== false)) for (const type of ['independent', 'company']) {
+    for (const c of catalog.categories.filter(c => c.active !== false && c.requestOnly !== true)) for (const type of ['independent', 'company']) {
       requiredDocuments({ type, businessName: 'Configuration validation', description: 'Configuration validation only', categoryIds: [c.id], specialtyIds: c.specialties.filter(s => s.active !== false).slice(0, 1).map(s => s.id), zoneIds: [catalog.zones.find(z => z.active !== false)?.id] }, catalog);
     }
   }

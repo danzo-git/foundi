@@ -1,4 +1,5 @@
 import '../../professional/domain/professional_showcase.dart';
+import 'request_location_repository.dart';
 
 class RequestDraft {
   const RequestDraft({
@@ -7,23 +8,35 @@ class RequestDraft {
     required this.zoneId,
     required this.title,
     required this.description,
+    this.zoneIds = const [],
+    this.serviceDetail = '',
     this.budget,
     this.photoIds = const [],
     this.photosPublic = false,
     this.replacePhotos = false,
+    this.interventionAddress,
+    this.replaceInterventionAddress = false,
   });
   final String categoryId, specialtyId, zoneId, title, description;
+  final List<String> zoneIds;
+  final String serviceDetail;
   final int? budget;
   final List<String> photoIds;
   final bool photosPublic;
   final bool replacePhotos;
+  final RequestInterventionAddress? interventionAddress;
+  final bool replaceInterventionAddress;
   Map<String, dynamic> toMap() => {
     'categoryId': categoryId,
     'specialtyId': specialtyId,
     'zoneId': zoneId,
+    'zoneIds': zoneIds.isEmpty ? [zoneId] : zoneIds,
+    'serviceDetail': serviceDetail,
     'title': title.trim(),
     'description': description.trim(),
     'budget': budget,
+    if (replaceInterventionAddress)
+      'interventionAddress': interventionAddress?.toMap(),
     if (replacePhotos || photoIds.isNotEmpty) 'photoIds': photoIds,
     if (replacePhotos || (photoIds.isNotEmpty && photosPublic))
       'photosPublic': photosPublic,
@@ -48,6 +61,9 @@ class FoundiRequest {
     required this.zoneLabel,
     required this.status,
     required this.createdAt,
+    this.zoneIds = const [],
+    this.serviceDetail = '',
+    this.avatarKey,
     this.budget,
     this.revision,
     this.proposalCount = 0,
@@ -65,8 +81,13 @@ class FoundiRequest {
     this.directProfessionalName,
     this.clientUid,
     this.requesterName,
+    this.interventionAddress,
   });
   final String categoryId, specialtyId, zoneId;
+  final List<String> zoneIds;
+  final String serviceDetail;
+  final String? avatarKey;
+  List<String> get searchZoneIds => zoneIds.isEmpty ? [zoneId] : zoneIds;
   final String id,
       title,
       description,
@@ -90,6 +111,7 @@ class FoundiRequest {
 
   final String? directProfessionalId, directProfessionalName, clientUid;
   final String? requesterName;
+  final RequestInterventionAddress? interventionAddress;
   bool get isDirect => directProfessionalId != null;
 
   String get category => [
@@ -117,11 +139,18 @@ class FoundiRequest {
         categoryId: data['categoryId'] as String? ?? '',
         specialtyId: data['specialtyId'] as String? ?? '',
         zoneId: data['zoneId'] as String? ?? '',
+        zoneIds:
+            (data['zoneIds'] as List?)?.whereType<String>().toList() ??
+            const [],
+        serviceDetail: data['serviceDetail'] as String? ?? '',
+        avatarKey: data['avatarKey'] as String?,
         title: data['title'] as String,
         description: data['description'] as String,
         categoryLabel: data['categoryLabel'] as String,
         specialtyLabel: data['specialtyLabel'] as String? ?? '',
-        zoneLabel: data['zoneLabel'] as String,
+        zoneLabel:
+            (data['zoneLabels'] as List?)?.whereType<String>().join(' · ') ??
+            data['zoneLabel'] as String,
         status: data['status'] as String,
         createdAt: data['createdAt'] is num
             ? DateTime.fromMillisecondsSinceEpoch(
@@ -136,6 +165,11 @@ class FoundiRequest {
         clientUid: data['clientUid'] as String?,
         requesterName: data['directProfessionalId'] != null
             ? data['requesterName'] as String?
+            : null,
+        interventionAddress: data['interventionAddress'] is Map
+            ? RequestInterventionAddress.fromMap(
+                Map<String, dynamic>.from(data['interventionAddress'] as Map),
+              )
             : null,
         photoIds:
             (data['photoIds'] as List?)?.whereType<String>().take(3).toList() ??
@@ -239,7 +273,7 @@ class ExplorerFilters {
       r.status == 'published' &&
       (categoryId == null || r.categoryId == categoryId) &&
       (specialtyId == null || r.specialtyId == specialtyId) &&
-      (zoneId == null || r.zoneId == zoneId);
+      (zoneId == null || r.searchZoneIds.contains(zoneId));
 }
 
 abstract interface class ExplorerRepository {

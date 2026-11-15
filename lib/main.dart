@@ -1,4 +1,5 @@
 import 'features/privacy/firebase_privacy_repository.dart';
+import 'features/auth/presentation/personal_avatar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 
@@ -134,17 +135,20 @@ class _BootstrapState extends State<_Bootstrap> {
     future: _initialization,
     builder: (context, snapshot) {
       if (snapshot.hasData) {
-        return NotificationScope(
-          repository: FirebaseNotificationRepository(),
-          intent: _notificationIntent,
-          permission: _push,
-          child: FoundiApp(
-            privacyRepository: _privacy,
-            safetyRepository: FirebaseSafetyRepository(),
-            authRepository: snapshot.requireData,
-            professionalRepository: FirebaseProfessionalRepository(),
-            requestRepository: FirebaseRequestRepository(
-              attachmentEndpointBase: _attachmentEndpointBase,
+        return PersonalAvatarEndpointScope(
+          endpointBase: _attachmentEndpointBase,
+          child: NotificationScope(
+            repository: FirebaseNotificationRepository(),
+            intent: _notificationIntent,
+            permission: _push,
+            child: FoundiApp(
+              privacyRepository: _privacy,
+              safetyRepository: FirebaseSafetyRepository(),
+              authRepository: snapshot.requireData,
+              professionalRepository: FirebaseProfessionalRepository(),
+              requestRepository: FirebaseRequestRepository(
+                attachmentEndpointBase: _attachmentEndpointBase,
+              ),
             ),
           ),
         );

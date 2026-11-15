@@ -293,18 +293,22 @@ class ProfessionalShowcaseHeader extends StatelessWidget {
                     height: 100,
                     child: Stack(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                          ),
-                          child: ClipOval(
-                            child: SizedBox.expand(
-                              child: ShowcasePhotoView(
-                                profile.portrait,
-                                icon: Icons.person_outline,
-                                label: 'Photo du professionnel',
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: onPortrait,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                            child: ClipOval(
+                              child: SizedBox.expand(
+                                child: ShowcasePhotoView(
+                                  profile.portrait,
+                                  icon: Icons.person_outline,
+                                  label: 'Photo du professionnel',
+                                ),
                               ),
                             ),
                           ),

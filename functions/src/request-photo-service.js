@@ -319,4 +319,4 @@ function createRequestPhotoService({ store, auth, files, clock = Date.now, newId
   return { upload, discard, link, replace, scheduleDelete, read, readPublic, cleanup };
 }
 
-module.exports = { createRequestPhotoService, photoIds };
+module.exports = { normalize, createRequestPhotoService, photoIds };

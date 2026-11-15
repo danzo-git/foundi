@@ -16,7 +16,7 @@ L’acceptation des CGU à l’inscription est explicite. La politique de confid
 
 ## Demandes et profils publics
 
-Une demande publique comporte automatiquement le nom du compte de son auteur, le titre, la description, la zone et les autres champs publiés, dont le budget éventuel et les photos rendues publiques. Une demande adressée directement à un professionnel reste limitée au client et au destinataire approuvé selon les règles du service. Ne publie pas de données sensibles, de coordonnées d’un tiers, de contenu trompeur ou de contenu dont tu n’as pas les droits.
+Une demande publique comporte automatiquement le nom du compte de son auteur, le titre, la description, les zones, l’adresse d’intervention facultative confirmée par l’auteur et les autres champs publiés, dont le budget éventuel et les photos rendues publiques. Une demande adressée directement à un professionnel reste limitée au client et au destinataire approuvé selon les règles du service. Ne publie pas de données sensibles, de coordonnées d’un tiers, de contenu trompeur ou de contenu dont tu n’as pas les droits.
 
 Les professionnels peuvent présenter leur nom commercial, leurs activités, leurs zones, leur portrait, une couverture, une biographie et des réalisations. Ils sont responsables de l’exactitude de leurs déclarations, de leurs autorisations d’exercice et des droits sur les images publiées. Les justificatifs transmis pour l’examen du dossier restent privés. L’approbation par Foundi correspond à l’examen du dossier selon les contrôles du service ; elle ne garantit ni la qualité future d’une prestation ni l’absence de fraude.
 

@@ -35,7 +35,7 @@ function validateActivity(value, catalog) {
   if (value.businessName.length < 2 || value.description.length < 20 || !value.categoryIds.length || !value.zoneIds.length) {
     fail('failed-precondition', 'Complète ton activité, tes catégories, tes zones et ta description (20 caractères minimum).');
   }
-  const categories = value.categoryIds.map(id => catalog.categories.find(c => c.id === id && c.active !== false));
+  const categories = value.categoryIds.map(id => catalog.categories.find(c => c.id === id && c.active !== false && c.requestOnly !== true));
   const zoneIds = activeZones(catalog.zones).map(z => z.id);
   if (categories.some(c => !c) || value.zoneIds.some(id => !zoneIds.includes(id)) ||
       value.specialtyIds.some(id => !categories.some(c => c.specialties?.some(s => s.id === id && s.active !== false)))) {
@@ -114,7 +114,7 @@ function createProfessionalService({ store, auth, files, clock = () => Date.now(
       // Even partial saves never accept arbitrary reference identifiers.
       if (value.categoryIds.length || value.specialtyIds.length || value.zoneIds.length) {
         configuredCatalog(catalog);
-        const available = catalog.categories.filter(c => c.active !== false);
+        const available = catalog.categories.filter(c => c.active !== false && c.requestOnly !== true);
         if (value.categoryIds.some(id => !available.some(c => c.id === id)) ||
             value.specialtyIds.some(id => !available.filter(c => value.categoryIds.includes(c.id)).some(c => c.specialties?.some(s => s.id === id && s.active !== false))) ||
             value.zoneIds.some(id => !activeZones(catalog.zones).some(z => z.id === id))) {

@@ -1,3 +1,4 @@
+import '../../auth/presentation/personal_avatar.dart';
 import '../../professional/domain/professional_repository.dart';
 import 'explorer_view.dart';
 import 'package:flutter/material.dart';
@@ -13,7 +14,7 @@ import '../../safety/domain/safety_repository.dart';
 import '../../safety/presentation/safety_widgets.dart';
 
 const requestPrivacy =
-    'Le texte est visible publiquement. Évite les numéros de téléphone, e-mails et adresses exactes.';
+    'Le texte est visible publiquement. Évite les numéros de téléphone et e-mails. Utilise le champ adresse pour choisir le lieu à afficher.';
 
 class RequestHeading extends StatelessWidget {
   const RequestHeading(
@@ -332,14 +333,17 @@ class RequestCard extends StatelessWidget {
     this.footer,
     this.showDescription = false,
     this.photos,
+    this.authorAvatar,
+    this.onAuthor,
   });
   final FoundiRequest request;
-  final VoidCallback? onTap;
+  final VoidCallback? onTap, onAuthor;
   final bool showStatus;
   final Widget? actions;
   final Widget? footer;
   final bool showDescription;
   final Widget? photos;
+  final Widget? authorAvatar;
   @override
   Widget build(BuildContext context) {
     const padding = EdgeInsets.all(17);
@@ -383,22 +387,45 @@ class RequestCard extends StatelessWidget {
       if (showDescription || request.isDirect) ...[
         Row(
           children: [
-            const CircleAvatar(
-              radius: 16,
-              backgroundColor: FoundiUi.tint,
-              child: Icon(
-                Icons.person_outline,
-                size: 18,
-                color: FoundiUi.green,
-              ),
-            ),
-            const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                request.authorDisplayName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: FoundiUi.ink,
+              child: Semantics(
+                button: onAuthor != null,
+                label: onAuthor == null
+                    ? null
+                    : 'Voir le profil de ${request.authorDisplayName}',
+                child: InkWell(
+                  key: ValueKey('requestAuthor-${request.id}'),
+                  onTap: onAuthor,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        authorAvatar ??
+                            PersonalAvatar(
+                              publicId: request.isDirect
+                                  ? null
+                                  : request.avatarKey,
+                            ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            request.authorDisplayName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: FoundiUi.ink,
+                            ),
+                          ),
+                        ),
+                        if (onAuthor != null)
+                          const Icon(
+                            Icons.chevron_right,
+                            size: 18,
+                            color: FoundiUi.green,
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -408,6 +435,14 @@ class RequestCard extends StatelessWidget {
         ),
         const SizedBox(height: 12),
       ],
+      if (request.serviceDetail.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            request.serviceDetail,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
       Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -458,6 +493,7 @@ class RequestCard extends StatelessWidget {
             const Icon(Icons.chevron_right, size: 18, color: FoundiUi.muted),
         ],
       ),
+      RequestAddressLine(request),
       if (request.createdAt != null) ...[
         const SizedBox(height: 10),
         Text(
@@ -875,6 +911,7 @@ class RequestPreview extends StatelessWidget {
             RequestTag(request.zoneLabel),
           ],
         ),
+        RequestAddressLine(request),
         const SizedBox(height: 22),
         Text(
           request.title,
@@ -888,6 +925,13 @@ class RequestPreview extends StatelessWidget {
           padding: EdgeInsets.symmetric(vertical: 16),
           child: Divider(color: FoundiUi.line),
         ),
+        if (request.serviceDetail.isNotEmpty) ...[
+          Text(
+            request.serviceDetail,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+        ],
         const Text(
           'DESCRIPTION',
           style: TextStyle(
@@ -1003,6 +1047,7 @@ class RequestContent extends StatelessWidget {
           ),
         ],
       ),
+      RequestAddressLine(request),
       if (request.createdAt != null) ...[
         const SizedBox(height: 10),
         Text(
@@ -1329,4 +1374,34 @@ class _GuestRequestsState extends State<GuestRequests> {
       ),
     ),
   );
+}
+
+class RequestAddressLine extends StatelessWidget {
+  const RequestAddressLine(this.request, {super.key});
+  final FoundiRequest request;
+  @override
+  Widget build(BuildContext context) {
+    final address = request.interventionAddress;
+    if (address == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.place_outlined, size: 18, color: FoundiUi.green),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Adresse d’intervention : ${address.line}',
+              style: const TextStyle(
+                fontSize: 13,
+                color: FoundiUi.ink,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

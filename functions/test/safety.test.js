@@ -10,6 +10,17 @@ const report=(target=pro)=>({...target,reason:'harassment',comment:'Menaces reç
 const rejected=code=>e=>e.code===code;
 const decision=(id,action,revision=1)=>({reportId:id,action,reason:'Examen humain et décision motivée.',expectedRevision:revision,decisionId:`decision_${id.slice(0,12)}_${action}_${revision}`});
 
+test('SEC restoring a moderated request preserves its chosen intervention address',async()=>{
+ const c=setup(),address={line:'Rue des Jardins, Cocody, Abidjan',countryCode:'CI'};
+ c.data.get(`requests/${rid}`).interventionAddress=address;
+ c.data.get(`userRequests/client/items/${rid}`).interventionAddress=address;
+ const id=(await c.safety.submit('pro',report(req))).reportId;
+ await c.safety.decide('admin',{admin:true},decision(id,'hide'));
+ assert.equal(c.data.has(`requests/${rid}`),false);
+ await c.safety.decide('admin',{admin:true},decision(id,'restore_content',2));
+ assert.deepEqual(c.data.get(`requests/${rid}`).interventionAddress,address);
+});
+
 test('SEC acknowledging an own notice persists across reads, preserves the sanction and audit, and marks only its notification read once',async()=>{
   const c=setup(),id=(await c.safety.submit('pro',report(req))).reportId;
   await c.safety.decide('admin',{admin:true},decision(id,'suspend'));

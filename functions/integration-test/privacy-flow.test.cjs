@@ -20,7 +20,7 @@ test('PRIVACY A/B: verified callable, old tokens denied, real Firestore/Storage 
   const config={enabled:true,approved:true,version:'emulator-only-fixture',receiptSeconds:3600,auditSeconds:3600,tombstoneSeconds:3900,moderationEvidenceDays:1,moderationMetadataDays:1,sharedMessages:'erase_author_keep_counterparty',preserveOtherMembersMeasures:true,providerRetentionAcknowledged:true};await db.doc('privacyConfiguration/current').set(config);
   await db.doc(`users/${a.uid}`).set({fullName:'Alice private',phone:'+2250700000001'});await db.doc(`users/${b.uid}`).set({fullName:'Benoît',termsVersion:'historique'});
   await db.doc(`professionalProfiles/${a.uid}`).set({status:'approved',businessName:'Atelier Alice'});await db.doc(`professionalProfiles/${b.uid}`).set({status:'approved',businessName:'Atelier B'});
-  const request={title:'Publication Alice',description:'Texte personnel Alice',status:'published',createdAt:stamp};
+  const request={title:'Publication Alice',description:'Texte personnel Alice',status:'published',createdAt:stamp,interventionAddress:{line:'10 rue des Ateliers, Rennes, France',countryCode:'FR'}};
   await db.doc(`userRequests/${a.uid}/items/${rid}`).set(request);await db.doc(`requestOwnership/${rid}`).set({ownerUid:a.uid});await db.doc(`requests/${rid}`).set({...request,authorPublicName:'Alice private'});
   await db.doc(`proposals/${pid}`).set({clientUid:a.uid,professionalUid:b.uid,requestId:rid,description:'Proposition conservée de B',requestTitle:request.title,status:'selected',conversationId:cid});
   await db.doc(`conversations/${cid}`).set({clientUid:a.uid,professionalUid:b.uid,requestId:rid,proposalId:pid,clientName:'Alice private',professionalName:'Benoît',requestTitle:request.title,requestSnapshot:request,status:'open',createdAt:stamp,updatedAt:stamp});
@@ -28,6 +28,19 @@ test('PRIVACY A/B: verified callable, old tokens denied, real Firestore/Storage 
   const asset=mid(),pathA=`conversations/${cid}/attachments/${aid}/${asset}`,pathB=`conversations/${cid}/attachments/${bid}/${mid()}`;
   for(const [path,uid] of [[pathA,a.uid],[pathB,b.uid],[`requestPhotos/${a.uid}/${rid}/orphan/photo.webp`,a.uid],[`professionalDocuments/${a.uid}/identity/orphan`,a.uid]])await realBucket.file(path).save(Buffer.from('Emulator bytes'),{resumable:false,metadata:{metadata:{owneruid:uid}}});
   const [meta]=await realBucket.file(pathA).getMetadata();await db.doc(`conversations/${cid}/attachments/${aid}`).set({senderUid:a.uid,attachmentId:asset,storagePath:pathA,quarantinePath:`conversations/${cid}/quarantine/${asset}`,generation:String(meta.generation)});
+  const avatarId='a'.repeat(32),avatarPath=`personalAvatars/${a.uid}/fixture.webp`;
+  await realBucket.file(avatarPath).save(Buffer.from('Avatar fixture'),{resumable:false,metadata:{metadata:{owneruid:a.uid}}});
+  await db.doc(`personalAvatars/${a.uid}`).set({publicId:avatarId,revision:'b'.repeat(32),objectPath:avatarPath,published:true});
+  await db.doc(`personalAvatarLookup/${avatarId}`).set({uid:a.uid});await db.doc(`publicPersonalAvatars/${avatarId}`).set({version:'b'.repeat(32)});
+  // Exercise the real callable/HTTP transport, using local Firebase services only.
+  const avatarBytes=await require('sharp')({create:{width:80,height:100,channels:3,background:'#28735e'}}).jpeg().toBuffer();
+  const avatarUpload=await a.call('savePersonalAvatar',{publish:true,image:avatarBytes.toString('base64'),contentType:'image/jpeg'});
+  const mediaUrl=base+'/readPublicPersonalAvatar?id='+avatarUpload.publicId+'&version='+avatarUpload.version;
+  const media=await fetch(mediaUrl);assert.equal(media.status,200);assert.ok(media.headers.get('cache-control').includes('no-store'));
+  assert.equal((await require('sharp')(Buffer.from(await media.arrayBuffer())).metadata()).width,256);
+  assert.equal((await a.call('resolveRequestAvatars',{requestIds:[rid]})).avatars[rid],avatarUpload.publicId);
+  await a.call('savePersonalAvatar',{publish:false});assert.equal((await fetch(mediaUrl)).status,404);
+  await a.call('savePersonalAvatar',{publish:true});
   const report=mid();await db.doc(`safetyReports/${report}`).set({reporterUid:a.uid,reportedUid:b.uid,targetType:'professional',targetId:b.uid,status:'resolved',revision:1,reason:'fraud',createdAt:stamp,evidence:{text:'Alice proof'},evidenceExpiresAt:stamp+86400000,deleteAt:null});await db.doc(`safetyAudit/${mid()}`).set({reportId:report,adminUid:admin.uid,action:'suspend',createdAt:stamp,reason:'Examen',deleteAt:null});await db.doc(`accountSafety/${b.uid}`).set({suspended:true,reportId:report});
   // B's suspension does not affect the right of A to erase their own account.
   const proofReport=mid();await db.doc(`safetyReports/${proofReport}`).set({reporterUid:b.uid,reportedUid:a.uid,targetType:'message',targetId:aid,status:'new',revision:1,reason:'fraud',createdAt:stamp,evidenceExpiresAt:stamp+86400000,evidence:{conversationId:cid,message:{type:'pdf',senderUid:a.uid,attachmentId:asset,storagePath:pathA,generation:String(meta.generation),contentType:'application/pdf'}},deleteAt:new Date(stamp+86400000)});
@@ -53,10 +66,11 @@ test('PRIVACY A/B: verified callable, old tokens denied, real Firestore/Storage 
   }
   assert.equal(reviewedLegacy,true);assert.equal((await realBucket.file(legacyPath).exists())[0],true);
 
-  const job=(await db.doc(`accountDeletionJobs/${requestId}`).get()).data();assert.equal(job.state,'completed');assert.ok(!job.uid);await assert.rejects(auth.getUser(a.uid),e=>e.code==='auth/user-not-found');
+  const job=(await db.doc(`accountDeletionJobs/${requestId}`).get()).data();assert.equal(job.state,'completed');assert.ok(!job.uid);assert.equal((await db.doc(`publicPersonalAvatars/${avatarId}`).get()).exists,false);assert.equal((await db.doc(`personalAvatarLookup/${avatarId}`).get()).exists,false);assert.equal((await realBucket.file(avatarPath).exists())[0],false);
+  await assert.rejects(auth.getUser(a.uid),e=>e.code==='auth/user-not-found');
   assert.equal((await db.doc(`requests/${rid}`).get()).exists,false);assert.equal((await db.doc(`users/${a.uid}`).get()).exists,false);assert.equal((await db.doc(`professionalProfiles/${a.uid}`).get()).exists,false);
   assert.equal((await db.doc(`conversations/${cid}/messages/${bid}`).get()).data().text,'Texte de B à conserver');const tombstone=(await db.doc(`conversations/${cid}/messages/${aid}`).get()).data();assert.equal(tombstone.deleted,true);assert.ok(!JSON.stringify(tombstone).includes(a.uid));
-  const chat=(await db.doc(`conversations/${cid}`).get()).data();assert.equal(chat.status,'read_only');assert.ok(!JSON.stringify(chat).includes('Alice'));assert.equal((await db.doc(`proposals/${pid}`).get()).data().description,'Proposition conservée de B');
+  const chat=(await db.doc(`conversations/${cid}`).get()).data();assert.equal(chat.status,'read_only');assert.ok(!JSON.stringify(chat).includes('Alice'));assert.equal(chat.requestSnapshot.interventionAddress,undefined);assert.equal((await db.doc(`userRequests/${a.uid}/items/${rid}`).get()).exists,false);assert.equal((await db.doc(`proposals/${pid}`).get()).data().description,'Proposition conservée de B');
   assert.equal((await realBucket.file(pathA).exists())[0],false);assert.equal((await realBucket.file(pathB).exists())[0],true);assert.equal((await realBucket.getFiles({prefix:`requestPhotos/${a.uid}/` }))[0].length,0);
   const restriction=(await db.doc(`accountSafety/${b.uid}`).get()).data();assert.equal(restriction.suspended,true);assert.notEqual(restriction.reportId,report);assert.equal((await db.doc(`safetyReports/${report}`).get()).exists,false);const continuation=(await db.doc(`safetyReports/${restriction.reportId}`).get()).data();assert.ok(!JSON.stringify(continuation).includes(a.uid));
   const holds=await db.collection('accountDeletionHolds').where('requestId','==',requestId).get();const proof=holds.docs.map(d=>d.data()).find(h=>h.data?.reportId===proofReport);assert.ok(proof.deleteAt.toMillis()<=stamp+86400000);const chunkIds=proof.data.evidence.message.retainedAttachment.chunks;const chunks=await db.getAll(...chunkIds.map(id=>db.doc(`accountDeletionHoldChunks/${id}`)));assert.deepEqual(Buffer.concat(chunks.map(c=>c.data().bytes)),Buffer.from('Emulator bytes'));assert.ok(chunks.every(c=>c.data().deleteAt.toMillis()===proof.deleteAt.toMillis()));

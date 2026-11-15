@@ -131,3 +131,18 @@ test('invalid contacts, over-cap galleries and malformed or foreign photos do no
     assert.equal(f.documents.has(showcasePath), false);
   }
 });
+
+test('shared account portrait is retained during business edits and cannot be replaced through the old editor', async()=>{
+ const f=fixture();
+ const saved=await f.save('pro',{...initial,portrait:await samplePhoto()});
+ const stored=f.documents.get(showcasePath);stored.accountAvatarVersion='a'.repeat(32);stored.identityOnly=true;
+ f.documents.set('personalAvatars/pro',{revision:'a'.repeat(32),published:true});
+ const edit={...saved,name:'Atelier Actualisé',portrait:{id:saved.portrait.id},gallery:[]};
+ const next=await f.save('pro',edit);
+ assert.equal(next.name,'Atelier Actualisé');assert.deepEqual(next.portrait,saved.portrait);
+ assert.equal(f.documents.get(showcasePath).accountAvatarVersion,'a'.repeat(32));assert.equal(f.documents.get(showcasePath).identityOnly,false);
+ assert.deepEqual(await f.save('pro',edit),next);
+ await assert.rejects(f.save('pro',{...edit,revision:next.revision,portrait:null}),fails('failed-precondition'));
+ await assert.rejects(f.save('pro',{...edit,revision:next.revision,portrait:await samplePhoto()}),fails('failed-precondition'));
+ assert.deepEqual(f.documents.get(showcasePath).portrait,saved.portrait);
+});

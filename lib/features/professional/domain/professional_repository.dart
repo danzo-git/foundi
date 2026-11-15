@@ -71,8 +71,15 @@ class ProfessionalProfile {
 }
 
 class ReferenceChoice {
-  const ReferenceChoice(this.id, this.label);
+  const ReferenceChoice(
+    this.id,
+    this.label, {
+    this.geographicName,
+    this.zoneType,
+    this.countryCode,
+  });
   final String id, label;
+  final String? geographicName, zoneType, countryCode;
   factory ReferenceChoice.fromMap(Map<String, dynamic> map) =>
       ReferenceChoice(map['id'] as String, map['label'] as String);
 }
@@ -92,11 +99,17 @@ class ProfessionalCatalog {
   const ProfessionalCatalog({
     this.enabled = false,
     this.categories = const [],
+    this.unclassifiedCategory,
     this.zones = const [],
     this.documents = const [],
   });
   final bool enabled;
   final List<ProfessionalCategory> categories;
+  final ProfessionalCategory? unclassifiedCategory;
+  List<ProfessionalCategory> get requestCategories => [
+    ...categories,
+    ?unclassifiedCategory,
+  ];
   final List<ReferenceChoice> zones, documents;
   List<ReferenceChoice>? requiredFor(ProfessionalActivity activity) {
     if (!enabled ||
@@ -137,7 +150,19 @@ class ProfessionalCatalog {
         .toList();
     return ProfessionalCatalog(
       enabled: true,
+      unclassifiedCategory:
+          active(
+            data['categories'],
+          ).any((c) => c['id'] == 'foundi_other' && c['requestOnly'] == true)
+          ? const ProfessionalCategory(
+              'foundi_other',
+              'Autre / Je ne sais pas quelle catégorie choisir',
+              [],
+              {},
+            )
+          : null,
       categories: active(data['categories'])
+          .where((c) => c['requestOnly'] != true)
           .map(
             (c) => ProfessionalCategory(
               c['id'],
@@ -190,10 +215,20 @@ List<ReferenceChoice> activeGeographicChoices(dynamic values) {
     final visited = <String>{};
     Map<String, dynamic>? current = zone;
     bool valid = true;
+    String? country;
     while (current != null) {
       if (current['active'] == false || !visited.add(current['id'] as String)) {
         valid = false;
         break;
+      }
+      final currentCountry = current['countryCode'] as String?;
+      if (currentCountry != null) {
+        if (!const ['CI', 'FR'].contains(currentCountry) ||
+            (country != null && country != currentCountry)) {
+          valid = false;
+          break;
+        }
+        country = currentCountry;
       }
       labels.insert(0, current['label'] as String);
       final parent = current['parentId'];
@@ -206,7 +241,15 @@ List<ReferenceChoice> activeGeographicChoices(dynamic values) {
       }
     }
     if (valid) {
-      result.add(ReferenceChoice(zone['id'] as String, labels.join(' › ')));
+      result.add(
+        ReferenceChoice(
+          zone['id'] as String,
+          labels.join(' › '),
+          geographicName: zone['label'] as String,
+          zoneType: zone['type'] as String?,
+          countryCode: country ?? 'CI',
+        ),
+      );
     }
   }
   return result;

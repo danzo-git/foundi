@@ -104,7 +104,7 @@ test('V9 durable events, privacy, dedup, pagination, tokens, push preferences, r
   await service.message('chat','ambiguous',ambiguousMessage);sendError='network/timeout';
   const ambiguous=key('messages/chat/ambiguous','b');await service.deliver(ambiguous);const attempts=sent.length;now+=60001;sendError=null;await service.deliver(ambiguous);assert.equal(sent.length,attempts);
   // Opportunity push is delayed and capped per device/hour; every inbox item is retained.
-  const opportunity=key('request.matched/request/1','b'),before=sent.length;await service.deliver(opportunity);assert.equal(sent.length,before+1);
+  const opportunity=key('request.matched/request','b'),before=sent.length;await service.deliver(opportunity);assert.equal(sent.length,before+1);
   now+=60001;await service.deliver(opportunity);assert.equal(sent.length,before+1);
   await service.emit({eventId:'another-match',type:'request.matched',recipientUid:'b',actorUid:'a',resourceType:'opportunity',resourceId:'request'});
   now+=60001;await service.deliver(key('another-match','b'));assert.equal(sent.length,before+1);

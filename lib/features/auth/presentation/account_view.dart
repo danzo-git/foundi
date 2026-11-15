@@ -1,3 +1,5 @@
+import '../domain/personal_avatar_repository.dart';
+import 'personal_avatar.dart';
 import 'package:flutter/material.dart';
 
 import '../../navigation/presentation/space_widgets.dart';
@@ -19,6 +21,7 @@ class AccountScreen extends StatefulWidget {
     required this.onDossier,
     required this.onActivity,
     required this.onPersonal,
+    this.avatarRepository,
     this.initialSection = 0,
     this.professionalRepository,
     this.showcaseRepository,
@@ -28,6 +31,7 @@ class AccountScreen extends StatefulWidget {
     this.onDirectRequests,
   });
   final FoundiUser user;
+  final PersonalAvatarRepository? avatarRepository;
   final int initialSection;
   final ProfessionalProfile professional;
   final ProfessionalRepository? professionalRepository;
@@ -120,6 +124,21 @@ class _AccountScreenState extends State<AccountScreen> {
         _profile = Future.value(saved);
       }
     });
+  }
+
+  void _photoChanged() {
+    if (mounted && widget.professional.approved) {
+      setState(() {
+        _profile = _loadProfile();
+      });
+    }
+  }
+
+  Future<void> _editPhoto() async {
+    if (widget.avatarRepository == null) return;
+    if (await editAccountPhoto(context, widget.avatarRepository!) && mounted) {
+      _photoChanged();
+    }
   }
 
   Widget _tabs() => ProfessionalProfileTabs(
@@ -225,17 +244,27 @@ class _AccountScreenState extends State<AccountScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 30,
-            backgroundColor: FoundiUi.tint,
-            child: Text(
-              initials.isEmpty ? 'F' : initials,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                color: FoundiUi.green,
+          if (widget.avatarRepository != null)
+            AccountIdentityAvatar(
+              key: ValueKey(
+                '${widget.user.id}:${widget.professional.status.name}:${activity.businessName}',
+              ),
+              repository: widget.avatarRepository!,
+              initials: initials,
+              onChanged: _photoChanged,
+            )
+          else
+            CircleAvatar(
+              radius: 30,
+              backgroundColor: FoundiUi.tint,
+              child: Text(
+                initials.isEmpty ? 'F' : initials,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: FoundiUi.green,
+                ),
               ),
             ),
-          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -490,11 +519,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   onCover: canEdit
                       ? () => _edit(display, section: ShowcaseEditSection.cover)
                       : null,
-                  onPortrait: canEdit
-                      ? () => _edit(
-                          display,
-                          section: ShowcaseEditSection.portrait,
-                        )
+                  onPortrait: widget.avatarRepository != null
+                      ? _editPhoto
                       : null,
                 ),
                 const SizedBox(height: 14),

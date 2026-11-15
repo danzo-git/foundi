@@ -1,3 +1,6 @@
+import '../domain/account_photo_changes.dart';
+import 'dart:convert';
+import '../domain/personal_avatar_repository.dart';
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,7 +12,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../domain/auth_repository.dart';
 import 'google_session.dart';
 
-class FirebaseAuthRepository implements AuthRepository {
+class FirebaseAuthRepository
+    implements AuthRepository, PersonalAvatarRepository {
   FirebaseAuthRepository({
     FirebaseAuth? auth,
     FirebaseFunctions? functions,
@@ -59,6 +63,49 @@ class FirebaseAuthRepository implements AuthRepository {
       controller.add(_currentUser);
     }
   }, isBroadcast: true);
+
+  String? _photoSnapshot;
+  @override
+  Future<PersonalAvatarState> personalAvatarState() async {
+    final result = await _functions
+        .httpsCallable('readPersonalAvatarState')
+        .call<Map<String, dynamic>>();
+    final state = PersonalAvatarState.fromMap(result.data);
+    final snapshot =
+        '${_auth.currentUser?.uid}:${state.version}:${state.published}';
+    if (_photoSnapshot != snapshot && state.hasPhoto) {
+      AccountPhotoChanges.notify();
+    }
+    _photoSnapshot = snapshot;
+    return state;
+  }
+
+  @override
+  Future<PersonalAvatarState> savePersonalAvatar({
+    Uint8List? bytes,
+    String? contentType,
+    required bool publish,
+  }) async {
+    try {
+      final result = await _functions
+          .httpsCallable('savePersonalAvatar')
+          .call<Map<String, dynamic>>({
+            'publish': publish,
+            if (bytes != null) 'image': base64Encode(bytes),
+            if (bytes != null) 'contentType': contentType,
+          });
+      AccountPhotoChanges.notify();
+      return PersonalAvatarState.fromMap(result.data);
+    } on FirebaseFunctionsException catch (e) {
+      throw AuthFailure(e.message ?? 'Photo non enregistrée.');
+    }
+  }
+
+  @override
+  Future<void> removePersonalAvatar() async {
+    await _functions.httpsCallable('removePersonalAvatar').call<void>();
+    AccountPhotoChanges.notify();
+  }
 
   @override
   FoundiUser? get currentUser => _currentUser;

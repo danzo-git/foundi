@@ -1,8 +1,19 @@
 const { randomUUID } = require('node:crypto');
 const { OtpError, requireUid } = require('./auth-validation');
+const {UNCLASSIFIED_CATEGORY} = require('./request-matching');
 const CATALOG_PATH = 'referenceData/professionalOnboarding';
 const idPattern = /^[a-zA-Z0-9_-]{1,80}$/;
 const zoneTypes = ['country', 'district', 'region', 'department', 'subprefecture', 'city', 'commune', 'quartier', 'intervention'];
+const supportedCountries=['CI','FR'];
+function zoneCountry(zone,zones,byId=new Map(zones.map(z=>[z.id,z]))) {
+  const seen=new Set();
+  let current=zone;
+  while(current&&!seen.has(current.id)) {
+    if(current.countryCode)return current.countryCode;
+    seen.add(current.id);current=byId.get(current.parentId);
+  }
+  return 'CI'; // Historical references were exclusively Ivorian.
+}
 const fail = (code, message) => { throw new OtpError(code, message); };
 const text = (v, max = 150, required = false) => {
   if (typeof v !== 'string' || v.trim().length > max || (required && !v.trim())) fail('invalid-argument', 'Nom ou description invalide.');
@@ -28,6 +39,7 @@ function validateCatalog(catalog, publishing = false) {
   }
   const specialtyIds = new Set();
   for (const c of catalog.categories) {
+    if ((c.requestOnly === true || c.id === UNCLASSIFIED_CATEGORY) && (c.id !== UNCLASSIFIED_CATEGORY || c.requestOnly !== true || c.specialties?.length)) fail('invalid-argument', 'Référence non classée invalide.');
     if (!Array.isArray(c.specialties) || c.specialties.length > 100) fail('invalid-argument', 'Spécialités invalides.');
     for (const s of c.specialties) {
       if (!idPattern.test(s.id) || typeof s.label !== 'string' || !s.label.trim() || s.label.length > 150 || specialtyIds.has(s.id)) fail('invalid-argument', 'Identifiant de spécialité invalide ou dupliqué.');
@@ -38,13 +50,16 @@ function validateCatalog(catalog, publishing = false) {
     }
   }
   const byId = new Map(catalog.zones.map(z => [z.id, z]));
+  const countries=new Map(catalog.zones.map(z=>[z.id,zoneCountry(z,catalog.zones,byId)]));
   for (const zone of catalog.zones) {
     if (zone.type && !zoneTypes.includes(zone.type)) fail('invalid-argument', 'Type de zone invalide.');
-    if (zone.countryCode && zone.countryCode !== 'CI') fail('invalid-argument', 'Seules les zones de Côte d’Ivoire sont prises en charge.');
+    if (zone.countryCode != null && !supportedCountries.includes(zone.countryCode)) fail('invalid-argument', 'Choisissez la Côte d’Ivoire ou la France.');
     const visited = new Set([zone.id]); let parent = zone.parentId;
     while (parent) {
       if (!byId.has(parent) || visited.has(parent)) fail('invalid-argument', 'Parent absent ou cycle dans les zones.');
-      visited.add(parent); parent = byId.get(parent).parentId;
+      const ancestor=byId.get(parent);
+      if(countries.get(zone.id)!==countries.get(ancestor.id))fail('invalid-argument','Une zone et ses parents doivent appartenir au même pays.');
+      visited.add(parent); parent = ancestor.parentId;
     }
     if (zone.parentId && zone.type && byId.get(zone.parentId).type && zoneTypes.indexOf(zone.type) <= zoneTypes.indexOf(byId.get(zone.parentId).type)) fail('invalid-argument', 'Le type de la zone doit se situer sous celui du parent.');
   }
@@ -70,7 +85,20 @@ function createCatalogService({ store, auth, clock = () => Date.now(), generateI
       const catalog = structuredClone(existing || { enabled: false, version: '', categories: [], zones: [], documentTypes: [] });
       if ((catalog.version || '') !== input.expectedVersion) fail('aborted', 'Le référentiel a changé. Actualisez-le avant de réessayer.');
       let before = null, after = null;
-      if (input.operation === 'publish') {
+      if(input.operation === 'enableRennes') {
+        const {RENNES_ZONE}=require('./geographic-presets');
+        const current=catalog.zones.find(z=>z.id===RENNES_ZONE.id);
+        if(current&&(current.countryCode!=='FR'||current.type!=='commune'||current.parentId))fail('already-exists','L’identifiant réservé à Rennes est déjà utilisé.');
+        before=current||null;
+        after={...current,...RENNES_ZONE};
+        if(current)catalog.zones[catalog.zones.indexOf(current)]=after;else catalog.zones.push(after);
+      } else if (input.operation === 'enableUnclassified') {
+        const existingCategory = catalog.categories.find(c => c.id === UNCLASSIFIED_CATEGORY);
+        if (existingCategory && existingCategory.requestOnly !== true) fail('already-exists', 'Identifiant réservé déjà utilisé.');
+        before = existingCategory || null;
+        after = {...existingCategory, id:UNCLASSIFIED_CATEGORY, label:'Autre / Je ne sais pas quelle catégorie choisir', requestOnly:true, active:true, specialties:[], requirements:{independent:[],company:[]}};
+        if (existingCategory) catalog.categories[catalog.categories.indexOf(existingCategory)] = after; else catalog.categories.push(after);
+      } else if (input.operation === 'publish') {
         if (typeof input.enabled !== 'boolean') fail('invalid-argument', 'Statut invalide.');
         before = { enabled: catalog.enabled }; catalog.enabled = input.enabled; after = { enabled: input.enabled };
       } else {
@@ -78,6 +106,7 @@ function createCatalogService({ store, auth, clock = () => Date.now(), generateI
         let list = collections[input.operation];
         if (input.operation === 'specialty') {
           const parent = catalog.categories.find(c => c.id === input.categoryId);
+          if (parent?.requestOnly) fail('invalid-argument', 'Cette référence est réservée aux besoins non classés.');
           if (!parent) fail('not-found', 'Catégorie introuvable.');
           list = parent.specialties;
         }
@@ -102,7 +131,9 @@ function createCatalogService({ store, auth, clock = () => Date.now(), generateI
           }
         }
         if (input.operation === 'zone') {
-          after.type = data.type; after.parentId = data.parentId || null; after.countryCode = 'CI';
+          after.type = data.type; after.parentId = data.parentId || null;
+          const parentZone=catalog.zones.find(z=>z.id===after.parentId);
+          after.countryCode=data.countryCode??(parentZone?zoneCountry(parentZone,catalog.zones):before?.countryCode??'CI');
           if (!zoneTypes.includes(after.type)) fail('invalid-argument', 'Type de zone invalide.');
         }
         if (index < 0) list.push(after); else list[index] = after;
@@ -116,4 +147,4 @@ function createCatalogService({ store, auth, clock = () => Date.now(), generateI
   }
   return { update };
 }
-module.exports = { createCatalogService, validateCatalog, activeZones, CATALOG_PATH };
+module.exports = { createCatalogService, validateCatalog, activeZones, zoneCountry, CATALOG_PATH };

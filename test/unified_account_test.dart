@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foundi/app.dart';
 import 'package:foundi/features/auth/domain/auth_repository.dart';
+import 'package:foundi/features/auth/domain/personal_avatar_repository.dart';
 import 'package:foundi/features/notifications/presentation/notification_views.dart';
 import 'package:foundi/features/professional/domain/professional_repository.dart';
 import 'package:foundi/features/professional/domain/professional_showcase.dart';
@@ -45,6 +46,22 @@ class AccountPro extends ShowcasePro {
     if (failRead) throw const AuthFailure('Profil indisponible.');
     return super.readShowcase(proposalId: proposalId);
   }
+}
+
+class AccountPhotoAuth extends fixtures.FakeAuth
+    implements PersonalAvatarRepository {
+  AccountPhotoAuth({super.user});
+  @override
+  Future<PersonalAvatarState> personalAvatarState() async =>
+      const PersonalAvatarState(hasPhoto: true, published: true);
+  @override
+  Future<void> removePersonalAvatar() async {}
+  @override
+  Future<PersonalAvatarState> savePersonalAvatar({
+    Uint8List? bytes,
+    String? contentType,
+    required bool publish,
+  }) async => PersonalAvatarState(hasPhoto: true, published: publish);
 }
 
 Future<void> capture(WidgetTester t, String name) async {
@@ -93,7 +110,7 @@ void main() {
   testWidgets(
     'the approved account keeps its saved profile and selected section in both spaces',
     (t) async {
-      final auth = fixtures.FakeAuth(user: fixtures.account());
+      final auth = AccountPhotoAuth(user: fixtures.account());
       final pro = AccountPro(
         profile: const ProfessionalProfile(
           status: ProfessionalStatus.approved,
@@ -120,9 +137,9 @@ void main() {
           expect(pro.reads, [null]);
           expect(find.text('Gérer les réalisations'), findsOneWidget);
           await fixtures.tap(t, find.byTooltip('Modifier la photo de profil'));
-          expect(find.text('Modifier mon profil'), findsOneWidget);
-          expect(find.text('Photo de profil'), findsOneWidget);
-          await t.pageBack();
+          expect(find.text('Ma photo de compte'), findsOneWidget);
+          expect(find.text('Changer ma photo'), findsOneWidget);
+          await fixtures.tap(t, find.byTooltip('Fermer'));
           await t.pumpAndSettle();
           await fixtures.tap(t, find.text('Gérer les réalisations'));
           expect(find.text('Ajouter une réalisation'), findsOneWidget);

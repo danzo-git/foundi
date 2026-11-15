@@ -142,6 +142,8 @@ function createProfessionalShowcaseService({ store, auth }) {
         fail('permission-denied', 'Ton dossier professionnel doit être approuvé.');
       }
       const previous = await tx.get(path);
+      const identity=await tx.get(`personalAvatars/${uid}`);
+      if(identity && ((portrait?.id||null)!==(previous?.portrait?.id||null) || portrait?.base64)) fail('failed-precondition','Modifie ta photo de compte en touchant ton avatar dans Mon compte.');
       if (previous?.mutation !== mutation && (previous?.revision ?? 0) !== input.revision) {
         fail('aborted', 'Le profil a été modifié ailleurs. Rouvre-le avant d’enregistrer.');
       }
@@ -165,6 +167,7 @@ function createProfessionalShowcaseService({ store, auth }) {
       });
       const next = {
         ...text,
+        ...(previous?.accountAvatarVersion?{accountAvatarVersion:previous.accountAvatarVersion,identityOnly:false}:{}),
         revision: input.revision + 1,
         mutation,
         portrait: photos[0],

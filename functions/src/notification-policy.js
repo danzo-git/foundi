@@ -31,18 +31,10 @@ const catalog = Object.freeze({
   'conversation.opened': ['messages', 'Discussion ouverte', 'Un client souhaite discuter de ta proposition.'],
   'message.created': ['messages', 'Nouveau message', 'Tu as reçu un nouveau message.'],
   'request.closed': ['proposals', 'Demande clôturée', 'La demande est clôturée. Les historiques restent accessibles.'],
-  'request.matched': ['opportunities', 'Nouvelles opportunités pour toi', 'De nouvelles demandes correspondent à tes spécialités et zones.'],
+  'request.matched': ['opportunities', 'Nouveau besoin dans votre zone', 'Un nouveau besoin a été publié dans votre zone. Découvrez si vous pouvez y répondre.'],
 });
 
-// This is deliberately the exact FOUN-52 policy (zone IDs, not GPS or ancestor expansion).
-function matchesOpportunity(request, profile, catalogData) {
-  if (request?.status !== 'published' || profile?.status !== 'approved') return false;
-  const category = catalogData?.categories?.find(c => c.id === request.categoryId);
-  if (!category || !profile.categoryIds?.includes(request.categoryId) || !profile.zoneIds?.includes(request.zoneId)) return false;
-  return category.specialties?.length
-    ? category.specialties.some(s => s.id === request.specialtyId) && !!profile.specialtyIds?.includes(request.specialtyId)
-    : request.specialtyId === '';
-}
+const {matchesOpportunity} = require('./request-matching');
 
 function professionalType(audit) {
   if (audit.from === 'pending') return ({approved:'professional.approved', rejected:'professional.rejected', needs_changes:'professional.more_info_requested'})[audit.to];

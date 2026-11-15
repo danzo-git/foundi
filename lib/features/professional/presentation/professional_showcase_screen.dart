@@ -456,7 +456,7 @@ class _ShowcaseEditorState extends AuthActionState<_ShowcaseEditor> {
   late final _trade = TextEditingController(text: widget.initial.trade);
   late final _area = TextEditingController(text: widget.initial.area);
   late final _bio = TextEditingController(text: widget.initial.bio);
-  late ShowcasePhoto? _portrait = widget.initial.portrait;
+  late final ShowcasePhoto? _portrait = widget.initial.portrait;
   late ShowcasePhoto? _cover = widget.initial.cover;
   late final _gallery = widget.initial.gallery.toList();
 
@@ -637,11 +637,30 @@ class _ShowcaseEditorState extends AuthActionState<_ShowcaseEditor> {
                 style: TextStyle(color: FoundiUi.muted),
               ),
               const SizedBox(height: 12),
-              _photoRow(
-                'Photo de profil',
-                _portrait,
-                (photo) => _portrait = photo,
+              Padding(
                 key: _portraitSection,
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 56,
+                      height: 56,
+                      child: ClipOval(
+                        child: ShowcasePhotoView(
+                          _portrait,
+                          icon: Icons.person_outline,
+                          label: 'Photo du compte',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Ta photo de compte est utilisée ici. Pour la changer, touche ton avatar dans Mon compte.',
+                      ),
+                    ),
+                  ],
+                ),
               ),
               _photoRow(
                 'Couverture',

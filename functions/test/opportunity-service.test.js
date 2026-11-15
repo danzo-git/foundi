@@ -14,7 +14,7 @@ function setup() {
  let calls=0;
  const store={get:async path=>path.startsWith('professionalProfiles')?profile:{categories:[{id:'auto',specialties:[{id:'sale'},{id:'rent'}]},{id:'home',specialties:[{id:'repair'}]}]},
  owned:async()=>new Set(['own']),
- query:async (filters,after,size)=>{calls++;return rows.filter(r=>r.status==='published'&&Object.entries(filters).every(([k,v])=>r[k]===v)&&(!after||r.createdAt<after.createdAt||(r.createdAt===after.createdAt&&r.id<after.id))).sort((a,b)=>b.createdAt-a.createdAt||b.id.localeCompare(a.id)).slice(0,size);}};
+ query:async (filters,after,size)=>{calls++;return rows.filter(r=>r.status==='published'&&Object.entries(filters).every(([k,v])=>k==='schema' ? true : k==='zoneId'&&filters.schema==='multi' ? r.zoneIds?.includes(v) : r[k]===v)&&(!after||r.createdAt<after.createdAt||(r.createdAt===after.createdAt&&r.id<after.id))).sort((a,b)=>b.createdAt-a.createdAt||b.id.localeCompare(a.id)).slice(0,size);}};
  return { ...createOpportunityService({store,auth:{getUser:async()=>({disabled:false,emailVerified:true})}}),profile,rows,get calls(){return calls;}};
 }
 test('approved multi-category union excludes own, closed, deleted and all private metadata',async()=>{
@@ -39,6 +39,12 @@ test('personalized Explorer returns photo references only for explicitly public 
  assert.equal('photoIds' in historical, false);
  assert.equal('photosPublic' in historical, false);
 });
+
+test('personalized Explorer preserves author-confirmed intervention address for responders',async()=>{
+ const c=setup(),address={line:'Rue des Jardins, Cocody, Abidjan',countryCode:'CI'};
+ c.rows[0].interventionAddress=address;
+ assert.deepEqual((await c.list('pro')).items[0].interventionAddress,address);
+});
 test('anonymous and every unapproved professional status are rejected on server',async()=>{
  const c=setup(); await assert.rejects(c.list(null),e=>e.code==='unauthenticated');
  for(const status of ['draft','pending','needs_changes','rejected','suspended',undefined]){c.profile.status=status;await assert.rejects(c.list('pro'),e=>e.code==='permission-denied');}
@@ -49,5 +55,13 @@ test('pagination is bounded, stable for equal dates and does not duplicate resul
  for(let n=0;n<75;n++)c.rows.push({id:String(n).padStart(3,'0'),categoryId:'auto',specialtyId:'sale',zoneId:'cocody',status:'published',createdAt:1});
  const ids=[];let cursor;let page;
  do{const before=c.calls;page=await c.list('pro',{cursor});assert.ok(c.calls-before<=10);assert.ok(page.items.length<=30);ids.push(...page.items.map(r=>r.id));cursor=page.cursor;}while(cursor);
+ assert.equal(ids.length,75);assert.equal(new Set(ids).size,75);
+});
+
+
+test('Sprint 2.5 multi-zone pagination assigns one canonical unit per request',async()=>{
+ const c=setup();c.rows.length=0;
+ for(let i=0;i<75;i++)c.rows.push({id:String(i).padStart(3,'0'),categoryId:'auto',specialtyId:i%2?'sale':'',zoneId:'cocody',zoneIds:['cocody','bingerville'],status:'published',createdAt:1});
+ let cursor,ids=[];do{const page=await c.list('pro',{cursor});ids.push(...page.items.map(r=>r.id));cursor=page.cursor;}while(cursor);
  assert.equal(ids.length,75);assert.equal(new Set(ids).size,75);
 });

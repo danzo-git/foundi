@@ -49,6 +49,8 @@ dependencies:
   web: ^1.1.1
   firebase_messaging: ^17.0.1
   shared_preferences: ^2.5.6
+  geolocator: 14.1.2
+  geocoding: ^5.0.1
 
 dev_dependencies:
   flutter_test:

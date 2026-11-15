@@ -222,13 +222,30 @@ exports.readAccountDeletion=onCall(proOptions,r=>privacy().detail(r.auth?.uid,r.
 exports.resumeAccountDeletion=onCall(proOptions,r=>privacy().resume(r.auth?.uid,r.auth?.token,r.data));
 exports.runAccountDeletion=onSchedule({...proOptions,maxInstances:1,concurrency:1,timeoutSeconds:540,schedule:'every 1 minutes'},()=>privacy().drain());
 
+const personalAvatars=require('./personal-avatar-service').createPersonalAvatarService({db:getFirestore(),auth:getAuth(),bucket:getStorage().bucket()});
+exports.cleanupPersonalAvatars=onSchedule({...proOptions,maxInstances:1,concurrency:1,timeoutSeconds:540,schedule:'every 60 minutes'},async()=>{const result=await personalAvatars.cleanup();logger.info('personal_avatar_cleanup',result);});
+exports.savePersonalAvatar=onCall({...proOptions,memory:'512MiB'},r=>personalAvatars.save(r.auth?.uid,r.data));
+exports.readPersonalAvatarState=onCall(proOptions,r=>personalAvatars.state(r.auth?.uid));
+exports.removePersonalAvatar=onCall(proOptions,r=>personalAvatars.remove(r.auth?.uid));
+exports.resolveRequestAvatars=onCall(proOptions,r=>personalAvatars.resolve(r.auth?.uid,r.data?.requestIds));
+const conversationAvatars=require('./conversation-avatar-service').createConversationAvatarService({store:{get:async path=>(await getFirestore().doc(path).get()).data()},auth:getAuth(),ensureIdentity:personalAvatars.ensureIdentity});
+exports.resolveConversationAvatars=onCall({...proOptions,memory:'512MiB'},r=>conversationAvatars.resolve(r.auth?.uid,r.data));
+const {createConversationDeletionService,createConversationDeletionStore}=require('./conversation-deletion-service');
+const conversationDeletion=createConversationDeletionService({store:createConversationDeletionStore(getFirestore()),auth:getAuth()});
+exports.deleteConversation=onCall(proOptions,r=>conversationDeletion.remove(r.auth?.uid,r.data));
+exports.readPublicPersonalAvatar=onRequest({...proOptions,cors:true},(req,res)=>mediaHttp(res,async()=>{
+  if(req.method!=='GET')throw new OtpError('invalid-argument','Méthode invalide.');
+  const bytes=await personalAvatars.read(req.query.id,req.query.version);
+  res.set('Cache-Control','private, no-store, max-age=0');res.set('Content-Type','image/webp');res.status(200).send(bytes);
+}));
+
 const showcase = createProfessionalShowcaseService({ store, auth: getAuth() });
 exports.readProfessionalShowcase = onCall(proOptions, r =>
-  handle(() => showcase.read(r.auth?.uid, r.data?.proposalId)));
+  handle(async () => {if(r.data?.proposalId===undefined){await personalAvatars.ensureIdentity(r.auth?.uid);await personalAvatars.syncProfessional(r.auth?.uid);}return showcase.read(r.auth?.uid, r.data?.proposalId);}));
 exports.saveProfessionalShowcase = onCall({ ...proOptions, concurrency: 1, memory: '512MiB' }, r =>
   handle(() => showcase.save(r.auth?.uid, r.data)));
 
-exports.startProfessionalProfile = onCall(proOptions, r => handle(() => professional.ensureDraft(r.auth?.uid)));
+exports.startProfessionalProfile = onCall(proOptions, r => handle(async () => {const result=await professional.ensureDraft(r.auth?.uid);await personalAvatars.syncProfessional(r.auth?.uid);return result;}));
 
 exports.saveProfessionalActivity = onCall(proOptions, r => handle(() => professional.saveActivity(r.auth?.uid, r.data?.activity, r.data?.complete === true)));
 
@@ -321,6 +338,8 @@ const requestPhotoOptions = {
   timeoutSeconds: 120, memory: '512MiB',
 };
 const requests = createRequestService({ store, auth: getAuth(), photos: requestPhotos });
+const requestAddresses=require('./request-address-service').createRequestAddressService({store,auth:getAuth()});
+exports.getRequestAddressCapabilities=onCall(proOptions,r=>handle(()=>requestAddresses.capabilities(r.auth?.uid,r.data)));
 
 exports.publishRequest = onCall({ region: 'europe-west1', maxInstances: 3, timeoutSeconds: 60 },
 
@@ -342,6 +361,11 @@ exports.manageRequest = onCall({ region: 'europe-west1', maxInstances: 3, timeou
 const { createOpportunityService } = require('./opportunity-service');
 const opportunities = createOpportunityService({ auth: getAuth(), store: {
   get: async path => (await getFirestore().doc(path).get()).data(),
+  owners: async ids => {
+    if(!ids.length)return new Map();
+    const docs=await getFirestore().getAll(...ids.map(id=>getFirestore().doc(`requestOwnership/${id}`)));
+    return new Map(docs.map(d=>[d.id,d.data()?.ownerUid]));
+  },
   owned: async (uid, ids) => {
     if (!ids.length) return new Set();
     const docs = await getFirestore().getAll(...ids.map(id => getFirestore().doc(`userRequests/${uid}/items/${id}`)));
@@ -349,8 +373,8 @@ const opportunities = createOpportunityService({ auth: getAuth(), store: {
   },
   query: async (filters, after, size) => {
     let query = getFirestore().collection('requests').where('status', '==', 'published')
-      .where('categoryId', '==', filters.categoryId).where('zoneId', '==', filters.zoneId)
-      .where('specialtyId', '==', filters.specialtyId).orderBy('createdAt', 'desc').orderBy('__name__', 'desc');
+      .where('categoryId', '==', filters.categoryId).where(filters.schema === 'multi' ? 'zoneIds' : 'zoneId', filters.schema === 'multi' ? 'array-contains' : '==', filters.zoneId)
+      .orderBy('createdAt', 'desc').orderBy('__name__', 'desc');
     if (after) query = query.startAfter(after.createdAt, getFirestore().doc(`requests/${after.id}`));
     return (await query.limit(size).get()).docs.map(d => ({ id: d.id, ...d.data() }));
   },
@@ -385,6 +409,9 @@ exports.readRequestEngagement = onCall(proOptions, (r) =>
 const {createProfessionalDirectoryStore}=require('./professional-directory-store');
 const {createProfessionalDirectoryService,directoryActor}=require('./professional-directory-service');
 const professionalDirectory=createProfessionalDirectoryService({store:createProfessionalDirectoryStore(getFirestore()),auth:getAuth()});
+const authorStore=require('./request-author-service').createRequestAuthorStore(getFirestore());
+const requestAuthors=require('./request-author-service').createRequestAuthorService({store:authorStore,auth:getAuth(),avatars:personalAvatars,directory:professionalDirectory});
+exports.readRequestAuthorProfile=onCall(proOptions,r=>requestAuthors.read(r.auth?.uid,require('./request-author-service').requestAuthorActor(r),r.data));
 exports.listPublicProfessionals=onCall(proOptions,r=>handle(()=>professionalDirectory.search(directoryActor(r),r.data)));
 exports.readPublicProfessionalProfile=onCall(proOptions,r=>handle(()=>professionalDirectory.readProfile(directoryActor(r),r.data)));
 exports.readPublicProfessionalMedia=onCall({...proOptions,concurrency:1,memory:'512MiB'},r=>handle(()=>professionalDirectory.readMedia(directoryActor(r),r.data)));
@@ -519,6 +546,7 @@ const {createNotificationService}=require('./notification-service');
 const pushEnabled=defineBoolean('NOTIFICATION_PUSH_ENABLED',{default:false});
 const notifications=createNotificationService({db:getFirestore(),auth:getAuth(),messaging:getMessaging(),logger});
 const eventOptions={region:'europe-west1',maxInstances:3,retry:true,timeoutSeconds:120};
+exports.syncConversationDeletion=onDocumentWritten({...eventOptions,document:'users/{uid}/deletedConversations/{conversationId}'},event=>conversationDeletion.cleanup(event.params.uid,event.params.conversationId));
 exports.notifyDirectRequestCreated = onDocumentCreated({...eventOptions, document:'directRequests/{requestId}'},
   e => e.data && notifications.directRequest(e.params.requestId, e.data.data()));
 exports.syncRequestResponseCount = onDocumentWritten({ ...eventOptions, document: 'proposals/{id}' },
@@ -536,6 +564,12 @@ exports.notifyRequestPublished=onDocumentCreated({...eventOptions,document:'requ
   if (!e.data || e.data.data().status!=='published')return;
   const owner=(await getFirestore().doc(`requestOwnership/${e.params.requestId}`).get()).data();
   if(owner?.ownerUid)await notifications.enqueueRequest('matched',owner.ownerUid,e.params.requestId,e.data.data(),e.data.data().createdAt);
+});
+exports.notifyRequestReclassified=onDocumentUpdated({...eventOptions,document:'requests/{requestId}'},async e=>{
+  const before=e.data?.before.data(),after=e.data?.after.data();
+  if(!after || after.status!=='published' || JSON.stringify([before?.categoryId,before?.specialtyId,before?.zoneIds,before?.zoneId])===JSON.stringify([after.categoryId,after.specialtyId,after.zoneIds,after.zoneId]))return;
+  const owner=(await getFirestore().doc(`requestOwnership/${e.params.requestId}`).get()).data();
+  if(owner?.ownerUid)await notifications.enqueueRequest('matched',owner.ownerUid,e.params.requestId,after,after.updatedAt);
 });
 exports.notifyRequestClosed=onDocumentUpdated({...eventOptions,document:'userRequests/{uid}/items/{requestId}'},e=>{
   const before=e.data.before.data(),after=e.data.after.data();

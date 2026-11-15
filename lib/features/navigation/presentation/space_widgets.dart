@@ -228,11 +228,13 @@ class FoundiPanel extends StatelessWidget {
     required this.child,
     this.color = Colors.white,
     this.onTap,
+    this.onLongPress,
     this.padding = const EdgeInsets.all(20),
   });
   final Widget child;
   final Color color;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final EdgeInsetsGeometry padding;
   @override
   Widget build(BuildContext context) => Material(
@@ -246,6 +248,7 @@ class FoundiPanel extends StatelessWidget {
     clipBehavior: Clip.antiAlias,
     child: InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Padding(padding: padding, child: child),
     ),
   );

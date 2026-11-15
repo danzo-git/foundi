@@ -5,8 +5,10 @@ import '../../auth/presentation/auth_widgets.dart';
 import '../../navigation/presentation/space_widgets.dart';
 import '../../professional/domain/professional_repository.dart';
 import '../domain/request_repository.dart';
+import '../domain/request_location_repository.dart';
 import '../domain/request_photo_repository.dart';
 import 'request_photos.dart';
+import 'request_zone_picker.dart';
 import 'request_views.dart';
 
 class RequestComposer extends StatefulWidget {
@@ -23,6 +25,7 @@ class RequestComposer extends StatefulWidget {
     this.accountName,
     this.directTarget,
     this.photoPicker = pickRequestPhotos,
+    this.locationRepository,
   });
   final FoundiRequest? initial;
   final String? accountName;
@@ -34,6 +37,7 @@ class RequestComposer extends StatefulWidget {
   final bool active;
   final VoidCallback? onPublished;
   final RequestPhotoPicker photoPicker;
+  final RequestLocationRepository? locationRepository;
 
   @override
   RequestComposerState createState() => RequestComposerState();
@@ -46,7 +50,11 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
   final _title = TextEditingController();
   final _description = TextEditingController();
   final _budget = TextEditingController();
-  String? _categoryId, _specialtyId, _zoneId;
+  String? _categoryId, _specialtyId;
+  RequestInterventionAddress? _interventionAddress;
+  bool _addressTouched = false;
+  final _zoneIds = <String>[];
+  final _serviceDetail = TextEditingController();
   bool _manualTitle = false;
   bool _confirmingExit = false;
   _Stage _stage = _Stage.input;
@@ -64,7 +72,7 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
 
   int get _photoCount => _retainedPhotoIds.length + _selectedPhotos.length;
   String get _privacy => _direct
-      ? 'Demande privée : seuls toi et le professionnel choisi pouvez consulter son contenu et ses photos. Tes coordonnées restent privées.'
+      ? 'Demande privée : seuls toi et le professionnel choisi pouvez consulter son contenu et ses photos. Évite d’ajouter tes coordonnées personnelles.'
       : requestPrivacy;
   bool get _direct =>
       widget.directTarget != null || widget.initial?.isDirect == true;
@@ -149,11 +157,14 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
     _retainedPhotoIds.addAll(request.photoIds);
     _categoryId = request.categoryId;
     _specialtyId = request.specialtyId.isEmpty ? null : request.specialtyId;
-    _zoneId = request.zoneId;
+    _zoneIds.addAll(request.searchZoneIds);
+    _serviceDetail.text = request.serviceDetail;
+    _interventionAddress = request.interventionAddress;
   }
 
   @override
   void dispose() {
+    _serviceDetail.dispose();
     _title.dispose();
     _description.dispose();
     _budget.dispose();
@@ -195,10 +206,12 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
             _description.text.trim() != initial.description ||
             _budget.text.trim() != (initial.budget?.toString() ?? '') ||
             _selectedPhotos.isNotEmpty ||
+            _addressTouched ||
             _retainedPhotoIds.length != initial.photoIds.length ||
             _categoryId != initial.categoryId ||
             (_specialtyId ?? '') != initial.specialtyId ||
-            _zoneId != initial.zoneId);
+            _zoneIds.join(',') != initial.searchZoneIds.join(',') ||
+            _serviceDetail.text.trim() != initial.serviceDetail);
   }
 
   /// Creation stays mounted in the shell. Only replacing or closing an edit
@@ -259,7 +272,7 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
   });
 
   ProfessionalCategory? _category(ProfessionalCatalog catalog, String? id) =>
-      catalog.categories.where((item) => item.id == id).firstOrNull;
+      catalog.requestCategories.where((item) => item.id == id).firstOrNull;
 
   bool _directActivityValid(ProfessionalCatalog catalog) {
     final category = _category(catalog, _categoryId);
@@ -273,10 +286,13 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
     final category = _category(catalog, draft.categoryId);
     return catalog.enabled &&
         category != null &&
-        catalog.zones.any((zone) => zone.id == draft.zoneId) &&
-        (category.specialties.isEmpty
-            ? draft.specialtyId.isEmpty
-            : category.specialties.any((item) => item.id == draft.specialtyId));
+        draft.zoneIds.isNotEmpty &&
+        draft.zoneIds.length <= 3 &&
+        draft.zoneIds.every(
+          (id) => catalog.zones.any((zone) => zone.id == id),
+        ) &&
+        (draft.specialtyId.isEmpty ||
+            category.specialties.any((item) => item.id == draft.specialtyId));
   }
 
   void _verify(ProfessionalCatalog catalog) {
@@ -288,7 +304,11 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
       specialtyId: category?.specialties.isNotEmpty == true
           ? _specialtyId ?? ''
           : '',
-      zoneId: _zoneId ?? '',
+      zoneId: _zoneIds.firstOrNull ?? '',
+      zoneIds: List.unmodifiable(_zoneIds),
+      serviceDetail: _categoryId == 'foundi_other'
+          ? _serviceDetail.text.trim()
+          : '',
       title: (_manualTitle ? _title.text : _suggestedTitle ?? _title.text)
           .trim(),
       description: _description.text.trim(),
@@ -299,6 +319,10 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
       ]),
       photosPublic: _photosPublic,
       replacePhotos: widget.initial != null && _photoRepository != null,
+      interventionAddress: _interventionAddress,
+      replaceInterventionAddress: widget.initial == null
+          ? _interventionAddress != null
+          : _addressTouched,
     );
     if (!_referencesValid(catalog, draft)) return;
     final specialty = category!.specialties
@@ -306,14 +330,17 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
         .firstOrNull;
     _reviewedDraft = draft;
     _preview = FoundiRequest(
+      interventionAddress: draft.interventionAddress,
       id: _id,
       title: draft.title,
       description: draft.description,
       categoryLabel: category.label,
       specialtyLabel: specialty?.label ?? '',
-      zoneLabel: catalog.zones
-          .firstWhere((zone) => zone.id == draft.zoneId)
-          .label,
+      zoneLabel: draft.zoneIds
+          .map((id) => catalog.zones.firstWhere((zone) => zone.id == id).label)
+          .join(' · '),
+      zoneIds: draft.zoneIds,
+      serviceDetail: draft.serviceDetail,
       status: 'published',
       createdAt: null,
       budget: draft.budget,
@@ -390,7 +417,7 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
                 !snapshot.hasError &&
                 value != null &&
                 value.enabled &&
-                value.categories.isNotEmpty &&
+                value.requestCategories.isNotEmpty &&
                 value.zones.isNotEmpty
             ? value
             : null;
@@ -538,8 +565,9 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
           references,
           if (catalog != null) ...[
             if ((_categoryId != null && category == null) ||
-                (_zoneId != null &&
-                    !catalog.zones.any((item) => item.id == _zoneId)) ||
+                _zoneIds.any(
+                  (id) => !catalog.zones.any((item) => item.id == id),
+                ) ||
                 (_specialtyId != null &&
                     category?.specialties.isNotEmpty == true &&
                     !category!.specialties.any(
@@ -583,7 +611,7 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
               _choice(
                 'Catégorie *',
                 'requestCategory',
-                catalog.categories,
+                catalog.requestCategories,
                 _categoryId,
                 (id) => setState(() {
                   _categoryId = id;
@@ -594,17 +622,41 @@ class RequestComposerState extends AuthActionState<RequestComposer> {
                 _choice(
                   'Spécialité *',
                   'requestSpecialty',
-                  category.specialties,
-                  _specialtyId,
+                  [
+                    const ReferenceChoice('', 'Je ne sais pas'),
+                    ...category.specialties,
+                  ],
+                  _specialtyId ?? '',
                   (id) => setState(() => _specialtyId = id),
                 ),
             ],
-            _choice(
-              'Zone de recherche *',
-              'requestZone',
-              catalog.zones,
-              _zoneId,
-              (id) => setState(() => _zoneId = id),
+            if (!_direct && _categoryId == 'foundi_other')
+              TextFormField(
+                key: const ValueKey('requestServiceDetail'),
+                controller: _serviceDetail,
+                maxLength: 120,
+                decoration: const InputDecoration(
+                  labelText: 'Précisez le service recherché *',
+                ),
+                validator: (v) => (v?.trim().length ?? 0) < 3
+                    ? 'Précise le service en 3 à 120 caractères.'
+                    : null,
+              ),
+            RequestZonePicker(
+              locationRepository: widget.locationRepository,
+              publicAddress: !_direct,
+              choices: catalog.zones,
+              selected: _zoneIds,
+              interventionAddress: _interventionAddress,
+              onAddressChanged: (address) => setState(() {
+                _interventionAddress = address;
+                _addressTouched = true;
+              }),
+              onChanged: (ids) => setState(() {
+                _zoneIds
+                  ..clear()
+                  ..addAll(ids);
+              }),
             ),
           ],
           TextFormField(

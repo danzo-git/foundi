@@ -74,5 +74,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>Foundi utilise ta position à ta demande pour te suggérer une zone de recherche. Ton adresse exacte n’est pas publiée.</string>
 </dict>
 </plist>

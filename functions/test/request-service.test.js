@@ -95,7 +95,7 @@ test('active verified accounts can publish; public projection excludes UID, cont
 
   const saved = c.data.get('requests/' + id);
 
-  assert.deepEqual(Object.keys(saved).sort(), ['categoryId','specialtyId','zoneId','title','description','budget','categoryLabel','specialtyLabel','zoneLabel','status','createdAt'].sort());
+  assert.deepEqual(Object.keys(saved).sort(), ['categoryId','specialtyId','zoneId','title','description','budget','categoryLabel','specialtyLabel','zoneLabel','zoneIds','zoneLabels','serviceDetail','status','createdAt'].sort());
 
   assert.deepEqual(saved, c.data.get('userRequests/client/items/' + id));
 
@@ -345,3 +345,25 @@ test('invalid new attempts preserve existing quota, and malformed server quota f
   }
 });
 
+
+
+test('Sprint 2.5 multi-zone validation, legacy edit compatibility and explicit unclassified reference',async()=>{
+ const c=setup(),catalog=c.data.get('referenceData/professionalOnboarding');
+ catalog.zones.push({id:'plateau',label:'Plateau'},{id:'yop',label:'Yopougon'},{id:'inactive',label:'Inactive',active:false});
+ for(const zoneIds of [[],['cocody','cocody'],['cocody','plateau','yop','ci'],['inactive'],['unknown']])await assert.rejects(c.publish('client',id,{...request,zoneId:zoneIds[0]||'cocody',zoneIds}));
+ const result=await c.publish('client',id,{...request,specialtyId:'',zoneIds:['cocody','plateau','yop']});
+ assert.deepEqual(result.zoneLabels,['Côte d’Ivoire › Cocody','Plateau','Yopougon']);
+ assert.equal(result.specialtyId,'');
+ const edited=await c.manage('client',id,'edit',{...request,title:'Titre corrigé'},result.createdAt);
+ assert.deepEqual(edited.zoneIds,result.zoneIds);
+ await assert.rejects(c.manage('client',id,'edit',{...request,zoneId:'plateau'},edited.updatedAt),e=>e.code==='failed-precondition');
+ const draft={...request,categoryId:'foundi_other',specialtyId:'',serviceDetail:'  Aide pour mon aquarium  '};
+ await assert.rejects(c.publish('other',id+'Other',draft));
+ c.data.get('referenceData/professionalOnboarding').categories.push({id:'foundi_other',requestOnly:true,active:true,label:'Autre',specialties:[]});
+ await assert.rejects(c.publish('other',id+'Other',{...draft,serviceDetail:'  '}));
+ const unknown=await c.publish('other',id+'Other',draft);
+ assert.equal(unknown.serviceDetail,'Aide pour mon aquarium');
+ assert.equal(unknown.categoryId,'foundi_other');
+ const {serviceDetail,...legacyDraft}=draft;const legacyEdited=await c.manage('other',id+'Other','edit',legacyDraft,unknown.createdAt);assert.equal(legacyEdited.serviceDetail,unknown.serviceDetail);
+ assert.equal(c.data.get('requestPublicationLimits/other').createdAtMs.length,1);
+});

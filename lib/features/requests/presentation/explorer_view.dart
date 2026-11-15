@@ -1,3 +1,4 @@
+import '../../auth/domain/account_photo_changes.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../professional/domain/professional_repository.dart';
@@ -8,6 +9,8 @@ import '../domain/request_repository.dart';
 import '../domain/request_photo_repository.dart';
 import 'request_photos.dart';
 import 'request_views.dart';
+import '../domain/request_author_repository.dart';
+import 'request_author_screen.dart';
 
 class ExplorerView extends StatefulWidget {
   const ExplorerView({
@@ -111,9 +114,13 @@ class ExplorerViewState extends State<ExplorerView> {
         );
   }
 
+  StreamSubscription<void>? _photoUpdates;
   @override
   void initState() {
     super.initState();
+    _photoUpdates = AccountPhotoChanges.stream.listen((_) {
+      if (mounted && _forMe) _load(reset: true);
+    });
     _load(reset: true);
   }
 
@@ -135,6 +142,7 @@ class ExplorerViewState extends State<ExplorerView> {
   @override
   void dispose() {
     _generation++;
+    _photoUpdates?.cancel();
     _subscription?.cancel();
     super.dispose();
   }
@@ -567,6 +575,19 @@ class ExplorerViewState extends State<ExplorerView> {
               request,
               key: ValueKey(request.id),
               onTap: () => widget.onOpen(request),
+              onAuthor:
+                  !request.isDirect &&
+                      widget.repository is RequestAuthorRepository
+                  ? () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => RequestAuthorScreen(
+                          repository:
+                              widget.repository as RequestAuthorRepository,
+                          requestId: request.id,
+                        ),
+                      ),
+                    )
+                  : null,
               footer: widget.footerBuilder?.call(request),
               showDescription: true,
               showStatus: true,

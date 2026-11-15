@@ -1,6 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /publicPersonalAvatars/{id} { allow get: if true; allow list, write: if false; }
+    match /personalAvatars/{id} { allow read, write: if false; }
+    match /personalAvatarLookup/{id} { allow read, write: if false; }
+    match /personalAvatarGarbage/{id} { allow read, write: if false; }
+    match /personalAvatarLimits/{id} { allow read, write: if false; }
     function activeAccount() {
       return openAccount() && (!exists(/databases/$(database)/documents/accountSafety/$(request.auth.uid))
         || get(/databases/$(database)/documents/accountSafety/$(request.auth.uid)).data.get('suspended', false) != true);
@@ -63,6 +68,12 @@ service cloud.firestore {
       match /messageState/{id} { allow get: if owner(uid) && id == 'inbox'; allow list, write: if false; }
       match /messageReads/{id} { allow get: if owner(uid); allow list, write: if false; }
       match /messageInbox/{id} { allow read, write: if false; }
+      match /deletedConversations/{id} {
+        allow get: if owner(uid);
+        allow list: if owner(uid) && request.query.limit != null && request.query.limit <= 30;
+        allow write: if false;
+      }
+      match /conversationState/{id} { allow get: if owner(uid) && id == 'inbox'; allow list, write: if false; }
       match /devices/{id} { allow read, write: if false; }
       match /legalAcceptances/{version} {
         allow get, list: if owner(uid);

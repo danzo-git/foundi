@@ -57,3 +57,6 @@ functions/.secret*
 
 /.firebase-integration.json
 /.firebase-safety-integration.json
+
+# User-provided attachments are not application assets
+/.codex-attachments/

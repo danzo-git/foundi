@@ -1,3 +1,4 @@
+import '../../auth/domain/personal_avatar_repository.dart';
 import '../../conversations/domain/conversation_repository.dart';
 import '../../conversations/presentation/conversation_views.dart';
 import '../../proposals/domain/proposal_repository.dart';
@@ -863,6 +864,9 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           error: error,
         )
       : AccountScreen(
+          avatarRepository: widget.auth is PersonalAvatarRepository
+              ? widget.auth as PersonalAvatarRepository
+              : null,
           onSentProposals:
               _proposals != null &&
                   widget.professional.status != ProfessionalStatus.none

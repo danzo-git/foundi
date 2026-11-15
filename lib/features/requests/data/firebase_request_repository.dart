@@ -1,3 +1,6 @@
+import '../../auth/domain/account_photo_changes.dart';
+import '../domain/request_author_repository.dart';
+import 'dart:async';
 import '../../conversations/domain/conversation_repository.dart';
 import '../../conversations/data/firebase_conversation_repository.dart';
 import '../../conversations/domain/rich_conversation_repository.dart';
@@ -20,6 +23,7 @@ import 'firebase_request_photo_repository.dart';
 class FirebaseRequestRepository
     implements
         RequestRepository,
+        RequestAuthorRepository,
         ProfessionalDirectoryRepository,
         DirectRequestRepository,
         RequestRespondentsRepository,
@@ -32,6 +36,8 @@ class FirebaseRequestRepository
         ExplorerRepository,
         ProposalRepository,
         ConversationRepository,
+        ConversationAvatarRepository,
+        ConversationDeletionRepository,
         RichConversationRepository {
   FirebaseRequestRepository({
     FirebaseFirestore? firestore,
@@ -40,6 +46,48 @@ class FirebaseRequestRepository
   }) : _db = firestore ?? FirebaseFirestore.instance,
        _functions =
            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
+  @override
+  Future<RequestAuthorProfile> readRequestAuthor(String requestId) async {
+    try {
+      final result = await _functions
+          .httpsCallable('readRequestAuthorProfile')
+          .call<Map<String, dynamic>>({'requestId': requestId});
+      return RequestAuthorProfile.fromMap(result.data);
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'not-found' || e.code == 'permission-denied') {
+        throw const RequestAuthorUnavailable();
+      }
+      throw AuthFailure(e.message ?? 'Impossible de charger ce profil.');
+    }
+  }
+
+  Future<void> _addressSupport(RequestDraft? draft) async {
+    if (draft?.replaceInterventionAddress != true) return;
+    try {
+      final result = await _functions
+          .httpsCallable('getRequestAddressCapabilities')
+          .call<Map<String, dynamic>>({});
+      if (result.data['supported'] != true || result.data['version'] != 1) {
+        throw const AuthFailure(
+          'L’enregistrement de l’adresse est temporairement indisponible. Réessaie.',
+        );
+      }
+    } on FirebaseFunctionsException {
+      throw const AuthFailure(
+        'L’enregistrement de l’adresse est temporairement indisponible. Réessaie.',
+      );
+    }
+  }
+
+  void _addressAck(Map<String, dynamic> result, RequestDraft? draft) {
+    if (draft?.replaceInterventionAddress == true &&
+        result['interventionAddressSaved'] != true) {
+      throw const AuthFailure(
+        'La demande est enregistrée, mais son adresse n’a pas été confirmée. Ouvre Mes demandes pour la vérifier.',
+      );
+    }
+  }
+
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
   late final _directory = FirebaseProfessionalDirectoryRepository(_functions);
@@ -119,8 +167,15 @@ class FirebaseRequestRepository
     _db,
     _functions,
   );
-  late final ConversationRepository _conversations =
+  late final FirebaseConversationRepository _conversations =
       FirebaseConversationRepository(_db, _functions);
+  @override
+  Future<Map<String, String>> resolveConversationAvatars(
+    List<String> conversationIds,
+  ) => _conversations.resolveConversationAvatars(conversationIds);
+  @override
+  Future<void> deleteConversation(String id, {required String viewerUid}) =>
+      _conversations.deleteConversation(id, viewerUid: viewerUid);
   @override
   Future<SelectionResult> selectProposal(String requestId, String proposalId) =>
       _conversations.selectProposal(requestId, proposalId);
@@ -196,13 +251,43 @@ class FirebaseRequestRepository
     if (filters.specialtyId != null) {
       query = query.where('specialtyId', isEqualTo: filters.specialtyId);
     }
-    if (filters.zoneId != null) {
-      query = query.where('zoneId', isEqualTo: filters.zoneId);
-    }
-    query = query
-        .orderBy('createdAt', descending: true)
-        .orderBy(FieldPath.documentId, descending: true);
-    return _watch(query.limit(30));
+    Query<Map<String, dynamic>> ordered(Query<Map<String, dynamic>> value) =>
+        value
+            .orderBy('createdAt', descending: true)
+            .orderBy(FieldPath.documentId, descending: true)
+            .limit(30);
+    if (filters.zoneId == null) return _watch(ordered(query));
+    final legacy = ordered(query.where('zoneId', isEqualTo: filters.zoneId));
+    final multi = ordered(
+      query.where('zoneIds', arrayContains: filters.zoneId),
+    );
+    return Stream<List<FoundiRequest>>.multi((controller) {
+      var left = <FoundiRequest>[], right = <FoundiRequest>[];
+      void emit() {
+        final rows =
+            {
+              for (final r in [...left, ...right]) r.id: r,
+            }.values.toList()..sort((a, b) {
+              final order = (b.createdAt?.millisecondsSinceEpoch ?? 0)
+                  .compareTo(a.createdAt?.millisecondsSinceEpoch ?? 0);
+              return order != 0 ? order : b.id.compareTo(a.id);
+            });
+        controller.add(rows.take(30).toList());
+      }
+
+      final a = _watch(legacy).listen((v) {
+        left = v;
+        emit();
+      }, onError: controller.addError);
+      final b = _watch(multi).listen((v) {
+        right = v;
+        emit();
+      }, onError: controller.addError);
+      controller.onCancel = () async {
+        await a.cancel();
+        await b.cancel();
+      };
+    });
   }
 
   @override
@@ -223,10 +308,10 @@ class FirebaseRequestRepository
           });
       final data = response.data;
       return OpportunityPage(
-        (data['items'] as List).map((v) {
-          final m = Map<String, dynamic>.from(v);
-          return FoundiRequest.fromMap(m['id'] as String, m);
-        }).toList(),
+        await _parseRequests([
+          for (final value in data['items'] as List)
+            (id: value['id'] as String, data: Map<String, dynamic>.from(value)),
+        ]),
         data['cursor'] == null
             ? null
             : Map<String, dynamic>.from(data['cursor']),
@@ -244,6 +329,7 @@ class FirebaseRequestRepository
     int? expectedRevision,
   }) async {
     try {
+      await _addressSupport(draft);
       final result = await _functions
           .httpsCallable('manageRequest')
           .call<Map<String, dynamic>>({
@@ -252,6 +338,7 @@ class FirebaseRequestRepository
             'expectedRevision': ?expectedRevision,
             if (draft != null) 'request': draft.toMap(),
           });
+      _addressAck(result.data, draft);
       return FoundiRequest.fromMap(id, result.data);
     } on FirebaseFunctionsException catch (e) {
       throw AuthFailure(e.message ?? 'Modification non confirmée. Réessaie.');
@@ -267,6 +354,7 @@ class FirebaseRequestRepository
     RequestDraft draft,
   ) async {
     try {
+      await _addressSupport(draft);
       final result = await _functions
           .httpsCallable('publishDirectRequest')
           .call<Map<String, dynamic>>({
@@ -274,6 +362,7 @@ class FirebaseRequestRepository
             'professionalId': professionalId,
             'request': draft.toMap(),
           });
+      _addressAck(result.data, draft);
       return FoundiRequest.fromMap(id, result.data);
     } on FirebaseFunctionsException catch (error) {
       throw AuthFailure(
@@ -312,12 +401,14 @@ class FirebaseRequestRepository
   @override
   Future<FoundiRequest> publish(String id, RequestDraft draft) async {
     try {
+      await _addressSupport(draft);
       final result = await _functions
           .httpsCallable('publishRequest')
           .call<Map<String, dynamic>>({
             'requestId': id,
             'request': draft.toMap(),
           });
+      _addressAck(result.data, draft);
       return FoundiRequest.fromMap(result.data['id'] as String, result.data);
     } on FirebaseFunctionsException catch (e) {
       throw AuthFailure(switch (e.code) {
@@ -367,10 +458,31 @@ class FirebaseRequestRepository
         );
       }
     }
+    var avatars = <String, dynamic>{};
+    final publicIds = records
+        .where(
+          (r) =>
+              r.data['directProfessionalId'] == null &&
+              r.data['status'] == 'published',
+        )
+        .map((r) => r.id)
+        .take(50)
+        .toList();
+    if (publicIds.isNotEmpty) {
+      try {
+        final result = await _functions
+            .httpsCallable('resolveRequestAvatars')
+            .call<Map<String, dynamic>>({'requestIds': publicIds});
+        avatars = Map<String, dynamic>.from(result.data['avatars'] as Map);
+      } catch (_) {
+        /* An unavailable optional avatar must never hide requests. */
+      }
+    }
     return records
         .map(
           (r) => FoundiRequest.fromMap(r.id, {
             ...r.data,
+            if (avatars[r.id] case final String key) 'avatarKey': key,
             if (authors[r.id] case final String name) 'requesterName': name,
           }),
         )
@@ -381,11 +493,35 @@ class FirebaseRequestRepository
   Stream<List<FoundiRequest>> _watch(
     Query<Map<String, dynamic>> query, {
     bool resolveDirectAuthors = false,
-  }) => query.snapshots().asyncMap(
-    (s) => _parseRequests([
-      for (final d in s.docs) (id: d.id, data: d.data()),
-    ], resolveDirectAuthors: resolveDirectAuthors),
-  );
+  }) => Stream.multi((controller) {
+    QuerySnapshot<Map<String, dynamic>>? latest;
+    var generation = 0;
+    bool closed = false;
+    Future<void> emit() async {
+      final snapshot = latest;
+      if (snapshot == null) return;
+      final turn = ++generation;
+      try {
+        final requests = await _parseRequests([
+          for (final d in snapshot.docs) (id: d.id, data: d.data()),
+        ], resolveDirectAuthors: resolveDirectAuthors);
+        if (!closed && turn == generation) controller.add(requests);
+      } catch (error, stack) {
+        if (!closed && turn == generation) controller.addError(error, stack);
+      }
+    }
+
+    final subscription = query.snapshots().listen((value) {
+      latest = value;
+      emit();
+    }, onError: controller.addError);
+    final photos = AccountPhotoChanges.stream.listen((_) => emit());
+    controller.onCancel = () async {
+      closed = true;
+      await subscription.cancel();
+      await photos.cancel();
+    };
+  });
   @override
   Stream<List<FoundiRequest>> watchPublic() => _watch(
     _db
@@ -406,7 +542,11 @@ class FirebaseRequestRepository
   Stream<FoundiRequest?> watchPublicDetail(String id) => _db
       .doc('requests/$id')
       .snapshots()
-      .map((s) => s.exists ? FoundiRequest.fromMap(s.id, s.data()!) : null);
+      .asyncMap(
+        (s) async => s.exists
+            ? (await _parseRequests([(id: s.id, data: s.data()!)])).firstOrNull
+            : null,
+      );
 
   @override
   Future<RequestRespondentsPage> listRequestRespondents(

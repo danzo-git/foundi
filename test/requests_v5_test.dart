@@ -169,6 +169,13 @@ Future<void> runFlow(
 }
 
 Future<void> choose(WidgetTester t, String key, String label) async {
+  if (key == 'requestZone') {
+    await tapForm(t, find.byKey(const ValueKey('chooseRequestZones')));
+    await fixtures.tap(t, find.text(label).last);
+    await fixtures.tap(t, find.text('Confirmer'));
+    return;
+  }
+
   final dropdown = find.byWidgetPredicate(
     (w) =>
         w is DropdownButtonFormField<String> &&
@@ -437,7 +444,8 @@ void main() {
         expect(find.text('Spécialité *'), findsNothing);
         await choose(t, 'requestCategory', 'Catégorie de test');
         await tapForm(t, find.text('Vérifier ma demande'));
-        expect(find.text('Choisis une option active.'), findsOneWidget);
+        expect(find.text('Vérifie avant publication'), findsOneWidget);
+        await tapForm(t, find.text('Modifier'));
         await choose(t, 'requestCategory', 'Autre catégorie');
         await tapForm(t, find.text('Vérifier ma demande'));
         expect(find.text('Titre personnalisé'), findsOneWidget);

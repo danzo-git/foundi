@@ -1,3 +1,4 @@
+const {requestZones} = require('./request-matching');
 const {FieldValue, FieldPath} = require('firebase-admin/firestore');
 const {OtpError, requireUid} = require('./auth-validation');
 const {contactAllowed,publicProfileAllowed} = require('./safety-guard');
@@ -31,7 +32,14 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     return db.runTransaction(async tx => {
       const existing = await tx.get(ref);
       if (existing.exists || !await active(recipientUid,false,tx)) return false;
+      if(resourceType==='conversation' && (await tx.get(doc(`users/${recipientUid}/deletedConversations/${resourceId}`))).exists)return false;
       if (!await allowed(safetyActorUid,recipientUid,tx) || (safetyActorUid && !await active(safetyActorUid,false,tx))) return false;
+      if(type==='request.matched') {
+        const [request,profile,reference] = await Promise.all([tx.get(doc(`requests/${resourceId}`)),tx.get(doc(`professionalProfiles/${recipientUid}`)),tx.get(doc('referenceData/professionalOnboarding'))]);
+        if(!matchesOpportunity(request.data(),profile.data(),reference.data()))return false;
+        const legacy=await tx.get(doc(`users/${recipientUid}/notifications/${key(`request.matched/${resourceId}/${request.data().createdAt}`,recipientUid)}`));
+        if(legacy.exists)return false;
+      }
       const [category,title,bodySafe] = catalog[type];
       const value = {eventId, type, category, title, bodySafe, recipientUid, actorUid:actorUid || null,
         resourceType, resourceId, requestId, proposalId, conversationId, occurredAt:occurredAt || clock(),
@@ -130,6 +138,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       const outbox=doc(`notificationOutbox/${eventKey}`);
       const [existing,read,queued]=await Promise.all([tx.get(receipt),tx.get(cursor),tx.get(outbox)]);
       if(existing.exists)return false;
+      if((await tx.get(doc(`users/${uid}/deletedConversations/${conversationId}`))).exists)return false;
       if(!await allowed(value.senderUid,uid,tx) || !await active(value.senderUid,false,tx) || !await active(uid,false,tx))return false;
       const unread=!legacyRead && value.createdAt>(read.data()?.readThroughAt || 0);
       tx.create(receipt,{conversationId,messageId:id,senderUid:value.senderUid,createdAt:value.createdAt,unread,eventId,recipientUid:uid,schemaVersion:91});
@@ -209,19 +218,20 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     if (!job) return;
     if(!await active(job.uid)){await ref.delete();return;}
     try {
+      const reference = job.kind === 'matched' ? (await doc('referenceData/professionalOnboarding').get()).data() : null;
+      const current = job.kind === 'matched' ? (await doc(`requests/${job.requestId}`).get()).data() : null;
+      if(job.kind==='matched' && (current?.status!=='published' || !requestZones(current).length)) { await ref.update({state:'done',leaseUntil:0}); return; }
       let query = job.kind === 'matched'
-        ? db.collection('professionalProfiles').where('status','==','approved').orderBy(FieldPath.documentId())
+        ? db.collection('professionalProfiles').where('status','==','approved').where('zoneIds','array-contains-any',requestZones(current)).orderBy(FieldPath.documentId())
         : db.collection('proposals').where('requestId','==',job.requestId).orderBy(FieldPath.documentId());
       if (job.cursor) query = query.startAfter(job.cursor);
       const rows = await query.limit(PAGE).get();
-      const reference = job.kind === 'matched' ? (await doc('referenceData/professionalOnboarding').get()).data() : null;
-      const current = job.kind === 'matched' ? (await doc(`requests/${job.requestId}`).get()).data() : null;
       for (const row of rows.docs) {
         const value = row.data(), uid = job.kind === 'matched' ? row.id : value.professionalUid;
         if (uid === job.uid || (job.kind === 'closed' && value.clientUid !== job.uid)) continue;
-        if (job.kind === 'matched' && (current?.status !== 'published' || !matchesOpportunity(job.request,value,reference) ||
+        if (job.kind === 'matched' && (current?.status !== 'published' || !matchesOpportunity(current,value,reference) ||
             (await doc(`userRequests/${uid}/items/${job.requestId}`).get()).exists)) continue;
-        await emit({eventId:`request.${job.kind}/${job.requestId}/${job.version}`,type:`request.${job.kind}`,recipientUid:uid,actorUid:job.uid,
+        await emit({eventId:job.kind === 'matched' ? `request.matched/${job.requestId}` : `request.closed/${job.requestId}/${job.version}`,type:`request.${job.kind}`,recipientUid:uid,actorUid:job.uid,
           resourceType:job.kind === 'matched' ? 'opportunity' : 'participatedRequest',resourceId:job.requestId,requestId:job.requestId,
           occurredAt:job.request.updatedAt || job.request.createdAt});
       }
@@ -287,7 +297,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
         break;
       case 'conversation': {
         const c=(await doc(`conversations/${resourceId}`).get()).data();
-        if(!c || ![c.clientUid,c.professionalUid].includes(uid))return unavailable();
+        if(!c || ![c.clientUid,c.professionalUid].includes(uid) || (await doc(`users/${uid}/deletedConversations/${resourceId}`).get()).exists)return unavailable();
         break;
       }
       case 'proposal': {
@@ -330,6 +340,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     const [chat,message]=await Promise.all([doc(`conversations/${job.conversationId}`).get(),doc(`conversations/${job.conversationId}/messages/${job.messageId}`).get()]);
     const c=chat.data(),m=message.data();
     if(!c||!m||![c.clientUid,c.professionalUid].includes(job.uid)||![c.clientUid,c.professionalUid].includes(m.senderUid)||m.senderUid===job.uid)fail('not-found','Cette discussion est privée.');
+    if((await doc(`users/${job.uid}/deletedConversations/${job.conversationId}`).get()).exists)fail('not-found','Conversation supprimée de ta messagerie.');
     return {chat:c,message:m};
   }
   async function pushContent(job,prefs) {
@@ -346,6 +357,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       tx.update(ref,{leaseUntil:clock()+120000});return j;
     });
     if(!job)return;
+    if(job.conversationId && (await doc(`users/${job.uid}/deletedConversations/${job.conversationId}`).get()).exists && job.kind==='chat_message'){await ref.update({state:'skipped',reason:'conversation_deleted'});return;}
     if(job.createdAt<clock()-24*60*60*1000){await ref.update({state:'skipped',reason:'expired'});return;}
     const stored=(await doc(`users/${job.uid}/notifications/${job.notificationId}`).get()).data();
     const moderation=job.actorUid===null && await safetyNotice(job.uid,job.notificationId,stored);
@@ -399,13 +411,16 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
         if(currentPrefs?.[job.category]===false){await attempt.update({state:'skipped',reason:'preference'});continue;}
         if(moderation && (await doc(`users/${job.uid}/notifications/${job.notificationId}`).get()).data()?.readAt!=null){await attempt.update({state:'skipped',reason:'read'});continue;}
         if(!await active(job.uid,moderation) || (source && (!await active(source) || !await allowed(source,job.uid)))){await attempt.update({state:'skipped',reason:'safety'});continue;}
+        if(job.conversationId && (await doc(`users/${job.uid}/deletedConversations/${job.conversationId}`).get()).exists && (job.kind==='chat_message'||stored?.resourceType==='conversation')){await attempt.update({state:'skipped',reason:'conversation_deleted'});continue;}
         const notification=moderation ? {title:catalog[stored.type][1],body:catalog[stored.type][2]} : await pushContent(job,currentPrefs);
+        if(job.conversationId && (job.kind==='chat_message'||stored?.resourceType==='conversation') && (await doc(`users/${job.uid}/deletedConversations/${job.conversationId}`).get()).exists){await attempt.update({state:'skipped',reason:'conversation_deleted'});continue;}
         await messaging.send({token:value.token,notification,
           data:{notificationId:job.notificationId,recipientUid:job.uid,...(job.kind==='chat_message'?{type:'chat_message',conversationId:job.conversationId,messageId:job.messageId}:{})},
           android:{priority:'normal',collapseKey:job.category === 'opportunities' ? 'foundi-opportunities' : id,notification:{tag:id}},
           apns:{headers:{'apns-collapse-id':job.category === 'opportunities' ? 'foundi-opportunities' : id,'apns-priority':'5'},payload:{aps:{sound:'default'}}}});
         await attempt.update({state:'sent',finishedAt:clock()});
       } catch(e) {
+        if(e instanceof OtpError && ['not-found','permission-denied'].includes(e.code)){await attempt.update({state:'skipped',reason:'target'});continue;}
         const code=String(e.code || 'unknown');
         const invalid=['messaging/registration-token-not-registered','messaging/invalid-registration-token'].includes(code);
         // Only explicit rejection can be retried. A timeout/crash has an ambiguous send result: never blindly resend.

@@ -25,13 +25,13 @@ function createPrivacyPurger({db,bucket,clock=Date.now}){
   return {done:rows.empty};
  }
  async function ownedObjects(job,prefix,cursor=null,filter=()=>true){
-  if(!prefix.startsWith(`requestPhotos/${job.uid}/`) && !prefix.startsWith(`professionalDocuments/${job.uid}/`) && prefix!=='conversations/' && !/^conversations\/[a-zA-Z0-9_-]{20,80}\/$/.test(prefix))conflict();
+  if(!prefix.startsWith(`personalAvatars/${job.uid}/`) && !prefix.startsWith(`requestPhotos/${job.uid}/`) && !prefix.startsWith(`professionalDocuments/${job.uid}/`) && prefix!=='conversations/' && !/^conversations\/[a-zA-Z0-9_-]{20,80}\/$/.test(prefix))conflict();
   const [files,next]=await bucket.getFiles({prefix,autoPaginate:false,maxResults:size,...(cursor?{pageToken:cursor}:{})});
   for(const file of files){const [meta]=await file.getMetadata();if(await filter(file.name,meta))await removeFile(job,file.name,String(meta.generation));}
   return {done:!next?.pageToken,cursor:next?.pageToken||null};
  }
  async function removeFile(job,path,generation){
-  if(typeof path!=='string'||path.includes('..')||!(/^(requestPhotos|professionalDocuments)\//.test(path)||path.startsWith('conversations/')))conflict();
+  if(typeof path!=='string'||path.includes('..')||!(/^(personalAvatars|requestPhotos|professionalDocuments)\//.test(path)||path.startsWith('conversations/')))conflict();
   let file=bucket.file(path),metadata;
   try{[metadata]=await file.getMetadata();}catch(e){if(Number(e.code)===404)return;throw e;}
   if(metadata.metadata?.owneruid && metadata.metadata.owneruid!==job.uid)conflict();
@@ -181,8 +181,11 @@ function createPrivacyPurger({db,bucket,clock=Date.now}){
    for(const name of ['professionalDirectoryLimits','professionalDirectoryCursors']){const rows=await db.collection(name).where('uid','==',uid).limit(size).get();if(!rows.empty){for(const row of rows.docs)await row.ref.delete();return {done:false};}}
    return {done:true};
   }
+  if(phase==='photo_files'){const garbage=await drain(db.collection('personalAvatarGarbage'),'uid',uid,row=>row.ref.delete());if(!garbage.done)return garbage;}
   if(phase==='photo_drafts'||phase==='photo_files')return drain(db.collection(phase==='photo_drafts'?'requestPhotoDrafts':'requestPhotoFiles'),'uid',uid,row=>tree(row.ref));
-  if(phase==='withdraw_profile'){const r=ref(`professionalProfiles/${uid}`),p=await r.get();if(p.exists)await r.set({...p.data(),status:'deleting'});return {done:true};}
+  if(phase==='withdraw_profile'){
+   const avatar=(await ref(`personalAvatars/${uid}`).get()).data();if(avatar?.publicId)await ref(`publicPersonalAvatars/${avatar.publicId}`).delete();
+const r=ref(`professionalProfiles/${uid}`),p=await r.get();if(p.exists)await r.set({...p.data(),status:'deleting'});return {done:true};}
   if(phase==='proposals_sent')return drain(db.collection('proposals'),'professionalUid',uid,async row=>{await remember(job,'proposals',row.id,{id:row.id});await row.ref.delete();});
   if(phase==='proposals_received')return drain(db.collection('proposals'),'clientUid',uid,row=>row.ref.set({...row.data(),clientUid:alias,requestTitle:'Demande supprimée',status:'account_deleted',clientDeleted:true}));
   if(phase==='conversations_client'||phase==='conversations_pro'){
@@ -246,18 +249,26 @@ function createPrivacyPurger({db,bucket,clock=Date.now}){
    throw Object.assign(Error('Unattributed legacy object'),{code:'privacy/manual-review',reference:name});
   });
   if(phase==='storage_professional'||phase==='storage_requests'){
+   if(phase==='storage_requests'){
+    const result=await ownedObjects(job,`personalAvatars/${uid}/`);
+    if(!result.done)return result;
+   }
+
    const result=await ownedObjects(job,`${phase==='storage_professional'?'professionalDocuments':'requestPhotos'}/${uid}/`);return {done:result.done};
   }
   if(phase==='private_trees'){
-   const roots=[`professionalProfiles/${uid}`,`userRequests/${uid}`,`userBlocks/${uid}`,`users/${uid}`];
+   const avatar=(await ref(`personalAvatars/${uid}`).get()).data();
+   if(avatar?.publicId){await ref(`publicPersonalAvatars/${avatar.publicId}`).delete();await ref(`personalAvatarLookup/${avatar.publicId}`).delete();}
+
+   const roots=[`personalAvatars/${uid}`,`personalAvatarLimits/${uid}`,`professionalProfiles/${uid}`,`userRequests/${uid}`,`userBlocks/${uid}`,`users/${uid}`];
    for(const path of roots){const r=ref(path);if((await r.get()).exists || (await r.listCollections()).length){await tree(r);return {done:false};}}
    await ref(`safetyContent/professional_${uid}`).delete();return {done:true};
   }
   if(phase==='verify'){
-   for(const [collection,field] of [['requestOwnership','ownerUid'],['requestPhotoFiles','uid'],['requestPhotoDrafts','uid'],['authEmailChallenges','userId'],['notificationJobs','uid'],['notificationReceipts','uid'],['safetyReports','reporterUid'],['safetyReports','reportedUid'],['professionalAudit','uid'],['professionalDirectoryLimits','uid'],['professionalDirectoryCursors','uid']])if(!(await db.collection(collection).where(field,'==',uid).limit(1).get()).empty)throw Object.assign(Error('Residual private reference'),{code:'privacy/verification-failed'});
+   for(const [collection,field] of [['personalAvatarGarbage','uid'],['requestOwnership','ownerUid'],['requestPhotoFiles','uid'],['requestPhotoDrafts','uid'],['authEmailChallenges','userId'],['notificationJobs','uid'],['notificationReceipts','uid'],['safetyReports','reporterUid'],['safetyReports','reportedUid'],['professionalAudit','uid'],['professionalDirectoryLimits','uid'],['professionalDirectoryCursors','uid']])if(!(await db.collection(collection).where(field,'==',uid).limit(1).get()).empty)throw Object.assign(Error('Residual private reference'),{code:'privacy/verification-failed'});
    for(const [collection,field] of [['proposals','professionalUid'],['proposals','clientUid'],['conversations','clientUid'],['conversations','professionalUid'],['notificationTokens','uid'],['notificationOutbox','uid'],['notificationOutbox','actorUid'],['requestRecommendations','actorUid'],['requestRecommendations','ownerUid'],['requestRecommendations','professionalUid']])if(!(await db.collection(collection).where(field,'==',uid).limit(1).get()).empty)throw Object.assign(Error('Residual owner reference'),{code:'privacy/verification-failed'});
    for(const path of [`users/${uid}`,`professionalProfiles/${uid}`,`userRequests/${uid}`])if((await ref(path).get()).exists || (await ref(path).listCollections()).length)throw Object.assign(Error('Residual owner tree'),{code:'privacy/verification-failed'});
-   for(const prefix of [`professionalDocuments/${uid}/`,`requestPhotos/${uid}/`])if((await bucket.getFiles({prefix,autoPaginate:false,maxResults:1}))[0].length)throw Object.assign(Error('Residual owner objects'),{code:'privacy/verification-failed'});
+   for(const prefix of [`personalAvatars/${uid}/`,`professionalDocuments/${uid}/`,`requestPhotos/${uid}/`])if((await bucket.getFiles({prefix,autoPaginate:false,maxResults:1}))[0].length)throw Object.assign(Error('Residual owner objects'),{code:'privacy/verification-failed'});
    return {done:true};
   }
   if(phase==='purge_targets'){

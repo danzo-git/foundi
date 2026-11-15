@@ -4,6 +4,22 @@ import 'catalog_repository.dart';
 
 const green = Color(0xFF00856F);
 const ink = Color(0xFF102B35);
+const countryLabels = {'CI': 'Côte d’Ivoire', 'FR': 'France'};
+String catalogZoneCountry(
+  Map<String, dynamic> zone,
+  List<Map<String, dynamic>> zones,
+) {
+  final seen = <String>{};
+  Map<String, dynamic>? current = zone;
+  while (current != null && seen.add(current['id'] as String)) {
+    if (current['countryCode'] is String) {
+      return current['countryCode'] as String;
+    }
+    current = zones.where((z) => z['id'] == current!['parentId']).firstOrNull;
+  }
+  return 'CI';
+}
+
 IconData activityIcon(String? key) => switch (key) {
   'home' => Icons.home_rounded,
   'car' => Icons.directions_car_rounded,
@@ -198,6 +214,28 @@ class _CatalogPageState extends State<CatalogPage> {
                     : 'Catalogue  ›  $title',
               ),
             ),
+            if (kind == 'category' &&
+                !categories.any((c) => c['requestOnly'] == true))
+              OutlinedButton.icon(
+                onPressed: busy
+                    ? null
+                    : () =>
+                          mutate(catalog, {'operation': 'enableUnclassified'}),
+                icon: const Icon(Icons.help_outline),
+                label: const Text('Activer Autre / Je ne sais pas'),
+              ),
+            if (kind == 'zone' &&
+                !zones.any(
+                  (z) => z['id'] == 'fr_commune_35238' && z['active'] != false,
+                ))
+              OutlinedButton.icon(
+                key: const ValueKey('enableRennes'),
+                onPressed: busy
+                    ? null
+                    : () => mutate(catalog, {'operation': 'enableRennes'}),
+                icon: const Icon(Icons.add_location_alt_outlined),
+                label: const Text('Activer Rennes (France)'),
+              ),
             Wrap(
               alignment: WrapAlignment.spaceBetween,
               crossAxisAlignment: WrapCrossAlignment.center,
@@ -236,7 +274,7 @@ class _CatalogPageState extends State<CatalogPage> {
             const SizedBox(height: 8),
             Text(
               section == 'zones'
-                  ? 'Organisez les zones de Côte d’Ivoire : pays, districts, régions, villes et quartiers.'
+                  ? 'Organisez les zones de Côte d’Ivoire et Rennes en France.'
                   : section == 'documents'
                   ? 'Définissez les pièces privées exigées selon chaque activité.'
                   : 'Gérez les activités partagées par les professionnels et les demandes clients.',
@@ -533,7 +571,7 @@ class _CatalogPageState extends State<CatalogPage> {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: Text(
-                '${zoneLabels[zone['type']] ?? 'Zone d’intervention'}${inherited ? ' • Parent désactivé' : ''}',
+                '${zoneLabels[zone['type']] ?? 'Zone d’intervention'} • ${countryLabels[catalogZoneCountry(zone, zones)] ?? 'Pays inconnu'}${inherited ? ' • Parent désactivé' : ''}',
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -627,6 +665,12 @@ class _CatalogEditorState extends State<CatalogEditor> {
   late bool active = widget.entry?['active'] != false;
   late String icon = widget.entry?['icon'] ?? 'work',
       type = widget.entry?['type'] ?? 'intervention';
+  late String country = widget.entry == null
+      ? 'CI'
+      : catalogZoneCountry(
+          widget.entry!,
+          catalogEntries(widget.catalog, 'zones'),
+        );
   late String parent = widget.entry?['parentId'] ?? '',
       category = widget.categoryId ?? '';
   late final independent = Set<String>.from(
@@ -818,6 +862,24 @@ class _CatalogEditorState extends State<CatalogEditor> {
                 if (kind == 'zone') ...[
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
+                    key: ValueKey('zoneCountry-$country'),
+                    initialValue: country,
+                    decoration: const InputDecoration(labelText: 'Pays'),
+                    items: countryLabels.entries
+                        .map(
+                          (e) => DropdownMenuItem(
+                            value: e.key,
+                            child: Text(e.value),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setState(() {
+                      country = v!;
+                      parent = '';
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
                     initialValue: type,
                     decoration: const InputDecoration(
                       labelText: 'Type de zone',
@@ -845,7 +907,11 @@ class _CatalogEditorState extends State<CatalogEditor> {
                         child: Text('Aucune (racine)'),
                       ),
                       ...zones
-                          .where((z) => !descendant(z))
+                          .where(
+                            (z) =>
+                                !descendant(z) &&
+                                catalogZoneCountry(z, zones) == country,
+                          )
                           .map(
                             (z) => DropdownMenuItem(
                               value: z['id'] as String,
@@ -898,6 +964,7 @@ class _CatalogEditorState extends State<CatalogEditor> {
                 if (kind == 'zone') ...{
                   'type': type,
                   'parentId': parent.isEmpty ? null : parent,
+                  'countryCode': country,
                 },
               },
             });
