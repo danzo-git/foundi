@@ -1,0 +1,140 @@
+{
+  "kind": "anonymous_public_production_http_baseline",
+  "measuredAtUtc": "2026-11-16T15:09:21.936Z",
+  "note": "PC HTTP; before new profile/respondent deployment. No private conversation or logged-in data. Three samples, no p95. Bytes are decoded payload sizes, not wire traffic.",
+  "publicRequestSelectionStatus": 200,
+  "endpoints": [
+    {
+      "endpoint": "listPublicProfessionals",
+      "samples": [
+        {
+          "httpStatus": 200,
+          "headersMs": 4649.3360999999995,
+          "totalMs": 4651.977,
+          "decodedResponseBytes": 1179,
+          "contentLengthHeader": 1179,
+          "errorStatus": null
+        },
+        {
+          "httpStatus": 200,
+          "headersMs": 694.3746000000001,
+          "totalMs": 694.9719999999998,
+          "decodedResponseBytes": 1179,
+          "contentLengthHeader": 1179,
+          "errorStatus": null
+        },
+        {
+          "httpStatus": 200,
+          "headersMs": 609.2106999999996,
+          "totalMs": 609.8104999999996,
+          "decodedResponseBytes": 1179,
+          "contentLengthHeader": 1179,
+          "errorStatus": null
+        }
+      ],
+      "medianMs": 694.9719999999998,
+      "p95Ms": null,
+      "serverMs": null,
+      "actualFirestoreReads": null
+    },
+    {
+      "endpoint": "readPublicProfessionalProfile",
+      "samples": [
+        {
+          "httpStatus": 200,
+          "headersMs": 6345.5241000000005,
+          "totalMs": 6345.8873,
+          "decodedResponseBytes": 517,
+          "contentLengthHeader": 517,
+          "errorStatus": null
+        },
+        {
+          "httpStatus": 200,
+          "headersMs": 801.3353999999999,
+          "totalMs": 801.6280999999999,
+          "decodedResponseBytes": 517,
+          "contentLengthHeader": 517,
+          "errorStatus": null
+        },
+        {
+          "httpStatus": 200,
+          "headersMs": 576.5792000000001,
+          "totalMs": 576.8567000000003,
+          "decodedResponseBytes": 517,
+          "contentLengthHeader": 517,
+          "errorStatus": null
+        }
+      ],
+      "medianMs": 801.6280999999999,
+      "p95Ms": null,
+      "serverMs": null,
+      "actualFirestoreReads": null
+    },
+    {
+      "endpoint": "listRequestRespondents",
+      "samples": [
+        {
+          "httpStatus": 200,
+          "headersMs": 3456.241900000001,
+          "totalMs": 3456.4127000000008,
+          "decodedResponseBytes": 76,
+          "contentLengthHeader": 76,
+          "errorStatus": null
+        },
+        {
+          "httpStatus": 200,
+          "headersMs": 184.26109999999971,
+          "totalMs": 184.69030000000203,
+          "decodedResponseBytes": 76,
+          "contentLengthHeader": 76,
+          "errorStatus": null
+        },
+        {
+          "httpStatus": 200,
+          "headersMs": 164.71949999999924,
+          "totalMs": 164.98170000000027,
+          "decodedResponseBytes": 76,
+          "contentLengthHeader": 76,
+          "errorStatus": null
+        }
+      ],
+      "medianMs": 184.69030000000203,
+      "p95Ms": null,
+      "serverMs": null,
+      "actualFirestoreReads": null
+    },
+    {
+      "endpoint": "readRequestAuthorProfile",
+      "samples": [
+        {
+          "httpStatus": 200,
+          "headersMs": 4797.178100000001,
+          "totalMs": 4797.349800000004,
+          "decodedResponseBytes": 94,
+          "contentLengthHeader": 94,
+          "errorStatus": null
+        },
+        {
+          "httpStatus": 200,
+          "headersMs": 1187.809799999999,
+          "totalMs": 1188.106499999998,
+          "decodedResponseBytes": 94,
+          "contentLengthHeader": 94,
+          "errorStatus": null
+        },
+        {
+          "httpStatus": 200,
+          "headersMs": 1044.185599999997,
+          "totalMs": 1044.3632999999973,
+          "decodedResponseBytes": 94,
+          "contentLengthHeader": 94,
+          "errorStatus": null
+        }
+      ],
+      "medianMs": 1188.106499999998,
+      "p95Ms": null,
+      "serverMs": null,
+      "actualFirestoreReads": null
+    }
+  ]
+}

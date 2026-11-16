@@ -119,6 +119,7 @@ class ProfessionalProfileSection extends StatelessWidget {
     this.details = const [],
     this.onAdd,
     this.onManageGallery,
+    this.showMedia = true,
   });
 
   final ProfessionalShowcase profile;
@@ -127,10 +128,11 @@ class ProfessionalProfileSection extends StatelessWidget {
   final ValueChanged<int> onPhoto;
   final VoidCallback onSeeAll;
   final VoidCallback? onAdd, onManageGallery;
+  final bool showMedia;
 
   Widget _gallery({bool preview = false}) => ShowcaseGallery(
-    photos: profile.gallery,
-    onPhoto: onPhoto,
+    photos: showMedia ? profile.gallery : const [],
+    onPhoto: showMedia ? onPhoto : null,
     preview: preview,
     onAdd: preview ? onAdd : null,
   );
@@ -151,7 +153,12 @@ class ProfessionalProfileSection extends StatelessWidget {
         ),
         if (section == 2) ...[
           const SizedBox(height: 12),
-          if (profile.gallery.isEmpty)
+          if (!showMedia)
+            const Text(
+              'Photos masquées pendant la vérification.',
+              style: TextStyle(color: FoundiUi.muted),
+            )
+          else if (profile.gallery.isEmpty)
             const Text(
               'Aucune réalisation ajoutée.',
               style: TextStyle(color: FoundiUi.muted),
@@ -181,7 +188,7 @@ class ProfessionalProfileSection extends StatelessWidget {
                   'Photos / Réalisations',
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                if (profile.gallery.isNotEmpty)
+                if (showMedia && profile.gallery.isNotEmpty)
                   TextButton(
                     onPressed: onSeeAll,
                     child: Text('Voir tout (${profile.gallery.length})'),
@@ -189,7 +196,12 @@ class ProfessionalProfileSection extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            if (profile.gallery.isEmpty)
+            if (!showMedia)
+              const Text(
+                'Photos masquées pendant la vérification.',
+                style: TextStyle(color: FoundiUi.muted, fontSize: 12),
+              )
+            else if (profile.gallery.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(bottom: 10),
                 child: Text(
@@ -197,7 +209,7 @@ class ProfessionalProfileSection extends StatelessWidget {
                   style: TextStyle(color: FoundiUi.muted, fontSize: 12),
                 ),
               ),
-            if (profile.gallery.isNotEmpty || onAdd != null)
+            if (showMedia && (profile.gallery.isNotEmpty || onAdd != null))
               _gallery(preview: true),
           ],
         ],
@@ -215,12 +227,13 @@ class ProfessionalShowcaseHeader extends StatelessWidget {
     this.onPortrait,
     this.showBio = false,
     this.showVerified = true,
+    this.showMedia = true,
     this.footer,
     this.action,
   });
   final ProfessionalShowcase profile;
   final VoidCallback? onEdit, onCover, onPortrait;
-  final bool showBio, showVerified;
+  final bool showBio, showVerified, showMedia;
   final Widget? footer, action;
 
   @override
@@ -241,7 +254,7 @@ class ProfessionalShowcaseHeader extends StatelessWidget {
                   children: [
                     AspectRatio(
                       aspectRatio: 2.7,
-                      child: profile.cover == null
+                      child: !showMedia || profile.cover == null
                           ? const DecoratedBox(
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
@@ -305,7 +318,7 @@ class ProfessionalShowcaseHeader extends StatelessWidget {
                             child: ClipOval(
                               child: SizedBox.expand(
                                 child: ShowcasePhotoView(
-                                  profile.portrait,
+                                  showMedia ? profile.portrait : null,
                                   icon: Icons.person_outline,
                                   label: 'Photo du professionnel',
                                 ),
@@ -437,12 +450,25 @@ class ShowcasePhotoView extends StatelessWidget {
     final image = photo;
     return image == null
         ? placeholder
-        : Image.memory(
-            image.bytes,
-            fit: BoxFit.cover,
-            semanticLabel: label,
-            excludeFromSemantics: label == null,
-            errorBuilder: (_, _, _) => placeholder,
+        : LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final cacheWidth = width.isFinite && width > 0
+                  ? (width * MediaQuery.devicePixelRatioOf(context))
+                        .ceil()
+                        .clamp(1, 1600)
+                  : null;
+              return Image.memory(
+                image.bytes,
+                cacheWidth: cacheWidth,
+                fit: BoxFit.cover,
+                semanticLabel: label,
+                excludeFromSemantics: label == null,
+                frameBuilder: (_, child, frame, wasSynchronous) =>
+                    frame == null && !wasSynchronous ? placeholder : child,
+                errorBuilder: (_, _, _) => placeholder,
+              );
+            },
           );
   }
 }

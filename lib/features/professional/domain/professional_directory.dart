@@ -54,9 +54,13 @@ class ProfessionalMediaManifest {
   const ProfessionalMediaManifest({
     this.portraitId,
     this.galleryIds = const [],
+    this.cacheExpiresAt,
   });
   final String? portraitId;
   final List<String> galleryIds;
+  // Local metadata only, never a server authorization decision. Reusing the
+  // same cached manifest must not start a fresh UI lifetime for its photos.
+  final DateTime? cacheExpiresAt;
 }
 
 class ProfessionalUnavailable extends AuthFailure {

@@ -250,6 +250,9 @@ void main() {
       t.view.physicalSize = const Size(320, 568);
       await t.pumpAndSettle();
       await t.ensureVisible(find.text(name));
+      // ensureVisible changes the scroll offset; lay out the new viewport before
+      // computing the long-press coordinates on a small screen.
+      await t.pumpAndSettle();
       await t.longPress(find.text(name));
       await t.pumpAndSettle();
       await fixtures.tap(

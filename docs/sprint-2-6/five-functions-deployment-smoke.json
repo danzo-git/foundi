@@ -1,0 +1,38 @@
+{
+  "checkedAtUtc": "2026-11-16T17:14:24.395Z",
+  "project": "foundi-7c837",
+  "region": "europe-west1",
+  "input": "empty anonymous callable request",
+  "checks": [
+    {
+      "endpoint": "listRequestRespondents",
+      "httpStatus": 400,
+      "errorStatus": "INVALID_ARGUMENT",
+      "passed": true
+    },
+    {
+      "endpoint": "readRequestRespondentProfile",
+      "httpStatus": 400,
+      "errorStatus": "INVALID_ARGUMENT",
+      "passed": true
+    },
+    {
+      "endpoint": "readRequestAuthorProfile",
+      "httpStatus": 400,
+      "errorStatus": "INVALID_ARGUMENT",
+      "passed": true
+    },
+    {
+      "endpoint": "readPublicProfessionalProfile",
+      "httpStatus": 400,
+      "errorStatus": "INVALID_ARGUMENT",
+      "passed": true
+    },
+    {
+      "endpoint": "readPublicProfessionalMedia",
+      "httpStatus": 400,
+      "errorStatus": "INVALID_ARGUMENT",
+      "passed": true
+    }
+  ]
+}

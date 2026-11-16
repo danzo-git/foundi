@@ -88,6 +88,7 @@ class ExplorerViewState extends State<ExplorerView> {
       _personal = const ExplorerFilters();
   ExplorerFilters get _filters => _forMe ? _personal : _public;
   ProfessionalCatalog? _catalog;
+  Future<ProfessionalCatalog>? _catalogFuture;
   final _items = <FoundiRequest>[];
   RequestPhotoReader? get _publicPhotoReader {
     final repository = widget.repository;
@@ -161,8 +162,11 @@ class ExplorerViewState extends State<ExplorerView> {
       }
     });
     try {
-      if (widget.catalog != null) {
+      if (widget.catalog != null && _forMe) {
         _catalog = await widget.catalog!.loadCatalog();
+      } else if (widget.catalog != null) {
+        // Public request text does not depend on filter reference data.
+        unawaited(_loadPublicCatalog(generation));
       }
       if (!mounted || generation != _generation) return;
       if (_forMe && !_usableProfile) {
@@ -205,6 +209,7 @@ class ExplorerViewState extends State<ExplorerView> {
             if (mounted && generation == _generation) {
               setState(() {
                 _error = 'Impossible de charger les demandes. Réessaie.';
+                _items.clear();
                 _busy = false;
               });
             }
@@ -232,6 +237,20 @@ class ExplorerViewState extends State<ExplorerView> {
     }
   }
 
+  Future<void> _loadPublicCatalog(int generation) async {
+    final future = _catalogFuture ??= widget.catalog!.loadCatalog();
+    try {
+      final catalog = await future;
+      if (mounted && generation == _generation) {
+        setState(() => _catalog = catalog);
+      }
+    } catch (_) {
+      // The feed remains usable; opening filters offers a fresh attempt.
+    } finally {
+      if (identical(_catalogFuture, future)) _catalogFuture = null;
+    }
+  }
+
   void _mode(bool forMe) {
     if (_busy || forMe == _forMe) return;
     setState(() => _forMe = forMe);
@@ -253,9 +272,23 @@ class ExplorerViewState extends State<ExplorerView> {
       choices.where((c) => c.id == id).firstOrNull?.label ??
       'Référence indisponible';
   Future<void> _showFilters() async {
-    final catalog = _catalog;
+    var catalog = _catalog;
+    if (widget.catalog != null) {
+      try {
+        catalog = await (_catalogFuture ??= widget.catalog!.loadCatalog());
+        if (!mounted) return;
+        setState(() => _catalog = catalog);
+      } catch (_) {
+        catalog = null;
+      } finally {
+        _catalogFuture = null;
+      }
+    }
+    if (!mounted) return;
     if (catalog == null || !catalog.enabled) {
-      setState(() => _error = 'Filtres indisponibles. Réessaie.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Filtres indisponibles. Réessaie.')),
+      );
       return;
     }
     final a = widget.profile.activity;

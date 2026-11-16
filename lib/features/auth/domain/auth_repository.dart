@@ -91,6 +91,10 @@ class AuthFailure implements Exception {
   final String message;
 }
 
+class ReadAccessDenied extends AuthFailure {
+  const ReadAccessDenied(super.message);
+}
+
 abstract interface class AuthRepository {
   FoundiUser? get currentUser;
   Stream<FoundiUser?> authStateChanges();

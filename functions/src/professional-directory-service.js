@@ -75,9 +75,12 @@ function createProfessionalDirectoryService({store,auth,clock=Date.now,newCursor
   }
   async function context(id){
     if(!internalId(id))fail('invalid-argument','Profil professionnel invalide.');
-    const [c,profile]=await Promise.all([catalog(),store.get(`professionalProfiles/${id}`)]);
+    const [c,profiles,user]=await Promise.all([
+      catalog(),store.profiles([id]),
+      auth.getUser(id).catch(error=>{if(error.code==='auth/user-not-found')unavailable();throw error;}),
+    ]);
+    const profile=profiles.find(row=>row.id===id)?.profile;
     if(!profile||!directoryEntry(id,profile,c)||!directRequestActivity(profile,c))unavailable();
-    let user;try{user=await auth.getUser(id);}catch(error){if(error.code==='auth/user-not-found')unavailable();throw error;}
     if(!user.emailVerified||user.disabled)unavailable();
     if(!await publicProfileAllowed(store,id))unavailable();
     return {c,profile};

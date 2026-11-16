@@ -2,6 +2,8 @@ import 'features/privacy/firebase_privacy_repository.dart';
 import 'features/auth/presentation/personal_avatar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
+import 'core/firebase_read_scope.dart';
+import 'features/auth/domain/account_photo_changes.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -37,9 +39,24 @@ class _BootstrapState extends State<_Bootstrap> {
   FirebasePrivacyRepository? _privacy;
   String? _attachmentEndpointBase;
   late Future<FirebaseAuthRepository> _initialization = _initialize();
+  late final AppLifecycleListener _readLifecycle;
+  StreamSubscription<void>? _readPhotoChanges;
+
+  @override
+  void initState() {
+    super.initState();
+    _readLifecycle = AppLifecycleListener(
+      onStateChange: (_) => invalidateFirebaseReadScope(),
+    );
+    _readPhotoChanges = AccountPhotoChanges.stream.listen(
+      (_) => invalidateFirebaseReadScope(),
+    );
+  }
 
   @override
   void dispose() {
+    _readLifecycle.dispose();
+    unawaited(_readPhotoChanges?.cancel());
     unawaited(_push?.dispose());
     _notificationIntent.dispose();
     super.dispose();

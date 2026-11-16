@@ -21,23 +21,41 @@ class RequestAuthorScreen extends StatefulWidget {
 
 class _RequestAuthorScreenState extends State<RequestAuthorScreen>
     with WidgetsBindingObserver {
-  late Future<RequestAuthorProfile> _profile = _load();
+  late Future<RequestAuthorProfile> _profile;
   Timer? _lease;
-  bool _professional = false, _paused = false;
+  bool _professional = false, _paused = false, _loading = false;
+  int _generation = 0;
   Future<RequestAuthorProfile> _load() {
-    final future = widget.repository.readRequestAuthor(widget.requestId).then((
-      result,
-    ) {
-      _professional = result.professional != null;
-      return result;
-    });
+    final generation = ++_generation;
+    _loading = true;
+    final future =
+        Future<RequestAuthorProfile>.sync(
+              () => widget.repository.readRequestAuthor(widget.requestId),
+            )
+            .timeout(
+              const Duration(seconds: 20),
+              onTimeout: () {
+                throw const AuthFailure(
+                  'Le chargement du profil prend trop de temps. Réessaie.',
+                );
+              },
+            )
+            .then((result) {
+              if (generation == _generation && !_paused) {
+                _professional = result.professional != null;
+              }
+              return result;
+            })
+            .whenComplete(() {
+              if (generation == _generation) _loading = false;
+            });
     // Timer refreshes can finish before the next frame attaches FutureBuilder.
     future.ignore();
     return future;
   }
 
   void _refresh() {
-    if (mounted) {
+    if (mounted && !_loading && !_paused) {
       setState(() {
         _profile = _load();
       });
@@ -47,10 +65,21 @@ class _RequestAuthorScreenState extends State<RequestAuthorScreen>
   @override
   void initState() {
     super.initState();
+    _profile = _load();
     WidgetsBinding.instance.addObserver(this);
     _lease = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!_paused && !_professional) _refresh();
     });
+  }
+
+  @override
+  void didUpdateWidget(RequestAuthorScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.requestId != widget.requestId ||
+        oldWidget.repository != widget.repository) {
+      _professional = false;
+      _profile = _load();
+    }
   }
 
   @override
@@ -62,6 +91,8 @@ class _RequestAuthorScreenState extends State<RequestAuthorScreen>
       });
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
+      _generation++;
+      _loading = false;
       setState(() => _paused = true);
     }
   }
@@ -69,6 +100,7 @@ class _RequestAuthorScreenState extends State<RequestAuthorScreen>
   @override
   void dispose() {
     _lease?.cancel();
+    _generation++;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -84,7 +116,9 @@ class _RequestAuthorScreenState extends State<RequestAuthorScreen>
           author?.professional != null) {
         final id = author!.professional!.professionalId;
         return ProfessionalShowcaseScreen.recommended(
+          key: ValueKey((widget.requestId, id)),
           professionalId: id,
+          initialProfile: author.professional,
           loadRecommended: () async {
             final current = (await widget.repository.readRequestAuthor(
               widget.requestId,
@@ -96,14 +130,15 @@ class _RequestAuthorScreenState extends State<RequestAuthorScreen>
             }
             return current;
           },
-          checkAvailability: () async {
+          refreshRecommended: () async {
             try {
               final current = await widget.repository.readRequestAuthor(
                 widget.requestId,
               );
-              return current.professional?.professionalId == id;
+              final profile = current.professional;
+              return profile?.professionalId == id ? profile : null;
             } on RequestAuthorUnavailable {
-              return false;
+              return null;
             }
           },
         );

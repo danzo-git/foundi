@@ -549,30 +549,89 @@ class _ProfessionalCardState extends State<_ProfessionalCard> {
   void initState() {
     super.initState();
     widget.onVisibility(true);
+    _resetMedia();
   }
 
   @override
   void dispose() {
+    _mediaTimer?.cancel();
     widget.onVisibility(false);
     super.dispose();
   }
 
-  late Future<ProfessionalMediaManifest> _media = widget.repository
-      .directoryMediaManifest(widget.item.professionalId);
-  @override
-  void didUpdateWidget(_ProfessionalCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!oldWidget.verified && widget.verified) {
-      _media = widget.repository.directoryMediaManifest(
-        widget.item.professionalId,
+  Future<ProfessionalMediaManifest>? _media;
+  final _photos = <String, Future<Uint8List>>{};
+  int _mediaRevision = 0;
+  Timer? _mediaTimer;
+  DateTime? _mediaExpiresAt;
+  void _resetMedia() {
+    _mediaRevision++;
+    _mediaTimer?.cancel();
+    _mediaExpiresAt = null;
+    _photos.clear();
+    _media = widget.verified
+        ? widget.repository.directoryMediaManifest(widget.item.professionalId)
+        : null;
+    final revision = _mediaRevision;
+    if (_media case final future?) {
+      unawaited(
+        future.then<void>(
+          (manifest) {
+            if (!mounted || revision != _mediaRevision || !widget.verified) {
+              return;
+            }
+            final expires = manifest.cacheExpiresAt;
+            if (expires == null) return;
+            _mediaExpiresAt = expires;
+            final remaining = expires.difference(DateTime.now());
+            final delay = remaining.isNegative
+                ? Duration.zero
+                : remaining > const Duration(seconds: 30)
+                ? const Duration(seconds: 30)
+                : remaining;
+            _mediaTimer = Timer(delay, () {
+              if (!mounted || revision != _mediaRevision || !widget.verified) {
+                return;
+              }
+              // A covered directory does not fetch media in the background.
+              // Its next update checks the absolute deadline before reusing it.
+              if (ModalRoute.of(context)?.isCurrent == false ||
+                  WidgetsBinding.instance.lifecycleState ==
+                      AppLifecycleState.paused) {
+                return;
+              }
+              widget.repository.clearDirectoryMedia(widget.item.professionalId);
+              setState(_resetMedia);
+            });
+          },
+          onError: (Object _, StackTrace _) {
+            // FutureBuilder presents the fallback; no orphaned async error.
+          },
+        ),
       );
     }
   }
 
+  @override
+  void didUpdateWidget(_ProfessionalCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.verified != widget.verified ||
+        ((_mediaExpiresAt?.isBefore(DateTime.now()) ?? false) &&
+            ModalRoute.of(context)?.isCurrent != false) ||
+        oldWidget.item.professionalId != widget.item.professionalId ||
+        oldWidget.repository != widget.repository) {
+      _resetMedia();
+    }
+  }
+
   Widget _photo(String id, {bool portrait = false}) => FutureBuilder<Uint8List>(
-    future: widget.repository.readDirectoryThumbnail(
-      widget.item.professionalId,
+    key: ValueKey((_mediaRevision, id)),
+    future: _photos.putIfAbsent(
       id,
+      () => widget.repository.readDirectoryThumbnail(
+        widget.item.professionalId,
+        id,
+      ),
     ),
     builder: (_, snapshot) => snapshot.hasData
         ? Image.memory(
@@ -580,6 +639,9 @@ class _ProfessionalCardState extends State<_ProfessionalCard> {
             fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,
+            cacheWidth:
+                ((portrait ? 58 : 160) * MediaQuery.devicePixelRatioOf(context))
+                    .ceil(),
             errorBuilder: (_, _, _) => const Icon(
               Icons.image_not_supported_outlined,
               color: FoundiUi.muted,
@@ -603,6 +665,7 @@ class _ProfessionalCardState extends State<_ProfessionalCard> {
       onTap: widget.onTap,
       padding: const EdgeInsets.all(14),
       child: FutureBuilder<ProfessionalMediaManifest>(
+        key: ValueKey(_mediaRevision),
         future: _media,
         builder: (context, snapshot) {
           final media = widget.verified ? snapshot.data : null,

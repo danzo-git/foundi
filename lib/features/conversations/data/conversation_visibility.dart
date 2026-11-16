@@ -1,3 +1,56 @@
+import 'dart:async';
+
+/// The absence of a local deletion marker cannot authorize private history.
+/// Each side invalidates its retained state on error, so an update on the other
+/// side cannot restore a conversation whose access has just failed.
+Stream<T?> watchVisibleConversation<T extends Object>({
+  required Stream<T?> conversation,
+  required Stream<({bool exists, bool fromCache})> deletion,
+  required bool Function() isCurrent,
+}) => Stream<T?>.multi((output) {
+  T? value;
+  var received = false, known = false, visible = false, active = true;
+  void publish() {
+    if (active && isCurrent() && known) {
+      if (!visible) {
+        output.add(null);
+      } else if (received) {
+        output.add(value);
+      }
+    }
+  }
+
+  final source = conversation.listen(
+    (next) {
+      value = next;
+      received = true;
+      publish();
+    },
+    onError: (Object error, StackTrace stack) {
+      value = null;
+      received = false;
+      if (active && isCurrent()) output.addError(error, stack);
+    },
+  );
+  final marker = deletion.listen(
+    (next) {
+      if (next.fromCache && !next.exists) return;
+      known = true;
+      visible = !next.exists;
+      publish();
+    },
+    onError: (Object error, StackTrace stack) {
+      known = false;
+      visible = false;
+      if (active && isCurrent()) output.addError(error, stack);
+    },
+  );
+  output.onCancel = () async {
+    active = false;
+    await Future.wait([source.cancel(), marker.cancel()]);
+  };
+});
+
 // Fetch older pages when recent rows have been removed from this user's inbox.
 // A fixed limit followed by filtering would otherwise hide older conversations.
 Future<List<T>> loadVisibleConversationRows<T>({

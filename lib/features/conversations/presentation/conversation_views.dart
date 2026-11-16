@@ -1,5 +1,6 @@
 import 'conversation_card.dart';
 import 'dart:async';
+import '../../../core/initial_event_timeout.dart';
 import '../../auth/domain/account_photo_changes.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../../safety/domain/safety_repository.dart';
@@ -43,9 +44,8 @@ class ConversationListView extends StatefulWidget {
 
 class _ConversationListViewState extends State<ConversationListView> {
   late bool _clients = widget.canShowClients && widget.initialProfessional;
-  Stream<List<Conversation>> _load() => widget.repository.watchConversations(
-    widget.uid,
-    asProfessional: _clients,
+  Stream<List<Conversation>> _load() => withInitialEventTimeout(
+    widget.repository.watchConversations(widget.uid, asProfessional: _clients),
   );
   late Stream<List<Conversation>> _stream = _load();
   @override
@@ -404,8 +404,9 @@ class ConversationView extends StatefulWidget {
 }
 
 class _ConversationViewState extends State<ConversationView> {
-  late Stream<Conversation?> _conversation = widget.repository
-      .watchConversation(widget.id);
+  Stream<Conversation?> _watchConversation() =>
+      withInitialEventTimeout(widget.repository.watchConversation(widget.id));
+  late Stream<Conversation?> _conversation = _watchConversation();
   late TextMessageOutbox _outbox;
   late Stream<MessageBatch> _messages;
   String? error;
@@ -414,12 +415,12 @@ class _ConversationViewState extends State<ConversationView> {
   int _limit = 30;
   Stream<MessageBatch> _watchMessages() {
     final outbox = _outbox;
-    return widget.repository.watchMessages(widget.id, limit: _limit).map((
-      batch,
-    ) {
-      outbox.observe(batch);
-      return batch;
-    });
+    return withInitialEventTimeout(
+      widget.repository.watchMessages(widget.id, limit: _limit).map((batch) {
+        outbox.observe(batch);
+        return batch;
+      }),
+    );
   }
 
   @override
@@ -452,8 +453,13 @@ class _ConversationViewState extends State<ConversationView> {
       _limit = 30;
       _text.clear();
       error = null;
-      _conversation = widget.repository.watchConversation(widget.id);
+      _conversation = _watchConversation();
+      _linkedId = null;
+      _linkedProposal = null;
       _bindOutbox();
+    } else if (oldWidget.proposals != widget.proposals) {
+      _linkedId = null;
+      _linkedProposal = null;
     }
   }
 
@@ -462,7 +468,9 @@ class _ConversationViewState extends State<ConversationView> {
   Stream<Proposal?> _proposalStream(String id) {
     if (_linkedId != id) {
       _linkedId = id;
-      _linkedProposal = widget.proposals!.watchProposal(id);
+      _linkedProposal = withInitialEventTimeout(
+        widget.proposals!.watchProposal(id),
+      );
     }
     return _linkedProposal!;
   }
@@ -645,11 +653,8 @@ class _ConversationViewState extends State<ConversationView> {
             RequestHeading('Discussion privée', onBack: widget.onBack),
             const AuthNotice('Cette discussion est privée ou indisponible.'),
             TextButton(
-              onPressed: () => setState(
-                () => _conversation = widget.repository.watchConversation(
-                  widget.id,
-                ),
-              ),
+              onPressed: () =>
+                  setState(() => _conversation = _watchConversation()),
               child: const Text('Réessayer'),
             ),
           ],

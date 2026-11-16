@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import '../../../core/public_reference_store.dart';
+import '../../../core/in_flight_reads.dart';
+import '../../../core/firebase_read_scope.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../domain/professional_repository.dart';
 import '../domain/professional_showcase.dart';
@@ -16,6 +19,7 @@ class FirebaseProfessionalRepository
            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
+  final _reads = InFlightReads(currentScope: firebaseReadScope);
   @override
   Stream<ProfessionalProfile> watchProfile(String uid) => _db
       .doc('professionalProfiles/$uid')
@@ -37,16 +41,20 @@ class FirebaseProfessionalRepository
             .toList(),
       );
   @override
-  Stream<ProfessionalCatalog> watchCatalog() => _db
-      .doc('referenceData/professionalOnboarding')
-      .snapshots()
-      .map((s) => ProfessionalCatalog.fromMap(s.data()));
+  Stream<ProfessionalCatalog> watchCatalog() => _catalog.watch();
+  late final _catalog = PublicReferenceStore<ProfessionalCatalog>(
+    fetch: () async => ProfessionalCatalog.fromMap(
+      (await _db.doc('referenceData/professionalOnboarding').get()).data(),
+    ),
+    source: () => _db
+        .doc('referenceData/professionalOnboarding')
+        .snapshots()
+        .map((s) => ProfessionalCatalog.fromMap(s.data())),
+  );
   @override
   Future<ProfessionalCatalog> loadCatalog() async {
     try {
-      return ProfessionalCatalog.fromMap(
-        (await _db.doc('referenceData/professionalOnboarding').get()).data(),
-      );
+      return await _catalog.load();
     } on FirebaseException catch (_) {
       throw const AuthFailure(
         'Impossible de charger les références. Vérifie ta connexion puis réessaie.',
@@ -58,15 +66,11 @@ class FirebaseProfessionalRepository
     String name, [
     Map<String, dynamic>? data,
     int retries = 0,
+    Duration timeout = const Duration(seconds: 120),
   ]) async {
     try {
       final result = await _functions
-          .httpsCallable(
-            name,
-            options: HttpsCallableOptions(
-              timeout: const Duration(seconds: 120),
-            ),
-          )
+          .httpsCallable(name, options: HttpsCallableOptions(timeout: timeout))
           .call(data);
       return result.data;
     } on FirebaseFunctionsException catch (e) {
@@ -80,7 +84,7 @@ class FirebaseProfessionalRepository
             'unknown',
           ].contains(e.code)) {
         await Future<void>.delayed(const Duration(seconds: 1));
-        return _invoke(name, data, retries - 1);
+        return _invoke(name, data, retries - 1, timeout);
       }
       throw AuthFailure(switch (e.code) {
         'failed-precondition' ||
@@ -101,17 +105,24 @@ class FirebaseProfessionalRepository
     int retries = 0,
   ]) async {
     await _invoke(name, data, retries);
+    invalidateFirebaseReadScope();
   }
 
   @override
-  Future<ProfessionalShowcase?> readShowcase({String? proposalId}) async {
-    final data = await _invoke('readProfessionalShowcase', {
-      'proposalId': ?proposalId,
-    });
-    return data == null
-        ? null
-        : ProfessionalShowcase.fromMap(Map<String, dynamic>.from(data as Map));
-  }
+  Future<ProfessionalShowcase?> readShowcase({String? proposalId}) =>
+      _reads.run(('showcase', proposalId), () async {
+        final data = await _invoke(
+          'readProfessionalShowcase',
+          {'proposalId': ?proposalId},
+          0,
+          const Duration(seconds: 20),
+        );
+        return data == null
+            ? null
+            : ProfessionalShowcase.fromMap(
+                Map<String, dynamic>.from(data as Map),
+              );
+      });
 
   @override
   Future<ProfessionalShowcase> saveShowcase(
@@ -122,6 +133,7 @@ class FirebaseProfessionalRepository
       profile.toSaveMap(),
       1,
     );
+    invalidateFirebaseReadScope();
     return ProfessionalShowcase.fromMap(Map<String, dynamic>.from(data as Map));
   }
 

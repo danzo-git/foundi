@@ -14,25 +14,41 @@ function createRequestAuthorService({store,auth,avatars,directory}) {
   async function context(viewer,requestId) {
     const request=await store.get(`requests/${requestId}`);
     if(request?.status!=='published'||request.visibility==='direct'||request.directProfessionalId)unavailable();
-    if((await store.get(`safetyContent/request_${requestId}`))?.hidden)unavailable();
-    const mapping=await store.get(`requestOwnership/${requestId}`);
+    const [hidden,mapping]=await Promise.all([
+      store.get(`safetyContent/request_${requestId}`),
+      store.get(`requestOwnership/${requestId}`),
+    ]);
+    if(hidden?.hidden)unavailable();
     let owner=mapping?.ownerUid;
     if(!owner&&Number.isSafeInteger(request.createdAt)) {
       const candidates=await store.legacyOwners(requestId,request.createdAt);
       if(candidates.length===1)owner=candidates[0];
     }
-    if(!internalId(owner)||!await publicProfileAllowed(store,owner))unavailable();
-    if(viewer&&!await contactAllowed(store,viewer,owner))unavailable();
-    let account;try{account=await auth.getUser(owner);}catch(e){if(e.code==='auth/user-not-found')unavailable();throw e;}
+    if(!internalId(owner))unavailable();
+    // Deduplicate identical reads only within this validation phase. The final
+    // context() call has a new reader and must observe revocations afresh.
+    const pending=new Map(),reader={get:path=>{
+      if(!pending.has(path))pending.set(path,store.get(path));
+      return pending.get(path);
+    }};
+    const account=await auth.getUser(owner).catch(e=>{if(e.code==='auth/user-not-found')unavailable();throw e;});
     if(account.disabled||!account.emailVerified)unavailable();
+    const [allowed,contact]=await Promise.all([
+      publicProfileAllowed(reader,owner),
+      viewer?contactAllowed(reader,viewer,owner):true,
+    ]);
+    if(!allowed||!contact)unavailable();
     return {owner,request};
   }
   async function read(viewer,actor,input) {
     if(!input||Object.keys(input).some(k=>k!=='requestId')||typeof input.requestId!=='string'||!idPattern.test(input.requestId))throw new OtpError('invalid-argument','Demande invalide.');
     await store.charge(actor,'profile',Date.now());
     const {owner}=await context(viewer,input.requestId);
-    const avatar=(await avatars.resolve(viewer,[input.requestId])).avatars[input.requestId]||null;
-    const root=await store.get(`professionalProfiles/${owner}`);
+    const [identity,root]=await Promise.all([
+      avatars.resolve(viewer,[input.requestId]),
+      store.get(`professionalProfiles/${owner}`),
+    ]);
+    const avatar=identity.avatars[input.requestId]||null;
     let professional=null;
     if(root?.status==='approved') {
       // Reuse the same sanitization and live eligibility as the public directory.

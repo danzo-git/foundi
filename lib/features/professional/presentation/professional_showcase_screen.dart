@@ -38,9 +38,10 @@ Future<ProfessionalShowcase?> editProfessionalShowcase(
 Future<void> openShowcasePhoto(
   BuildContext context,
   ShowcasePhoto photo,
-  int index,
-) {
-  return showDialog<void>(
+  int index, {
+  ValueChanged<Route<void>>? onRoute,
+}) {
+  final route = DialogRoute<void>(
     context: context,
     builder: (dialogContext) => Dialog(
       clipBehavior: Clip.antiAlias,
@@ -69,6 +70,8 @@ Future<void> openShowcasePhoto(
       ),
     ),
   );
+  onRoute?.call(route);
+  return Navigator.of(context, rootNavigator: true).push(route);
 }
 
 class ProfessionalShowcaseScreen extends StatefulWidget {
@@ -80,6 +83,8 @@ class ProfessionalShowcaseScreen extends StatefulWidget {
     this.onPersonal,
     this.professionalId,
   }) : loadRecommended = null,
+       initialProfile = null,
+       refreshRecommended = null,
        checkAvailability = null,
        onUnavailable = null;
 
@@ -87,6 +92,8 @@ class ProfessionalShowcaseScreen extends StatefulWidget {
     super.key,
     required Future<ProfessionalShowcase> Function() this.loadRecommended,
     this.professionalId,
+    this.initialProfile,
+    this.refreshRecommended,
     this.checkAvailability,
     this.onUnavailable,
   }) : repository = null,
@@ -96,6 +103,10 @@ class ProfessionalShowcaseScreen extends StatefulWidget {
 
   final ProfessionalShowcaseRepository? repository;
   final Future<ProfessionalShowcase> Function()? loadRecommended;
+  // Only an already authorized response from the screen that opened this view.
+  // It is not a shared cache and never substitutes for later availability checks.
+  final ProfessionalShowcase? initialProfile;
+  final Future<ProfessionalShowcase?> Function()? refreshRecommended;
   final String? proposalId;
   final String businessName;
   final VoidCallback? onPersonal;
@@ -111,66 +122,142 @@ class ProfessionalShowcaseScreen extends StatefulWidget {
 class _ProfessionalShowcaseScreenState extends State<ProfessionalShowcaseScreen>
     with WidgetsBindingObserver {
   bool get _own => widget.proposalId == null && widget.loadRecommended == null;
-  late Future<ProfessionalShowcase?> _profile = _load();
+  bool get _hasLease =>
+      widget.checkAvailability != null || widget.refreshRecommended != null;
+  late Future<ProfessionalShowcase?> _profile;
   int _section = 0;
   Timer? _lease;
   Object? _failure;
-  bool _verified = true,
-      _checking = false,
-      _requesting = false,
-      _photoOpen = false;
+  String? _checkFailure;
+  int _session = 0, _loadGeneration = 0, _checkGeneration = 0;
+  bool _paused = false,
+      _loading = false,
+      _loaded = false,
+      _reloadAfterResume = false;
+  bool _verified = true, _checking = false, _requesting = false;
+  Route<void>? _photoRoute;
   @override
   void initState() {
     super.initState();
-    if (widget.checkAvailability != null) {
-      WidgetsBinding.instance.addObserver(this);
-      _lease = Timer.periodic(const Duration(seconds: 30), (_) => _check());
+    _profile = _initialOrLoad();
+    WidgetsBinding.instance.addObserver(this);
+    _lease = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_hasLease) _check();
+    });
+  }
+
+  Future<ProfessionalShowcase?> _initialOrLoad() {
+    final initial = widget.initialProfile;
+    if (initial != null) {
+      _loaded = true;
+      return SynchronousFuture(initial);
+    }
+    return _load();
+  }
+
+  @override
+  void didUpdateWidget(ProfessionalShowcaseScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.professionalId != widget.professionalId ||
+        oldWidget.proposalId != widget.proposalId ||
+        oldWidget.repository != widget.repository) {
+      _session++;
+      _checkGeneration++;
+      _checking = false;
+      _failure = null;
+      _checkFailure = null;
+      _section = 0;
+      _profile = _load();
     }
   }
 
   @override
   void dispose() {
     _lease?.cancel();
+    _session++;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (widget.checkAvailability == null) return;
+    if (!_hasLease && !_loading && !_reloadAfterResume) return;
     if (state == AppLifecycleState.resumed) {
-      _check();
+      _paused = false;
+      if (_reloadAfterResume) {
+        _reloadAfterResume = false;
+        setState(() => _profile = _load());
+      } else if (_hasLease) {
+        _check();
+      }
     } else if (mounted) {
+      _closePhoto();
+      _paused = true;
+      _session++;
+      _checkGeneration++;
+      _reloadAfterResume |= _loading;
+      _loading = false;
+      _checking = false;
       setState(() => _verified = false);
     }
   }
 
   Future<void> _check() async {
     if (_checking ||
+        !_loaded ||
+        _failure != null ||
+        _paused ||
         !mounted ||
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused) {
       return;
     }
     _checking = true;
-    setState(() => _verified = false);
+    _closePhoto();
+    final session = _session, generation = ++_checkGeneration;
+    bool current() =>
+        mounted &&
+        !_paused &&
+        session == _session &&
+        generation == _checkGeneration;
+    setState(() {
+      _verified = false;
+      _checkFailure = null;
+    });
     try {
-      final available = await widget.checkAvailability!();
-      if (!mounted) return;
+      ProfessionalShowcase? refreshed;
+      final refresh = widget.refreshRecommended;
+      final available = refresh == null
+          ? await Future<bool>.sync(
+              widget.checkAvailability!,
+            ).timeout(const Duration(seconds: 20))
+          : (refreshed = await Future<ProfessionalShowcase?>.sync(
+                  refresh,
+                ).timeout(const Duration(seconds: 20))) !=
+                null;
+      if (!mounted || !current()) return;
       if (!available) {
         widget.onUnavailable?.call();
-        if (_photoOpen) Navigator.of(context).pop();
         setState(
           () => _failure = const AuthFailure(
             'Ce professionnel n’est plus disponible.',
           ),
         );
       } else {
-        setState(() => _verified = true);
+        setState(() {
+          if (refreshed != null) _profile = SynchronousFuture(refreshed);
+          _verified = true;
+        });
       }
     } catch (_) {
-      /* A failed lease never leaves a verified badge or an enabled request action. */
+      if (current()) {
+        setState(
+          () => _checkFailure = 'Impossible de vérifier ce profil. Réessaie.',
+        );
+      }
     } finally {
-      _checking = false;
+      if (session == _session && generation == _checkGeneration) {
+        _checking = false;
+      }
     }
   }
 
@@ -178,13 +265,11 @@ class _ProfessionalShowcaseScreenState extends State<ProfessionalShowcaseScreen>
     if (_requesting) return;
     setState(() => _requesting = true);
     try {
-      final current = widget.checkAvailability == null
-          ? profile
-          : await _load();
+      final current = !_hasLease ? profile : await _load();
       if (!mounted || current == null) return;
-      if (widget.checkAvailability != null) {
+      if (_hasLease) {
         setState(() {
-          _profile = Future.value(current);
+          _profile = SynchronousFuture(current);
           _verified = true;
         });
       }
@@ -202,14 +287,46 @@ class _ProfessionalShowcaseScreenState extends State<ProfessionalShowcaseScreen>
     }
   }
 
-  Future<ProfessionalShowcase?> _load() async {
-    final profile =
-        await (widget.loadRecommended?.call() ??
-            widget.repository!.readShowcase(proposalId: widget.proposalId));
-    if (mounted && widget.checkAvailability != null) {
-      setState(() => _verified = true);
-    }
-    return profile;
+  Future<ProfessionalShowcase?> _load() {
+    final session = _session, generation = ++_loadGeneration;
+    _loading = true;
+    _loaded = false;
+    final future =
+        Future<ProfessionalShowcase?>.sync(
+              () =>
+                  widget.loadRecommended?.call() ??
+                  widget.repository!.readShowcase(
+                    proposalId: widget.proposalId,
+                  ),
+            )
+            .timeout(
+              const Duration(seconds: 20),
+              onTimeout: () {
+                throw const AuthFailure(
+                  'Le chargement du profil prend trop de temps. Réessaie.',
+                );
+              },
+            )
+            .then((profile) {
+              if (!mounted ||
+                  _paused ||
+                  session != _session ||
+                  generation != _loadGeneration) {
+                throw const AuthFailure(
+                  'La vérification du profil a été interrompue. Réessaie.',
+                );
+              }
+              _loaded = true;
+              _verified = true;
+              return profile;
+            })
+            .whenComplete(() {
+              if (session == _session && generation == _loadGeneration) {
+                _loading = false;
+              }
+            });
+    future.ignore();
+    return future;
   }
 
   Future<void> _edit(ProfessionalShowcase? profile) async {
@@ -221,17 +338,32 @@ class _ProfessionalShowcaseScreenState extends State<ProfessionalShowcaseScreen>
     );
     if (!mounted || saved == null) return;
     setState(() {
-      _profile = Future.value(saved);
+      _profile = SynchronousFuture(saved);
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Profil professionnel enregistré.')),
     );
   }
 
+  void _closePhoto() {
+    final route = _photoRoute;
+    _photoRoute = null;
+    if (route != null && route.isActive) route.navigator?.removeRoute(route);
+  }
+
   Future<void> _openPhoto(ShowcasePhoto photo, int index) async {
-    _photoOpen = true;
-    await openShowcasePhoto(context, photo, index);
-    _photoOpen = false;
+    if (_hasLease && (!_verified || _paused)) return;
+    Route<void>? opened;
+    try {
+      await openShowcasePhoto(
+        context,
+        photo,
+        index,
+        onRoute: (route) => _photoRoute = opened = route,
+      );
+    } finally {
+      if (identical(_photoRoute, opened)) _photoRoute = null;
+    }
   }
 
   @override
@@ -317,6 +449,7 @@ class _ProfessionalShowcaseScreenState extends State<ProfessionalShowcaseScreen>
             else ...[
               ProfessionalShowcaseHeader(
                 profile: profile,
+                showMedia: !_hasLease || _verified,
                 showVerified: _verified,
                 showBio: true,
                 action:
@@ -383,7 +516,8 @@ class _ProfessionalShowcaseScreenState extends State<ProfessionalShowcaseScreen>
                 ),
               ),
               const SizedBox(height: 14),
-              if (!_verified && widget.checkAvailability != null)
+              if (_checkFailure != null) AuthNotice(_checkFailure),
+              if (!_verified && _hasLease)
                 TextButton.icon(
                   onPressed: _checking ? null : _check,
                   icon: const Icon(Icons.refresh),
@@ -391,6 +525,7 @@ class _ProfessionalShowcaseScreenState extends State<ProfessionalShowcaseScreen>
                 ),
               ProfessionalProfileSection(
                 profile: profile,
+                showMedia: !_hasLease || _verified,
                 section: _section,
                 onPhoto: (index) => _openPhoto(profile.gallery[index], index),
                 onSeeAll: () => setState(() => _section = 2),

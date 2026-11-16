@@ -5,6 +5,7 @@ const { proposalId } = require('./proposal-service');
 const { showcaseProjection } = require('./professional-showcase-service');
 const { directRequestActivity } = require('./direct-request-context');
 const { publicProfileAllowed } = require('./safety-guard');
+const { forEachBounded } = require('./bounded-work');
 
 const pageSize = 20;
 const requestIdPattern = /^[a-zA-Z0-9_-]{20,80}$/;
@@ -48,13 +49,17 @@ function createRequestRespondentsService({ db, auth }) {
           auth.getUsers(ids.map((id) => ({ uid: id }))),
         ]);
         const active = new Set(accounts.users.filter((user) => user.emailVerified && !user.disabled).map((user) => user.uid));
-        for (const record of records) {
-          if (!record.exists || !active.has(record.id)) continue;
-          if (!await publicProfileAllowed({get:async p=>(await db.doc(p).get()).data()},record.id)) continue;
+        // Keep the response ordered while overlapping independent live checks.
+        // Nothing is cached between requests, and the parent is rechecked below.
+        const eligible = new Array(records.length);
+        await forEachBounded(records.map((record, index) => ({ record, index })), 4, async ({ record, index }) => {
+          if (!record.exists || !active.has(record.id)) return;
+          if (!await publicProfileAllowed({get:async p=>(await db.doc(p).get()).data()},record.id)) return;
           const entry = directoryEntry(record.id, record.data(), catalog.data());
-          if (entry) items.push({ professionalId: record.id, name: entry.name,
-            activity: entry.specialties.length ? entry.specialties : entry.categories });
-        }
+          if (entry) eligible[index] = { professionalId: record.id, name: entry.name,
+            activity: entry.specialties.length ? entry.specialties : entry.categories };
+        });
+        items.push(...eligible.filter(Boolean));
       }
       if (page.size && offset + page.size < total) nextOffset = offset + page.size;
     }
@@ -75,20 +80,17 @@ function createRequestRespondentsService({ db, auth }) {
       requirePublished(parent);
       const response = proposal.data();
       if (response?.requestId !== requestId || response.professionalUid !== professionalId) unavailable();
-      const [professional, catalog, showcase] = await Promise.all([
+      const [professional, catalog, showcase, account] = await Promise.all([
         tx.get(db.doc(`professionalProfiles/${professionalId}`)),
         tx.get(db.doc('referenceData/professionalOnboarding')),
         tx.get(db.doc(`professionalProfiles/${professionalId}/showcase/profile`)),
+        auth.getUser(professionalId).catch(error => {
+          if (error.code === 'auth/user-not-found') unavailable();
+          throw error;
+        }),
       ]);
       const entry = professional.exists && directoryEntry(professionalId, professional.data(), catalog.data());
       if (!entry) unavailable();
-      let account;
-      try {
-        account = await auth.getUser(professionalId);
-      } catch (error) {
-        if (error.code === 'auth/user-not-found') unavailable();
-        throw error;
-      }
       if (!account.emailVerified || account.disabled) unavailable();
       if (!await publicProfileAllowed({get:async p=>(await tx.get(db.doc(p))).data()},professionalId)) unavailable();
       return { ...(showcaseProjection(showcase.data()) ?? {

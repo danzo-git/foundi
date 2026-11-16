@@ -1,4 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import '../../../core/firebase_read_scope.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../domain/safety_repository.dart';
 
@@ -73,16 +74,19 @@ class FirebaseSafetyRepository implements SafetyRepository {
   @override
   Future<void> block(SafetyTarget target) async {
     await _call('blockUser', target.toMap());
+    invalidateFirebaseReadScope();
   }
 
   @override
   Future<void> unblockTarget(SafetyTarget target) async {
     await _call('unblockSafetyTarget', target.toMap());
+    invalidateFirebaseReadScope();
   }
 
   @override
   Future<void> unblock(String uid) async {
     await _call('unblockUser', {'blockedUid': uid});
+    invalidateFirebaseReadScope();
   }
 
   @override

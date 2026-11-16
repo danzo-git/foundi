@@ -95,6 +95,7 @@ void main() {
         );
         expect(requestsOpened, 0);
         expect(repo.authorReads, everyElement(sprint.request.id));
+        expect(repo.authorReads, hasLength(1));
         if (professional) {
           expect(find.text('Profil professionnel'), findsOneWidget);
           expect(find.text('Atelier Awa'), findsOneWidget);

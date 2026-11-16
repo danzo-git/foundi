@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../../core/in_flight_reads.dart';
 
 import '../../auth/domain/auth_repository.dart';
 import '../../auth/presentation/auth_widgets.dart';
 import '../../navigation/presentation/space_widgets.dart';
 import '../../professional/presentation/professional_showcase_screen.dart';
+import '../../professional/domain/professional_showcase.dart';
 import '../domain/request_repository.dart';
 
 class RequestRespondents extends StatefulWidget {
@@ -27,6 +30,7 @@ class _RequestRespondentsState extends State<RequestRespondents> {
   RequestRespondentsPage? _page;
   bool _busy = false;
   String? _error;
+  int _generation = 0;
 
   @override
   void initState() {
@@ -34,32 +38,91 @@ class _RequestRespondentsState extends State<RequestRespondents> {
     _load();
   }
 
+  @override
+  void didUpdateWidget(RequestRespondents oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.requestId != widget.requestId ||
+        oldWidget.repository != widget.repository) {
+      _generation++;
+      _items.clear();
+      _page = null;
+      _error = null;
+      _busy = false;
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    super.dispose();
+  }
+
   Future<void> _load() async {
     if (_busy) return;
+    final generation = ++_generation;
+    final repository = widget.repository, requestId = widget.requestId;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final page = await widget.repository.listRequestRespondents(
-        widget.requestId,
-        offset: _page?.nextOffset ?? 0,
-      );
-      if (!mounted) return;
+      var offset = _page?.nextOffset ?? 0, emptyPages = 0;
+      late RequestRespondentsPage page;
+      // Continue a few empty, filtered pages without requiring repeated taps.
+      // One deadline covers the whole operation, including pagination.
+      await (() async {
+        do {
+          page = await repository.listRequestRespondents(
+            requestId,
+            offset: offset,
+          );
+          if (!mounted || generation != _generation) return;
+          emptyPages++;
+          final next = page.nextOffset;
+          if (next != null && next <= offset) {
+            throw StateError('Respondent pagination did not advance');
+          }
+          if (page.items.isNotEmpty || next == null || emptyPages >= 3) break;
+          offset = next;
+        } while (true);
+      })().timeout(const Duration(seconds: 20));
+      if (!mounted || generation != _generation) return;
       setState(() {
         _page = page;
-        _items.addAll(page.items);
+        final seen = _items
+            .map((r) => r.professionalId)
+            .whereType<String>()
+            .toSet();
+        _items.addAll(
+          page.items.where(
+            (r) => r.professionalId == null || seen.add(r.professionalId!),
+          ),
+        );
       });
     } catch (error) {
-      if (mounted) {
+      if (mounted && generation == _generation) {
         setState(() {
-          _error = error is AuthFailure
+          if (error is TimeoutException) {
+            _generation++;
+            _busy = false;
+          }
+          if (error is ReadAccessDenied || error is ReadScopeChanged) {
+            // A refusal can mean the request or an account is no longer public.
+            _items.clear();
+            _page = null;
+          }
+          _error = error is TimeoutException
+              ? 'Le chargement prend trop de temps. Vérifie ta connexion puis réessaie.'
+              : error is ReadScopeChanged
+              ? 'Le compte a changé. Rouvre cette demande.'
+              : error is AuthFailure
               ? error.message
               : 'Impossible de charger les réponses.';
         });
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && generation == _generation) setState(() => _busy = false);
     }
   }
 
@@ -72,14 +135,39 @@ class _RequestRespondentsState extends State<RequestRespondents> {
   void _openProfile(RequestRespondent respondent) {
     final repository = widget.repository;
     final id = respondent.professionalId;
+    final requestId = widget.requestId;
     if (repository is! RequestRespondentProfileRepository || id == null) return;
+    void unavailable() {
+      if (mounted &&
+          widget.repository == repository &&
+          widget.requestId == requestId) {
+        setState(() => _items.removeWhere((row) => row.professionalId == id));
+      }
+    }
+
+    Future<ProfessionalShowcase> load() async {
+      try {
+        return await (repository as RequestRespondentProfileRepository)
+            .readRequestRespondentProfile(requestId, id);
+      } on ReadAccessDenied {
+        unavailable();
+        rethrow;
+      }
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ProfessionalShowcaseScreen.recommended(
           professionalId: id,
-          loadRecommended: () =>
-              (repository as RequestRespondentProfileRepository)
-                  .readRequestRespondentProfile(widget.requestId, id),
+          loadRecommended: load,
+          refreshRecommended: () async {
+            try {
+              return await load();
+            } on ReadAccessDenied {
+              return null;
+            }
+          },
+          onUnavailable: unavailable,
         ),
       ),
     );

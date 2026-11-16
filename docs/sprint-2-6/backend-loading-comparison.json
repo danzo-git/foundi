@@ -1,0 +1,1320 @@
+{
+  "kind": "node_profile_and_respondents_synthetic_io",
+  "baselineRef": "b8546e888d1f2ff7c057a03db0895d78ce461d50",
+  "samplesPerVersion": 21,
+  "warmSamples": 20,
+  "fixtureReadDelayMs": 3,
+  "note": "In-memory stores and timers; counters/JSON bytes are synthetic, not billed Firestore or network measurements. JSON bytes count document values returned by the fake store, not the HTTP response to the app. One synthetic 1 KiB non-public field demonstrates the profile fieldMask. The author fixture delegates avatar resolution and directory projection to one simulated I/O each, so its counters exclude their internal operations.",
+  "actualFirestoreReads": null,
+  "actualNetworkBytes": null,
+  "cases": {
+    "respondents": {
+      "afterSourceSha256": "ef12cf05432b6846595a7159a685e3d0dff2517bb4f0dfdc88a9dc5f41068fb0",
+      "before": {
+        "medianMs": 388.31574999999975,
+        "p95Ms": 406.1187,
+        "records": [
+          {
+            "elapsedMs": 382.73040000000015,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 350.97209999999995,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 381.57320000000027,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 399.24929999999995,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 383.4131000000002,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 350.33389999999963,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 406.1187,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 439.1203999999998,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 391.9826000000003,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 398.77649999999994,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 400.8720000000003,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 382.4974000000002,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 384.64889999999923,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 399.0204999999987,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 383.96220000000176,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 332.4321,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 400.08250000000044,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 400.22599999999875,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 382.3099999999995,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 349.4421000000002,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          },
+          {
+            "elapsedMs": 399.5084000000006,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 3
+          }
+        ]
+      },
+      "after": {
+        "medianMs": 150.3361500000001,
+        "p95Ms": 167.39199999999983,
+        "records": [
+          {
+            "elapsedMs": 141.16180000000008,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 147.25109999999995,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 147.0544,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 134.76170000000002,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 148.73619999999983,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 150.1813000000002,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 170.5700999999999,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 156.29849999999988,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 165.8680000000004,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 167.39199999999983,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 166.66619999999966,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 165.64289999999983,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 149.33030000000053,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 165.9480999999996,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 148.8156999999992,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 166.9966000000004,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 150.0568999999996,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 166.34879999999976,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 149.76540000000023,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 150.49099999999999,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          },
+          {
+            "elapsedMs": 150.1793000000016,
+            "documentReads": 104,
+            "queryCalls": 1,
+            "aggregationCalls": 1,
+            "authCalls": 1,
+            "rateCharges": 0,
+            "returnedBytes": 3234,
+            "permissionPeak": 12
+          }
+        ]
+      },
+      "medianReductionPercent": 61.285075354270276
+    },
+    "directoryProfile": {
+      "afterSourceSha256": "755efb04027d812cf058a8723d6a29d42082f39c5160a981c88d9f6e79f719a0",
+      "before": {
+        "medianMs": 130.85804999999982,
+        "p95Ms": 133.83819999999832,
+        "records": [
+          {
+            "elapsedMs": 134.9977999999992,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 117.99079999999958,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 131.79739999999947,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 132.6913999999997,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 115.66010000000097,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 129.3788000000004,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 101.53960000000006,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 132.78870000000097,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 133.83819999999832,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 129.91870000000017,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 135.11999999999898,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 117.82489999999962,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 133.54029999999875,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 133.47069999999985,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 103.77679999999964,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 110.88379999999961,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 121.83269999999902,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 122.4877000000015,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 133.45670000000064,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 133.4320000000007,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 133.51980000000185,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2769,
+            "permissionPeak": 0
+          }
+        ]
+      },
+      "after": {
+        "medianMs": 96.32545000000027,
+        "p95Ms": 100.02490000000034,
+        "records": [
+          {
+            "elapsedMs": 96.86290000000008,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 100.02490000000034,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 87.40020000000004,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 80.73919999999998,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 101.01620000000003,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 85.19340000000011,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 69.65860000000066,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 97.01620000000003,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 99.6283999999996,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 84.93629999999939,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 99.35620000000017,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 82.8114999999998,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 99.57409999999982,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 99.87530000000152,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 95.63470000000052,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 100.0070999999989,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 83.56180000000131,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 95.32920000000013,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 98.93210000000181,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 84.08220000000074,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 98.54780000000028,
+            "documentReads": 11,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 683,
+            "permissionPeak": 0
+          }
+        ]
+      },
+      "medianReductionPercent": 26.38935854538532
+    },
+    "authorProfile": {
+      "afterSourceSha256": "ed24d45670abaf3b126f74c2e7ac3145c852c4d446b77f85e99b7aa4c0aa6b28",
+      "before": {
+        "medianMs": 266.4138500000008,
+        "p95Ms": 283.29539999999906,
+        "records": [
+          {
+            "elapsedMs": 249.46759999999995,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 264.68229999999676,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 280.623599999999,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 266.41330000000016,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 282.42129999999815,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 267.8241999999991,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 283.0676999999996,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 285.3458000000028,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 266.3365999999987,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 267.8597000000009,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 249.7335000000021,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 249.52230000000054,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 250.31600000000253,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 283.29539999999906,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 266.4144000000015,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 233.6840000000011,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 282.85339999999997,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 254.81210000000283,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 261.1973999999973,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 282.35410000000047,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 251.19970000000103,
+            "documentReads": 26,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          }
+        ]
+      },
+      "after": {
+        "medianMs": 183.6188000000002,
+        "p95Ms": 199.96489999999903,
+        "records": [
+          {
+            "elapsedMs": 201.32890000000043,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 183.6828999999998,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 186.91309999999794,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 199.96489999999903,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 183.78900000000067,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 199.47300000000178,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 183.21540000000095,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 181.46370000000024,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 167.51929999999993,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 181.2006999999976,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 166.01220000000103,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 200.27929999999833,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 165.58620000000155,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 167.61449999999968,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 183.75500000000102,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 184.02280000000246,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 182.4344999999994,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 183.5547000000006,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 199.68659999999727,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 168.1414999999979,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          },
+          {
+            "elapsedMs": 198.38869999999952,
+            "documentReads": 22,
+            "queryCalls": 0,
+            "aggregationCalls": 0,
+            "authCalls": 2,
+            "rateCharges": 1,
+            "returnedBytes": 2512,
+            "permissionPeak": 0
+          }
+        ]
+      },
+      "medianReductionPercent": 31.0776072640369
+    }
+  }
+}
