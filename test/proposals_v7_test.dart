@@ -244,9 +244,7 @@ void main() {
       reset(t);
     },
   );
-  testWidgets('unapproved action and own request never expose sending CTA', (
-    t,
-  ) async {
+  testWidgets('ordinary account can respond; own request cannot', (t) async {
     final repo = Proposals();
     await t.pumpWidget(
       MaterialApp(
@@ -262,9 +260,9 @@ void main() {
       ),
     );
     await t.pumpAndSettle();
-    expect(repo.accessCalls, 0);
-    expect(find.text('Accès professionnel requis'), findsOneWidget);
-    expect(find.text('Faire une proposition'), findsNothing);
+    expect(repo.accessCalls, 1);
+    expect(find.text('Accès professionnel requis'), findsNothing);
+    expect(find.text('Faire une proposition'), findsOneWidget);
     repo.own = true;
     await t.pumpWidget(
       MaterialApp(

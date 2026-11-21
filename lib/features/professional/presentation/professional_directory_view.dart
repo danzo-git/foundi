@@ -1,3 +1,4 @@
+import 'professional_badge.dart';
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -723,11 +724,7 @@ class _ProfessionalCardState extends State<_ProfessionalCard> {
                             padding: EdgeInsets.symmetric(vertical: 4),
                             child: Row(
                               children: [
-                                Icon(
-                                  Icons.verified,
-                                  size: 15,
-                                  color: FoundiUi.green,
-                                ),
+                                ProfessionalBadge(),
                                 SizedBox(width: 4),
                                 Flexible(
                                   child: Text(

@@ -74,13 +74,19 @@ class RespondentRequests extends proposals.Proposals
       total: 2,
       items: [
         if (offset == 0)
-          const RequestRespondent('Atelier Ébène', [
-            'Plomberie',
-          ], professionalId: 'atelier-ebene')
+          const RequestRespondent(
+            'Atelier Ébène',
+            ['Plomberie'],
+            professionalId: 'atelier-ebene',
+            certified: true,
+          )
         else
-          const RequestRespondent('Atelier Acacia', [
-            'Entretien',
-          ], professionalId: 'atelier-acacia'),
+          const RequestRespondent(
+            'Atelier Acacia',
+            ['Entretien'],
+            professionalId: 'atelier-acacia',
+            certified: true,
+          ),
       ],
       canViewProposals: owner,
       nextOffset: offset == 0 ? 20 : null,
@@ -131,7 +137,7 @@ void main() {
         );
         await requests.tapForm(t, find.text(published.title));
         expect(find.text('Réponses à la demande'), findsOneWidget);
-        expect(find.text('2 professionnels ont répondu'), findsOneWidget);
+        expect(find.text('2 personnes ont répondu'), findsOneWidget);
         expect(find.text('Atelier Ébène'), findsOneWidget);
         expect(find.text('Voir mes propositions'), findsNothing);
         expect(find.text(published.description), findsNothing);
@@ -150,7 +156,7 @@ void main() {
         expect(repo.openedProfiles, ['atelier-acacia']);
         await t.binding.handlePopRoute();
         await t.pumpAndSettle();
-        expect(find.text('2 professionnels ont répondu'), findsOneWidget);
+        expect(find.text('2 personnes ont répondu'), findsOneWidget);
         expect(find.text('Atelier Acacia'), findsOneWidget);
         expect(repo.offsets, [0, 20]);
         await requests.tapForm(t, find.text('Atelier Ébène'));
@@ -161,7 +167,7 @@ void main() {
         await t.binding.handlePopRoute();
         await t.pumpAndSettle();
         expect(find.text('Réponses à la demande'), findsNothing);
-        expect(find.text('2 professionnels ont répondu'), findsNothing);
+        expect(find.text('2 personnes ont répondu'), findsNothing);
         expect(t.takeException(), isNull);
       }, guest: true);
     },

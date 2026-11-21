@@ -38,7 +38,10 @@ test('V5/V6 real callables isolate authors, manage lifecycle and gate public opp
     const responses = await Promise.all([owner.publish({ requestId, request }), owner.publish({ requestId, request })]);
     assert.deepEqual(responses[0], responses[1]); assert.equal(responses[0].status, 'published');
     const publicData = (await getDoc(doc(guest.db, 'requests/' + requestId))).data();
-    assert.deepEqual(Object.keys(publicData).sort(), ['categoryId','specialtyId','zoneId','title','description','budget','categoryLabel','specialtyLabel','zoneLabel','status','createdAt'].sort());
+    assert.deepEqual(Object.keys(publicData).sort(), ['categoryId','specialtyId','zoneId','zoneIds','title','description','serviceDetail','budget','categoryLabel','specialtyLabel','zoneLabel','zoneLabels','status','createdAt'].sort());
+    assert.deepEqual(publicData.zoneIds, ['z']);
+    assert.deepEqual(publicData.zoneLabels, ['Zone de test']);
+    assert.equal(publicData.serviceDetail, '');
     const feed = await getDocs(query(collection(guest.db, 'requests'), where('status', '==', 'published'), orderBy('createdAt', 'desc'), limit(30)));
     assert.equal(feed.docs.filter(d => d.id === requestId).length, 1);
     const mine = await getDocs(query(collection(owner.db, `userRequests/${owner.uid}/items`), orderBy('createdAt', 'desc'), limit(50)));

@@ -136,7 +136,7 @@ class FoundiActionBanner extends StatelessWidget {
                           Expanded(
                             child: Text(
                               publish != null
-                                  ? 'Publiez votre demande et recevez des propositions de professionnels vérifiés.'
+                                  ? 'Publiez votre demande et recevez les réponses de la communauté.'
                                   : 'Découvrez des demandes qui correspondent à vos compétences et à vos zones d’intervention.',
                               style: const TextStyle(
                                 color: Colors.white,
@@ -668,7 +668,7 @@ class _RequestListViewState extends State<RequestListView> {
         RequestHeading(
           personal ? 'Mes demandes' : 'Explorer les demandes',
           subtitle: personal
-              ? 'Suivez vos demandes et les propositions des professionnels.'
+              ? 'Suivez vos demandes et les propositions reçues.'
               : 'Les besoins publiés par la communauté.',
         ),
         if (showBanner) ...[

@@ -1,4 +1,6 @@
 import '../../auth/domain/personal_avatar_repository.dart';
+import '../../information/domain/information_repository.dart';
+import '../../information/presentation/information_views.dart';
 import '../../conversations/domain/conversation_repository.dart';
 import '../../conversations/presentation/conversation_views.dart';
 import '../../proposals/domain/proposal_repository.dart';
@@ -447,8 +449,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           'messages' => ConversationListView(
             repository: _conversations!,
             uid: widget.user.id,
-            canShowClients:
-                widget.professional.status != ProfessionalStatus.none,
+            canShowClients: true,
             initialProfessional: professionalSpace,
             onOpen: (id) => _openConversation(id, 'messages'),
             onExplore: () => _showRequests('explore'),
@@ -495,7 +496,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
                 : (proposal) => proposal.clientUid == widget.user.id
                       ? () => _openShowcase(
                           proposalId: proposal.id,
-                          professionalId: proposal.professionalUid,
+                          professionalId: proposal.responderUid,
                         )
                       : null,
             actionsBuilder: _conversations == null
@@ -591,6 +592,7 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
             active: widget.active && _requestPage == 'explore',
             onSectionChanged: () => setState(() {}),
             repository: widget.requestRepository!,
+            informationAccountId: widget.user.id,
             catalog: widget.catalogRepository,
             profile: widget.professional,
             professionalSpace: professionalSpace,
@@ -864,6 +866,12 @@ class _FoundiShellState extends AuthActionState<FoundiShell> {
           error: error,
         )
       : AccountScreen(
+          onInformation: () => openFoundiInformation(
+            context,
+            widget.requestRepository is InformationRepository
+                ? widget.requestRepository as InformationRepository
+                : null,
+          ),
           avatarRepository: widget.auth is PersonalAvatarRepository
               ? widget.auth as PersonalAvatarRepository
               : null,

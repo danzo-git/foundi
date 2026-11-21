@@ -1,7 +1,7 @@
+import 'professional_badge.dart';
 import 'package:flutter/material.dart';
 
 import '../../navigation/presentation/space_widgets.dart';
-import '../../requests/presentation/request_views.dart';
 import '../domain/professional_showcase.dart';
 
 class ProfessionalProfileTabs extends StatelessWidget {
@@ -292,7 +292,13 @@ class ProfessionalShowcaseHeader extends StatelessWidget {
                           ],
                           const SizedBox(height: 8),
                           if (showVerified)
-                            const RequestTag('Professionnel vérifié'),
+                            const Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                ProfessionalBadge(),
+                                Text('Professionnel vérifié'),
+                              ],
+                            ),
                         ],
                       ),
                     ),

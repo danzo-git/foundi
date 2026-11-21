@@ -48,6 +48,74 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1080925286687:android:cab9440b93d892649a002a",
+        "android_client_info": {
+          "package_name": "com.foundi.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1080925286687-0o4mfjlee5vrm8f7mettr408pgfo36kc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.foundi.app",
+            "certificate_hash": "8a49bbeb4423bf7b2353f415b832146fd7b54ef0"
+          }
+        },
+        {
+          "client_id": "1080925286687-btgdq0ql6ofkjorq6ribu296fi018o1f.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.foundi.app",
+            "certificate_hash": "5106d3a41dd01cb9e816e7d52f52932f1d5e54a4"
+          }
+        },
+        {
+          "client_id": "1080925286687-dfsnpcprfflmd49833jl7qmorrqsi8i1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.foundi.app",
+            "certificate_hash": "b955170f582f792e9bb0d8917763ebca361148e3"
+          }
+        },
+        {
+          "client_id": "1080925286687-s7ovr18p575399urstr85vug49falrcu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.foundi.app",
+            "certificate_hash": "cc665b6246a98f549ee782e2e0d684608c82f2dc"
+          }
+        },
+        {
+          "client_id": "1080925286687-rlfusiht86ml2se0amerihhf2d54fh7k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD_qQ8_Fqk1Lj2Q4dcaJrmBQiMjURlKtAg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1080925286687-rlfusiht86ml2se0amerihhf2d54fh7k.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1080925286687-gukb7dolh1b2p11ftfubqcdqsokpfm66.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.foundi"
+              }
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"

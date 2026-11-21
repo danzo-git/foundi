@@ -1,6 +1,7 @@
+const { responderUid, certifiedProfile, responderFields, publicResponderName } = require('./responder');
 const { createHash } = require('node:crypto');
 const { requestRecord } = require('./request-access');
-const { assertContact } = require('./safety-guard');
+const { assertContact, assertActive, publicProfileAllowed } = require('./safety-guard');
 const { OtpError, requireUid } = require('./auth-validation');
 const fail = (code, message) => { throw new OtpError(code, message); };
 const validId = id => typeof id === 'string' && /^[a-zA-Z0-9_-]{20,80}$/.test(id);
@@ -34,11 +35,11 @@ function createProposalService({store,auth,clock=()=>Date.now()}) {
     const request=await requestRecord(tx,requestId);
     const own=await tx.get(`userRequests/${clientUid}/items/${requestId}`);
     const profile=await tx.get(`professionalProfiles/${uid}`);
-    if(profile?.status!=='approved') fail('permission-denied','Un profil professionnel approuvé est requis.');
     if(!request || request.status!=='published' || !own || own.status!=='published' || own.createdAt!==request.createdAt) fail('failed-precondition','Cette demande n’est plus ouverte ou sa propriété ne peut pas être confirmée.');
     if(uid===clientUid) fail('permission-denied','Tu ne peux pas répondre à ta propre demande.');
-    if(request.visibility === 'direct' && (request.directProfessionalId !== uid || request.clientUid !== clientUid)) fail('permission-denied','Cette demande est réservée au professionnel choisi.');
-    return {request,own,profile};
+    if(request.visibility === 'direct' && (request.directProfessionalId !== uid || request.clientUid !== clientUid || !certifiedProfile(profile))) fail('permission-denied','Cette demande est réservée au professionnel choisi.');
+    const user=await tx.get(`users/${uid}`);
+    return {request,own,profile,user};
   }
   async function access(uid,requestId) {
     await verified(uid);const clientUid=await owner(requestId);const id=proposalId(requestId,uid);
@@ -51,12 +52,12 @@ function createProposalService({store,auth,clock=()=>Date.now()}) {
   async function send(uid,requestId,data) {
     await verified(uid);const value=input(data);const clientUid=await owner(requestId);const id=proposalId(requestId,uid);
     return store.transaction(async tx=>{
-      const {request,own,profile}=await context(tx,uid,requestId,clientUid);
+      const {request,own,profile,user}=await context(tx,uid,requestId,clientUid);
       const existing=await tx.get(`proposals/${id}`);
       if(existing) return {id,...existing};
-      const name=profile.businessName;
-      if(typeof name!=='string' || !name.trim()) fail('failed-precondition','Ton nom professionnel est indisponible.');
-      const saved={...value,requestId,professionalUid:uid,clientUid,professionalName:name.trim(),requestTitle:request.title,status:'sent',createdAt:clock()};
+      const name=publicResponderName(user,profile);
+      if(typeof name!=='string' || !name.trim()) fail('failed-precondition','Complète ton nom public dans ton compte avant de répondre.');
+      const saved={...value,requestId,...responderFields(uid,name.trim(),profile),clientUid,requestTitle:request.title,status:'sent',createdAt:clock()};
       tx.set(`proposals/${id}`,saved);
       tx.set(`requestOwnership/${requestId}`,{ownerUid:clientUid});
       tx.set(`userRequests/${clientUid}/items/${requestId}`,{...own,proposalCount:(own.proposalCount||0)+1});
@@ -65,11 +66,13 @@ function createProposalService({store,auth,clock=()=>Date.now()}) {
   }
   async function approval(uid,id) {
     await verified(uid);
+    await assertActive(store,uid);
     if(typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id)) fail('invalid-argument','Proposition invalide.');
     const saved=await store.get(`proposals/${id}`);
-    if(!saved || ![saved.professionalUid,saved.clientUid].includes(uid)) fail('permission-denied','Proposition privée.');
-    const profile=await store.get(`professionalProfiles/${saved.professionalUid}`);
-    return {approved:profile?.status==='approved'};
+    if(!saved || ![responderUid(saved),saved.clientUid].includes(uid)) fail('permission-denied','Proposition privée.');
+    const profile=await store.get(`professionalProfiles/${responderUid(saved)}`);
+    const account=await auth.getUser(responderUid(saved)).catch(e=>{if(e.code==='auth/user-not-found')return null;throw e;});
+    return {approved:certifiedProfile(profile) && !!account?.emailVerified && !account.disabled && await publicProfileAllowed(store,responderUid(saved))};
   }
   return {access,send,approval,owner};
 }

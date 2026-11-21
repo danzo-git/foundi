@@ -1,4 +1,7 @@
+import 'dart:async';
+import 'proposal_certifications.dart';
 import 'package:flutter/material.dart';
+import '../../../core/initial_event_timeout.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../../auth/presentation/auth_widgets.dart';
 import '../../navigation/presentation/space_widgets.dart';
@@ -34,7 +37,7 @@ class ProposalAction extends StatefulWidget {
 }
 
 class _ProposalActionState extends State<ProposalAction> {
-  late Future<ProposalAccess>? _access = widget.approved && !widget.compact
+  late Future<ProposalAccess>? _access = !widget.compact
       ? widget.repository.proposalAccess(widget.request.id)
       : null;
   bool _checking = false;
@@ -44,7 +47,7 @@ class _ProposalActionState extends State<ProposalAction> {
     if (oldWidget.compact != widget.compact ||
         oldWidget.approved != widget.approved ||
         oldWidget.request.id != widget.request.id) {
-      _access = widget.approved && !widget.compact
+      _access = !widget.compact
           ? widget.repository.proposalAccess(widget.request.id)
           : null;
     }
@@ -52,40 +55,12 @@ class _ProposalActionState extends State<ProposalAction> {
 
   Future<void> _reply() async {
     if (_checking) return;
-    if (!widget.approved) {
-      final onProfile = widget.onProfile;
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Accès professionnel requis'),
-          content: const Text(
-            'Seuls les professionnels dont le dossier est approuvé peuvent envoyer une proposition.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Fermer'),
-            ),
-            if (onProfile != null)
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  onProfile();
-                },
-                child: const Text('Voir la vérification professionnelle'),
-              ),
-          ],
-        ),
-      );
-      return;
-    }
     setState(() => _checking = true);
     final id = widget.request.id;
     try {
       final access = await widget.repository.proposalAccess(id);
       if (!mounted ||
           widget.request.id != id ||
-          !widget.approved ||
           widget.request.status != 'published' ||
           widget.ownRequest) {
         return;
@@ -138,28 +113,13 @@ class _ProposalActionState extends State<ProposalAction> {
         icon: Icons.chat_bubble_outline,
         label: 'Répondre',
         busy: _checking,
-        emphasized: widget.emphasized && widget.approved,
+        emphasized: widget.emphasized,
         onPressed:
             _checking ||
                 widget.ownRequest ||
                 widget.request.status != 'published'
             ? null
             : _reply,
-      );
-    }
-    if (!widget.approved) {
-      return Column(
-        children: [
-          const RequestNotice(
-            'Accès professionnel requis',
-            'Seul un dossier professionnel approuvé permet de faire une proposition. Le changement d’espace ne suffit pas.',
-          ),
-          if (widget.onProfile != null)
-            TextButton(
-              onPressed: widget.onProfile,
-              child: const Text('Consulter mon profil'),
-            ),
-        ],
       );
     }
     if (widget.request.status != 'published') {
@@ -434,13 +394,26 @@ class ProposalListView extends StatefulWidget {
 }
 
 class _ProposalListViewState extends State<ProposalListView> {
-  Stream<List<Proposal>> _load() => widget.received
-      ? widget.repository.watchReceivedProposals(
-          widget.uid,
-          requestId: widget.requestId,
-        )
-      : widget.repository.watchSentProposals(widget.uid);
+  Stream<List<Proposal>> _load() => withInitialEventTimeout(
+    widget.received
+        ? widget.repository.watchReceivedProposals(
+            widget.uid,
+            requestId: widget.requestId,
+          )
+        : widget.repository.watchSentProposals(widget.uid),
+  );
   late Stream<List<Proposal>> _stream = _load();
+  @override
+  void didUpdateWidget(ProposalListView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.uid != widget.uid ||
+        oldWidget.received != widget.received ||
+        oldWidget.requestId != widget.requestId ||
+        oldWidget.repository != widget.repository) {
+      _stream = _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(22),
@@ -450,6 +423,12 @@ class _ProposalListViewState extends State<ProposalListView> {
         onBack: widget.onBack,
       ),
       StreamBuilder<List<Proposal>>(
+        key: ValueKey((
+          widget.repository,
+          widget.uid,
+          widget.received,
+          widget.requestId,
+        )),
         stream: _stream,
         builder: (context, s) {
           if (s.hasError) {
@@ -474,56 +453,67 @@ class _ProposalListViewState extends State<ProposalListView> {
               'Les propositions apparaîtront ici lorsqu’elles seront enregistrées.',
             );
           }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final p in s.requireData)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: FoundiPanel(
-                    onTap: () => widget.onOpen(p.id),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        RequestTag(p.statusLabel),
-                        const SizedBox(height: 12),
-                        Text(
-                          p.requestTitle,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 17,
+          return LiveProposalCertifications(
+            repository: widget.repository,
+            ids: s.requireData.map((p) => p.id).toList(),
+            builder: (context, certifications) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final p in s.requireData)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: FoundiPanel(
+                      onTap: () => widget.onOpen(p.id),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          RequestTag(p.statusLabel),
+                          const SizedBox(height: 12),
+                          Text(
+                            p.requestTitle,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 17,
+                            ),
                           ),
-                        ),
-                        if (widget.received) Text(p.professionalName),
-                        const SizedBox(height: 10),
-                        Text(
-                          p.amount == null
-                              ? 'Montant à discuter'
-                              : '${formatFcfa(p.amount!)} FCFA',
-                        ),
-                        if (p.delay.isNotEmpty) Text(p.delay),
-                        Text(
-                          requestDate(
-                            DateTime.fromMillisecondsSinceEpoch(p.createdAt),
+                          if (widget.received)
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(p.responderName),
+                                proposalBadge(certifications, p.id),
+                              ],
+                            ),
+                          const SizedBox(height: 10),
+                          Text(
+                            p.amount == null
+                                ? 'Montant à discuter'
+                                : '${formatFcfa(p.amount!)} FCFA',
                           ),
-                        ),
-                        Text(
-                          p.status == 'rejected'
-                              ? 'Consulter l’historique  ›'
-                              : p.conversationId != null
-                              ? 'Reprendre la discussion  ›'
-                              : 'Voir et discuter  ›',
-                          style: TextStyle(color: FoundiUi.green),
-                        ),
-                      ],
+                          if (p.delay.isNotEmpty) Text(p.delay),
+                          Text(
+                            requestDate(
+                              DateTime.fromMillisecondsSinceEpoch(p.createdAt),
+                            ),
+                          ),
+                          Text(
+                            p.status == 'rejected'
+                                ? 'Consulter l’historique  ›'
+                                : p.conversationId != null
+                                ? 'Reprendre la discussion  ›'
+                                : 'Voir et discuter  ›',
+                            style: TextStyle(color: FoundiUi.green),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
+                const Text(
+                  'Les 30 propositions les plus récentes.',
+                  style: TextStyle(color: FoundiUi.muted, fontSize: 12),
                 ),
-              const Text(
-                'Les 30 propositions les plus récentes.',
-                style: TextStyle(color: FoundiUi.muted, fontSize: 12),
-              ),
-            ],
+              ],
+            ),
           );
         },
       ),
@@ -550,14 +540,27 @@ class ProposalDetailView extends StatefulWidget {
 }
 
 class _ProposalDetailViewState extends State<ProposalDetailView> {
-  late Stream<Proposal?> _stream = widget.repository.watchProposal(widget.id);
+  Stream<Proposal?> _load() =>
+      withInitialEventTimeout(widget.repository.watchProposal(widget.id));
+  late Stream<Proposal?> _stream = _load();
   Future<bool>? _approval;
+  @override
+  void didUpdateWidget(ProposalDetailView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.id != widget.id ||
+        oldWidget.repository != widget.repository) {
+      _stream = _load();
+      _approval = null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(22),
     children: [
       RequestHeading('Détail de la proposition', onBack: widget.onBack),
       StreamBuilder<Proposal?>(
+        key: ValueKey((widget.repository, widget.id)),
         stream: _stream,
         builder: (context, s) {
           if (s.hasError ||
@@ -565,12 +568,14 @@ class _ProposalDetailViewState extends State<ProposalDetailView> {
                   s.data == null)) {
             return Column(
               children: [
-                const AuthNotice(
-                  'Cette proposition est privée ou indisponible.',
+                AuthNotice(
+                  s.error is TimeoutException
+                      ? 'Le chargement prend trop de temps. Vérifie ta connexion puis réessaie.'
+                      : 'Cette proposition est privée ou indisponible.',
                 ),
                 TextButton(
                   onPressed: () => setState(() {
-                    _stream = widget.repository.watchProposal(widget.id);
+                    _stream = _load();
                     _approval = null;
                   }),
                   child: const Text('Réessayer'),
@@ -583,6 +588,14 @@ class _ProposalDetailViewState extends State<ProposalDetailView> {
           }
           final p = s.requireData!;
           final openProfile = widget.professionalProfileAction?.call(p);
+          Widget profileButton() => Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: openProfile,
+              icon: const Icon(Icons.person_outline),
+              label: const Text('Voir le profil professionnel'),
+            ),
+          );
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -597,33 +610,41 @@ class _ProposalDetailViewState extends State<ProposalDetailView> {
               ),
               const SizedBox(height: 18),
               Text(
-                p.professionalName,
+                p.responderName,
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              FutureBuilder<bool>(
-                future: _approval ??= widget.repository.proposalApproval(
-                  widget.id,
-                ),
-                builder: (context, a) => Text(
-                  a.data == true
-                      ? 'Professionnel actuellement approuvé'
-                      : a.hasError
-                      ? 'Vérification actuelle indisponible'
-                      : a.hasData
-                      ? 'Vérification professionnelle non active'
-                      : 'Vérification en cours…',
-                  style: const TextStyle(color: FoundiUi.muted, fontSize: 12),
-                ),
-              ),
-              if (openProfile != null)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: openProfile,
-                    icon: const Icon(Icons.person_outline),
-                    label: const Text('Voir le profil professionnel'),
+              if (widget.repository is ProposalCertificationRepository)
+                LiveProposalCertifications(
+                  repository: widget.repository,
+                  ids: [p.id],
+                  builder: (context, values) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      proposalBadge(values, p.id),
+                      if (values[p.id] == true && openProfile != null)
+                        profileButton(),
+                    ],
+                  ),
+                )
+              else
+                FutureBuilder<bool>(
+                  future: _approval ??= widget.repository
+                      .proposalApproval(widget.id)
+                      .timeout(const Duration(seconds: 20)),
+                  builder: (context, a) => Text(
+                    a.data == true
+                        ? 'Professionnel actuellement approuvé'
+                        : a.hasError
+                        ? 'Vérification actuelle indisponible'
+                        : a.hasData
+                        ? 'Vérification professionnelle non active'
+                        : 'Vérification en cours…',
+                    style: const TextStyle(color: FoundiUi.muted, fontSize: 12),
                   ),
                 ),
+              if (widget.repository is! ProposalCertificationRepository &&
+                  openProfile != null)
+                profileButton(),
               const SizedBox(height: 20),
               FoundiPanel(
                 child: Column(

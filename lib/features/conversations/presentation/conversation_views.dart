@@ -1,5 +1,6 @@
 import 'conversation_card.dart';
 import 'dart:async';
+import '../../proposals/presentation/proposal_certifications.dart';
 import '../../../core/initial_event_timeout.dart';
 import '../../auth/domain/account_photo_changes.dart';
 import '../../auth/domain/auth_repository.dart';
@@ -78,7 +79,7 @@ class _ConversationListViewState extends State<ConversationListView> {
           ),
           if (widget.canShowClients)
             ChoiceChip(
-              label: const Text('Mes clients'),
+              label: const Text('Mes réponses'),
               selected: _clients,
               onSelected: (_) => setState(() {
                 _clients = true;
@@ -303,7 +304,7 @@ class _ConversationCardsState extends State<_ConversationCards>
   late Future<Map<String, String>> _avatars = _load();
   late final StreamSubscription<void> _changes;
   String _identity(_ConversationCards value) =>
-      '${value.uid}:${value.conversations.map((c) => '${c.id}/${c.clientUid}/${c.professionalUid}').join(',')}';
+      '${value.uid}:${value.conversations.map((c) => '${c.id}/${c.clientUid}/${c.responderUid}').join(',')}';
   Future<Map<String, String>> _load() async {
     final repository = widget.repository;
     if (repository is! ConversationAvatarRepository) return {};
@@ -574,7 +575,7 @@ class _ConversationViewState extends State<ConversationView> {
   void _send(Conversation chat) {
     final clock = Stopwatch()..start();
     if (!chat.active ||
-        ![chat.clientUid, chat.professionalUid].contains(widget.uid)) {
+        ![chat.clientUid, chat.responderUid].contains(widget.uid)) {
       return;
     }
     final text = _text.text.trim();
@@ -601,45 +602,54 @@ class _ConversationViewState extends State<ConversationView> {
       child: RequestContent(c.requestSnapshot),
     ),
   );
-  void _decisions(Conversation chat) => showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (_) => SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: StreamBuilder<Proposal?>(
-        stream: widget.proposals!.watchProposal(chat.selectedProposalId),
-        builder: (context, s) => s.hasError
-            ? const AuthNotice('Proposition indisponible.')
-            : !s.hasData
-            ? const LinearProgressIndicator()
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    s.data!.professionalName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20,
+  void _decisions(Conversation chat) {
+    final stream = withInitialEventTimeout(
+      widget.proposals!.watchProposal(chat.selectedProposalId),
+    );
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: StreamBuilder<Proposal?>(
+          stream: stream,
+          builder: (context, s) =>
+              (s.hasError ||
+                  (s.connectionState != ConnectionState.waiting &&
+                      s.data == null))
+              ? const AuthNotice('Proposition indisponible.')
+              : !s.hasData
+              ? const LinearProgressIndicator()
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      s.data!.responderName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
+                      ),
                     ),
-                  ),
-                  RequestTag(s.data!.statusLabel),
-                  if (s.data!.status == 'rejected')
-                    const Text(
-                      'Proposition refusée. Discussion archivée en lecture seule.',
+                    RequestTag(s.data!.statusLabel),
+                    if (s.data!.status == 'rejected')
+                      const Text(
+                        'Proposition refusée. Discussion archivée en lecture seule.',
+                      ),
+                    ProposalDecisionPanel(
+                      key: ValueKey(s.data!.id),
+                      repository: widget.repository,
+                      proposal: s.data!,
+                      uid: widget.uid,
                     ),
-                  ProposalDecisionPanel(
-                    key: ValueKey(s.data!.id),
-                    repository: widget.repository,
-                    proposal: s.data!,
-                    uid: widget.uid,
-                  ),
-                ],
-              ),
+                  ],
+                ),
+        ),
       ),
-    ),
-  );
+    );
+  }
+
   @override
   Widget build(BuildContext context) => StreamBuilder<Conversation?>(
     key: ValueKey((widget.uid, widget.id, widget.repository)),
@@ -668,7 +678,7 @@ class _ConversationViewState extends State<ConversationView> {
           final canSend =
               chat.active &&
               safety?.contactAllowed == true &&
-              [chat.clientUid, chat.professionalUid].contains(widget.uid);
+              [chat.clientUid, chat.responderUid].contains(widget.uid);
           return LayoutBuilder(
             builder: (context, constraints) {
               final keyboardOpen =
@@ -711,6 +721,15 @@ class _ConversationViewState extends State<ConversationView> {
                       child: RequestHeading(
                         chat.otherName(widget.uid),
                         onBack: widget.onBack,
+                      ),
+                    ),
+                  if (widget.proposals != null && widget.uid == chat.clientUid)
+                    LiveProposalCertifications(
+                      repository: widget.proposals!,
+                      ids: [chat.selectedProposalId],
+                      builder: (context, values) => Align(
+                        alignment: Alignment.centerLeft,
+                        child: proposalBadge(values, chat.selectedProposalId),
                       ),
                     ),
                   Align(

@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../../auth/presentation/personal_avatar.dart';
+import '../../professional/presentation/professional_badge.dart';
 import 'package:flutter/material.dart';
 import '../../../core/in_flight_reads.dart';
 
@@ -25,17 +27,96 @@ class RequestRespondents extends StatefulWidget {
   State<RequestRespondents> createState() => _RequestRespondentsState();
 }
 
-class _RequestRespondentsState extends State<RequestRespondents> {
+class _RequestRespondentsState extends State<RequestRespondents>
+    with WidgetsBindingObserver {
   final _items = <RequestRespondent>[];
   RequestRespondentsPage? _page;
   bool _busy = false;
   String? _error;
   int _generation = 0;
+  Timer? _refreshTimer;
+  bool _refreshing = false, _fresh = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      if (ModalRoute.of(context)?.isCurrent != false) _refresh();
+    });
     _load();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+    } else {
+      setState(() => _fresh = false);
+    }
+  }
+
+  Future<void> _refresh() async {
+    if (_busy || _refreshing || _page == null) return;
+    if (WidgetsBinding.instance.lifecycleState != null &&
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    final generation = ++_generation;
+    final lastOffset = _page?.nextOffset;
+    var expired = false;
+    _refreshing = true;
+    setState(() => _fresh = false);
+    try {
+      final rows = <RequestRespondent>[];
+      var offset = 0;
+      late RequestRespondentsPage page;
+      await (() async {
+        do {
+          page = await widget.repository.listRequestRespondents(
+            widget.requestId,
+            offset: offset,
+          );
+          if (expired || !mounted || generation != _generation) return;
+          rows.addAll(page.items);
+          final next = page.nextOffset;
+          if (next == null || (lastOffset != null && next >= lastOffset)) break;
+          if (next <= offset) {
+            throw StateError('Respondent pagination did not advance');
+          }
+          offset = next;
+        } while (true);
+      })().timeout(const Duration(seconds: 20));
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        final seen = <String>{};
+        _items
+          ..clear()
+          ..addAll(
+            rows.where(
+              (row) => row.identity == null || seen.add(row.identity!),
+            ),
+          );
+        _page = page;
+        _fresh =
+            WidgetsBinding.instance.lifecycleState == null ||
+            WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+      });
+    } catch (error) {
+      // Keep names stable on transient errors, but never retain stale badges.
+      if (mounted &&
+          generation == _generation &&
+          (error is ReadAccessDenied || error is ReadScopeChanged)) {
+        setState(() {
+          _items.clear();
+          _page = null;
+          _error = 'Ces réponses ne sont plus accessibles.';
+        });
+      }
+    } finally {
+      expired = true;
+      _refreshing = false;
+    }
   }
 
   @override
@@ -48,6 +129,7 @@ class _RequestRespondentsState extends State<RequestRespondents> {
       _page = null;
       _error = null;
       _busy = false;
+      _refreshing = false;
       _load();
     }
   }
@@ -55,11 +137,13 @@ class _RequestRespondentsState extends State<RequestRespondents> {
   @override
   void dispose() {
     _generation++;
+    _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   Future<void> _load() async {
-    if (_busy) return;
+    if (_busy || _refreshing) return;
     final generation = ++_generation;
     final repository = widget.repository, requestId = widget.requestId;
     setState(() {
@@ -90,14 +174,12 @@ class _RequestRespondentsState extends State<RequestRespondents> {
       if (!mounted || generation != _generation) return;
       setState(() {
         _page = page;
-        final seen = _items
-            .map((r) => r.professionalId)
-            .whereType<String>()
-            .toSet();
+        _fresh =
+            WidgetsBinding.instance.lifecycleState == null ||
+            WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+        final seen = _items.map((r) => r.identity).whereType<String>().toSet();
         _items.addAll(
-          page.items.where(
-            (r) => r.professionalId == null || seen.add(r.professionalId!),
-          ),
+          page.items.where((r) => r.identity == null || seen.add(r.identity!)),
         );
       });
     } catch (error) {
@@ -128,8 +210,8 @@ class _RequestRespondentsState extends State<RequestRespondents> {
 
   String _heading(int total) => switch (total) {
     0 => 'Aucune réponse pour le moment',
-    1 => '1 professionnel a répondu',
-    _ => '$total professionnels ont répondu',
+    1 => '1 personne a répondu',
+    _ => '$total personnes ont répondu',
   };
 
   void _openProfile(RequestRespondent respondent) {
@@ -203,6 +285,7 @@ class _RequestRespondentsState extends State<RequestRespondents> {
                       spacing: 6,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
+                        _RespondentAvatar(respondent: respondent),
                         if (respondent.professionalId != null &&
                             widget.repository
                                 is RequestRespondentProfileRepository)
@@ -228,12 +311,8 @@ class _RequestRespondentsState extends State<RequestRespondents> {
                             respondent.name,
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
-                        const Icon(
-                          Icons.verified,
-                          color: FoundiUi.green,
-                          size: 19,
-                          semanticLabel: 'Professionnel vérifié',
-                        ),
+                        if (_fresh && respondent.certified)
+                          const ProfessionalBadge(),
                       ],
                     ),
                     if (respondent.activity.isNotEmpty) ...[
@@ -274,4 +353,30 @@ class _RequestRespondentsState extends State<RequestRespondents> {
       ],
     );
   }
+}
+
+class _RespondentAvatar extends StatefulWidget {
+  const _RespondentAvatar({required this.respondent});
+  final RequestRespondent respondent;
+  @override
+  State<_RespondentAvatar> createState() => _RespondentAvatarState();
+}
+
+class _RespondentAvatarState extends State<_RespondentAvatar> {
+  late Stream<String?> _version = Stream.value(widget.respondent.avatarVersion);
+  @override
+  void didUpdateWidget(_RespondentAvatar old) {
+    super.didUpdateWidget(old);
+    if (old.respondent.avatarKey != widget.respondent.avatarKey ||
+        old.respondent.avatarVersion != widget.respondent.avatarVersion) {
+      _version = Stream.value(widget.respondent.avatarVersion);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PersonalAvatar(
+    publicId: widget.respondent.avatarKey,
+    versionStream: _version,
+    size: 32,
+  );
 }

@@ -18,16 +18,20 @@ class Proposal {
     required this.id,
     required this.requestId,
     required this.requestTitle,
-    required this.professionalUid,
+    this.professionalUid = '',
+    String? responderUid,
     required this.clientUid,
-    required this.professionalName,
+    this.professionalName = '',
+    String? responderName,
     required this.description,
     required this.status,
     required this.createdAt,
     this.amount,
     this.delay = '',
     this.conversationId,
-  });
+  }) : responderUid = responderUid ?? professionalUid,
+       responderName = responderName ?? professionalName;
+  final String responderUid, responderName;
   final String? conversationId;
   final String id,
       requestId,
@@ -46,9 +50,13 @@ class Proposal {
     conversationId: m['conversationId'] as String?,
     requestId: m['requestId'] as String,
     requestTitle: m['requestTitle'] as String,
-    professionalUid: m['professionalUid'] as String,
+    professionalUid: m['professionalUid'] as String? ?? '',
+    responderUid: (m['responderUid'] ?? m['professionalUid']) as String? ?? '',
     clientUid: m['clientUid'] as String,
-    professionalName: m['professionalName'] as String,
+    professionalName: m['professionalName'] as String? ?? '',
+    responderName:
+        (m['responderName'] ?? m['professionalName']) as String? ??
+        'Utilisateur Foundi',
     description: m['description'] as String,
     status: m['status'] as String,
     createdAt: (m['createdAt'] as num).toInt(),
@@ -82,4 +90,8 @@ abstract interface class ProposalRepository {
   });
   Stream<Proposal?> watchProposal(String id);
   Future<bool> proposalApproval(String id);
+}
+
+abstract interface class ProposalCertificationRepository {
+  Future<Map<String, bool>> resolveCertifications(List<String> ids);
 }

@@ -216,7 +216,18 @@ abstract interface class RequestManagementRepository {
 }
 
 class RequestRespondent {
-  const RequestRespondent(this.name, this.activity, {this.professionalId});
+  const RequestRespondent(
+    this.name,
+    this.activity, {
+    this.professionalId,
+    this.responderId,
+    this.certified = false,
+    this.avatarKey,
+    this.avatarVersion,
+  });
+  final String? responderId, avatarKey, avatarVersion;
+  final bool certified;
+  String? get identity => responderId ?? professionalId;
   final String name;
   final List<String> activity;
   final String? professionalId;

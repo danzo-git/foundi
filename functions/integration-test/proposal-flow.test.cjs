@@ -21,7 +21,7 @@ test('V7 real callables: private owner resolution, send exactly once, received/s
   const proposal={description:'Je peux résoudre ce besoin avec un devis détaillé.',amount:45000,delay:'Sous trois jours'};
   await assert.rejects(guest.call('sendProposal',{requestId,proposal}),e=>e.code==='functions/unauthenticated');
   await assert.rejects(a.call('sendProposal',{requestId,proposal}),e=>e.code==='functions/permission-denied');
-  await db.doc('professionalProfiles/'+c.uid).update({status:'pending'});await assert.rejects(c.call('sendProposal',{requestId,proposal}),e=>e.code==='functions/permission-denied');
+  await db.doc('professionalProfiles/'+c.uid).update({status:'pending'});assert.equal((await c.call('proposalAccess',{requestId})).canSend,true);
   assert.equal((await b.call('proposalAccess',{requestId})).canSend,true);
   const [x,y]=await Promise.all([b.call('sendProposal',{requestId,proposal}),b.call('sendProposal',{requestId,proposal})]);assert.equal(x.id,y.id);assert.equal(x.status,'sent');assert.equal(x.clientUid,a.uid);
   assert.equal((await b.call('proposalAccess',{requestId})).proposalId,x.id);

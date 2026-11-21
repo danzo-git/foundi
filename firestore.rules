@@ -1,6 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // All announcements, including archives, pass through server-side expiry and admin checks.
+    match /foundiAnnouncements/{id} { allow read, write: if false; }
+    match /foundiInformation/{id} { allow read, write: if false; }
+    match /foundiInformationAudit/{id} { allow read, write: if false; }
     match /publicPersonalAvatars/{id} { allow get: if true; allow list, write: if false; }
     match /personalAvatars/{id} { allow read, write: if false; }
     match /personalAvatarLookup/{id} { allow read, write: if false; }
@@ -150,13 +154,13 @@ service cloud.firestore {
     match /requestPhotoFiles/{id} { allow read, write: if false; }
     match /requestPhotoLimits/{id} { allow read, write: if false; }
     match /proposals/{id} {
-      function party() { return activeAccount() && (resource.data.professionalUid == request.auth.uid || resource.data.clientUid == request.auth.uid); }
+      function party() { return activeAccount() && (resource.data.get('responderUid', '') == request.auth.uid || resource.data.get('professionalUid', '') == request.auth.uid || resource.data.clientUid == request.auth.uid); }
       allow get: if party();
       allow list: if party() && request.query.limit != null && request.query.limit <= 50;
       allow write: if false;
     }
     match /conversations/{id} {
-      function participant(data) { return activeAccount() && (data.clientUid == request.auth.uid || data.professionalUid == request.auth.uid); }
+      function participant(data) { return activeAccount() && (data.clientUid == request.auth.uid || data.get('responderUid', '') == request.auth.uid || data.get('professionalUid', '') == request.auth.uid); }
       allow get: if participant(resource.data);
       allow list: if participant(resource.data) && request.query.limit != null && request.query.limit <= 50;
       allow write: if false;

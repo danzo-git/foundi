@@ -86,7 +86,7 @@ class _SelectionPanelState extends AuthActionState<SelectionPanel> {
                 widget.proposal.status != 'rejected')
               FilledButton(
                 onPressed: busy ? null : _discuss,
-                child: const Text('Discuter avec ce professionnel'),
+                child: const Text('Discuter avec ce répondant'),
               ),
             if (widget.proposal.status == 'rejected')
               const RequestNotice(
@@ -166,8 +166,8 @@ class _ProposalDecisionPanelState
               action == 'reject'
                   ? 'Seule cette proposition sera refusée. Sa discussion sera archivée en lecture seule et son historique conservé.'
                   : replacing
-                  ? 'La proposition de ${request.retainedProfessionalName ?? 'l’autre professionnel'} ne sera plus retenue. Vous retiendrez celle de ${widget.proposal.professionalName}. Les autres discussions seront conservées.'
-                  : 'Vous retenez la proposition de ${widget.proposal.professionalName}. Ce choix n’est ni un contrat signé, ni un paiement, ni une prestation terminée.',
+                  ? 'La proposition de ${request.retainedProfessionalName ?? 'l’autre répondant'} ne sera plus retenue. Vous retiendrez celle de ${widget.proposal.responderName}. Les autres discussions seront conservées.'
+                  : 'Vous retenez la proposition de ${widget.proposal.responderName}. Ce choix n’est ni un contrat signé, ni un paiement, ni une prestation terminée.',
             ),
             const SizedBox(height: 16),
             const Text(

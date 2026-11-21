@@ -227,7 +227,9 @@ void main() {
       expect(r.personalizedCalls, 1);
       expect(find.text('Demande own'), findsNothing);
       expect(find.text('Demande house'), findsNothing);
+      await t.scrollUntilVisible(find.text('Demande other-zone'), 250);
       expect(find.text('Demande other-zone'), findsOneWidget);
+      await t.scrollUntilVisible(find.text('Filtres'), -250);
       await t.tap(find.text('Filtres'));
       await t.pumpAndSettle();
       await select(t, 'Catégorie', 'Automobile');

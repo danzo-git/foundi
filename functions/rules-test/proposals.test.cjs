@@ -7,6 +7,14 @@ const proposal={requestId:'RequestIdentifier00001',professionalUid:'pro',clientU
 before(async()=>{if(!enabled)return;env=await initializeTestEnvironment({projectId:'demo-foundi-proposals',firestore:{rules:fs.readFileSync(path.join(__dirname,'../../firestore.rules'),'utf8')}});await env.withSecurityRulesDisabled(async c=>{await setDoc(doc(c.firestore(),'proposals/proposal'),proposal);await setDoc(doc(c.firestore(),'requestOwnership/RequestIdentifier00001'),{ownerUid:'client'});});});
 after(async()=>{if(env)await env.cleanup();});
 const check=(name,fn)=>test(name,{skip:!enabled},fn);
+check('neutral responders have participant-only access and cannot forge identity or certification',async()=>{
+ await env.withSecurityRulesDisabled(async c=>{const data={...proposal,responderUid:'ordinary',responderName:'Awa'};delete data.professionalUid;delete data.professionalName;await setDoc(doc(c.firestore(),'proposals/ordinary'),data);});
+ for(const uid of ['ordinary','client']){const db=env.authenticatedContext(uid).firestore();await assertSucceeds(getDoc(doc(db,'proposals/ordinary')));}
+ const own=env.authenticatedContext('ordinary').firestore();
+ await assertSucceeds(getDocs(query(collection(own,'proposals'),where('responderUid','==','ordinary'),orderBy('createdAt','desc'),limit(30))));
+ await assertFails(updateDoc(doc(own,'proposals/ordinary'),{professionalUid:'ordinary',certified:true}));
+ for(const uid of ['pro','third'])await assertFails(getDoc(doc(env.authenticatedContext(uid).firestore(),'proposals/ordinary')));
+});
 check('only proposal parties can get or query their private proposals, including after suspension or request closure',async()=>{
  for(const uid of ['pro','client']){const db=env.authenticatedContext(uid).firestore();await assertSucceeds(getDoc(doc(db,'proposals/proposal')));await assertSucceeds(getDocs(query(collection(db,'proposals'),where(uid==='pro'?'professionalUid':'clientUid','==',uid),orderBy('createdAt','desc'),limit(30))));}
  for(const c of [env.unauthenticatedContext(),env.authenticatedContext('third'),env.authenticatedContext('another-pro')])await assertFails(getDoc(doc(c.firestore(),'proposals/proposal')));

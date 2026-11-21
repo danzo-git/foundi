@@ -1,4 +1,6 @@
 import '../../auth/domain/account_photo_changes.dart';
+import '../../information/domain/information_repository.dart';
+import '../../information/data/firebase_information_repository.dart';
 import '../domain/request_author_repository.dart';
 import 'dart:async';
 import '../../conversations/domain/conversation_repository.dart';
@@ -25,6 +27,7 @@ import 'firebase_request_photo_repository.dart';
 class FirebaseRequestRepository
     implements
         RequestRepository,
+        InformationRepository,
         RequestAuthorRepository,
         ProfessionalDirectoryRepository,
         DirectRequestRepository,
@@ -37,6 +40,7 @@ class FirebaseRequestRepository
         OpportunityRepository,
         ExplorerRepository,
         ProposalRepository,
+        ProposalCertificationRepository,
         ConversationRepository,
         ConversationAvatarRepository,
         ConversationDeletionRepository,
@@ -98,6 +102,14 @@ class FirebaseRequestRepository
 
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
+  late final _information = FirebaseInformationRepository(_functions);
+  @override
+  Future<List<FoundiInformation>> listInformation({
+    bool featuredOnly = false,
+  }) => _information.listInformation(featuredOnly: featuredOnly);
+  @override
+  Future<FoundiInformation> readInformation(String id) =>
+      _information.readInformation(id);
   final _reads = InFlightReads(currentScope: firebaseReadScope);
   late final _directory = FirebaseProfessionalDirectoryRepository(_functions);
   @override
@@ -172,7 +184,7 @@ class FirebaseRequestRepository
     String messageId,
     String phoneNumber,
   ) => _rich.shareContact(conversationId, messageId, phoneNumber);
-  late final ProposalRepository _proposals = FirebaseProposalRepository(
+  late final FirebaseProposalRepository _proposals = FirebaseProposalRepository(
     _db,
     _functions,
   );
@@ -247,6 +259,9 @@ class FirebaseRequestRepository
   Stream<Proposal?> watchProposal(String id) => _proposals.watchProposal(id);
   @override
   Future<bool> proposalApproval(String id) => _proposals.proposalApproval(id);
+  @override
+  Future<Map<String, bool>> resolveCertifications(List<String> ids) =>
+      _proposals.resolveCertifications(ids);
   @override
   Stream<List<FoundiRequest>> watchExplore({
     ExplorerFilters filters = const ExplorerFilters(),
@@ -612,6 +627,10 @@ class FirebaseRequestRepository
               item['name'] as String,
               List<String>.from(item['activity'] as List),
               professionalId: item['professionalId'] as String?,
+              responderId: item['responderId'] as String?,
+              certified: item['certified'] == true,
+              avatarKey: item['avatarKey'] as String?,
+              avatarVersion: item['avatarVersion'] as String?,
             ),
         ],
       );

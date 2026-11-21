@@ -1,3 +1,10 @@
 {
-  "projects": { "default": "foundi-7c837" }
+  "projects": { "default": "foundi-7c837" },
+  "targets": {
+    "foundi-7c837": {
+      "hosting": {
+        "admin": ["foundi-7c837"]
+      }
+    }
+  }
 }

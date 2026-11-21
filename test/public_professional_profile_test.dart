@@ -250,7 +250,7 @@ void main() {
         expect(repo.proposalReads, 0);
         await t.pageBack();
         await t.pumpAndSettle();
-        expect(find.text('1 professionnel a répondu'), findsOneWidget);
+        expect(find.text('1 personne a répondu'), findsOneWidget);
         expect(find.text(profile.name), findsOneWidget);
         expect(t.takeException(), isNull);
       }, guest: true);

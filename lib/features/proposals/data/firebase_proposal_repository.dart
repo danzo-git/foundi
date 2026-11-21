@@ -3,7 +3,8 @@ import 'package:cloud_functions/cloud_functions.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../domain/proposal_repository.dart';
 
-class FirebaseProposalRepository implements ProposalRepository {
+class FirebaseProposalRepository
+    implements ProposalRepository, ProposalCertificationRepository {
   FirebaseProposalRepository(this._db, this._functions);
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
@@ -43,7 +44,14 @@ class FirebaseProposalRepository implements ProposalRepository {
       .map((s) => s.docs.map((d) => Proposal.fromMap(d.id, d.data())).toList());
   @override
   Stream<List<Proposal>> watchSentProposals(String uid) => _watch(
-    _db.collection('proposals').where('professionalUid', isEqualTo: uid),
+    _db
+        .collection('proposals')
+        .where(
+          Filter.or(
+            Filter('responderUid', isEqualTo: uid),
+            Filter('professionalUid', isEqualTo: uid),
+          ),
+        ),
   );
   @override
   Stream<List<Proposal>> watchReceivedProposals(
@@ -64,6 +72,16 @@ class FirebaseProposalRepository implements ProposalRepository {
       .doc('proposals/$id')
       .snapshots()
       .map((s) => s.exists ? Proposal.fromMap(s.id, s.data()!) : null);
+  @override
+  Future<Map<String, bool>> resolveCertifications(List<String> ids) async {
+    final result = await _call('resolveProposalCertifications', {
+      'proposalIds': ids,
+    });
+    return Map<String, dynamic>.from(
+      result['certifications'] as Map,
+    ).map((key, value) => MapEntry(key, value == true));
+  }
+
   @override
   Future<bool> proposalApproval(String id) async =>
       (await _call('proposalApproval', {'proposalId': id}))['approved'] == true;

@@ -130,7 +130,14 @@ class FirebaseConversationRepository
   }) => Stream<List<Conversation>>.multi((controller) {
     final query = _db
         .collection('conversations')
-        .where(asProfessional ? 'professionalUid' : 'clientUid', isEqualTo: uid)
+        .where(
+          asProfessional
+              ? Filter.or(
+                  Filter('responderUid', isEqualTo: uid),
+                  Filter('professionalUid', isEqualTo: uid),
+                )
+              : Filter('clientUid', isEqualTo: uid),
+        )
         .orderBy('updatedAt', descending: true)
         .orderBy(FieldPath.documentId, descending: true);
     List<QueryDocumentSnapshot<Map<String, dynamic>>>? first;

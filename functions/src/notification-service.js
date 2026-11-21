@@ -1,3 +1,4 @@
+const { responderUid, publicResponderName } = require('./responder');
 const {requestZones} = require('./request-matching');
 const {FieldValue, FieldPath} = require('firebase-admin/firestore');
 const {OtpError, requireUid} = require('./auth-validation');
@@ -71,11 +72,11 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       resourceType:'directRequest', resourceId:id, requestId:id, occurredAt:current.createdAt});
   }
   async function proposal(id, value) {
-    if (value.status !== 'sent' || value.clientUid === value.professionalUid) return;
+    if (value.status !== 'sent' || value.clientUid === responderUid(value)) return;
     const own = (await doc(`userRequests/${value.clientUid}/items/${value.requestId}`).get()).data();
     if (!own) return;
     return emit({eventId:`proposals/${id}/created`,type:'proposal.created',recipientUid:value.clientUid,
-      actorUid:value.professionalUid,resourceType:'requestProposals',resourceId:value.requestId,requestId:value.requestId,proposalId:id,occurredAt:value.createdAt});
+      actorUid:responderUid(value),resourceType:'requestProposals',resourceId:value.requestId,requestId:value.requestId,proposalId:id,occurredAt:value.createdAt});
   }
   async function availableRecommendation(value) {
     if (!value || ![value.ownerUid, value.requestId, value.professionalUid].every(internalId)) return false;
@@ -115,22 +116,22 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     const type = decisionType(audit);
     if (!type || audit.actorUid !== uid || audit.requestId !== requestId) return;
     const p = (await doc(`proposals/${audit.proposalId}`).get()).data();
-    if (!p || p.clientUid !== uid || p.requestId !== requestId || p.professionalUid === uid) return;
-    return emit({eventId:`decisions/${uid}/${requestId}/${id}`,type,recipientUid:p.professionalUid,actorUid:uid,
+    if (!p || p.clientUid !== uid || p.requestId !== requestId || responderUid(p) === uid) return;
+    return emit({eventId:`decisions/${uid}/${requestId}/${id}`,type,recipientUid:responderUid(p),actorUid:uid,
       resourceType:'proposal',resourceId:audit.proposalId,requestId,proposalId:audit.proposalId,conversationId:p.conversationId || null,occurredAt:audit.createdAt});
   }
   async function conversation(id, chat) {
-    if (chat.status !== 'active' || chat.clientUid === chat.professionalUid) return;
+    if (chat.status !== 'active' || chat.clientUid === responderUid(chat)) return;
     const p = (await doc(`proposals/${chat.proposalId || chat.selectedProposalId}`).get()).data();
-    if (!p || p.conversationId !== id || p.requestId !== chat.requestId || p.clientUid !== chat.clientUid || p.professionalUid !== chat.professionalUid) return;
-    return emit({eventId:`conversations/${id}/created`,type:'conversation.opened',recipientUid:chat.professionalUid,actorUid:chat.clientUid,
+    if (!p || p.conversationId !== id || p.requestId !== chat.requestId || p.clientUid !== chat.clientUid || responderUid(p) !== responderUid(chat)) return;
+    return emit({eventId:`conversations/${id}/created`,type:'conversation.opened',recipientUid:responderUid(chat),actorUid:chat.clientUid,
       resourceType:'conversation',resourceId:id,requestId:chat.requestId,conversationId:id,occurredAt:chat.createdAt});
   }
   async function message(conversationId, id, value, {push=true, legacyRead=false}={}) {
     if (!['text','image','pdf','contact'].includes(value.type || 'text')) return;
     const chat = (await doc(`conversations/${conversationId}`).get()).data();
-    if (!chat || ![chat.clientUid,chat.professionalUid].includes(value.senderUid) || chat.clientUid === chat.professionalUid) return;
-    const uid=value.senderUid===chat.clientUid?chat.professionalUid:chat.clientUid;
+    if (!chat || ![chat.clientUid,responderUid(chat)].includes(value.senderUid) || chat.clientUid === responderUid(chat)) return;
+    const uid=value.senderUid===chat.clientUid?responderUid(chat):chat.clientUid;
     if(!await active(uid) || !Number.isSafeInteger(value.createdAt))return;
     const eventId=`messages/${conversationId}/${id}`, eventKey=key(eventId,uid);
     const receipt=doc(`users/${uid}/messageInbox/${eventKey}`), cursor=doc(`users/${uid}/messageReads/${conversationId}`);
@@ -155,7 +156,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     const through=await db.runTransaction(async tx=>{
       const [chat,target,read]=await Promise.all([tx.get(doc(`conversations/${conversationId}`)),tx.get(doc(`conversations/${conversationId}/messages/${messageId}`)),tx.get(cursor)]);
       const c=chat.data(),m=target.data();
-      if(!c || ![c.clientUid,c.professionalUid].includes(uid))fail('permission-denied','Cette discussion est privée.');
+      if(!c || ![c.clientUid,responderUid(c)].includes(uid))fail('permission-denied','Cette discussion est privée.');
       if(!m || !Number.isSafeInteger(m.createdAt))fail('not-found','Message indisponible.');
       const at=Math.max(m.createdAt,read.data()?.readThroughAt || 0);
       tx.set(cursor,{readThroughAt:at,updatedAt:clock()},{merge:true});
@@ -227,7 +228,7 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       if (job.cursor) query = query.startAfter(job.cursor);
       const rows = await query.limit(PAGE).get();
       for (const row of rows.docs) {
-        const value = row.data(), uid = job.kind === 'matched' ? row.id : value.professionalUid;
+        const value = row.data(), uid = job.kind === 'matched' ? row.id : responderUid(value);
         if (uid === job.uid || (job.kind === 'closed' && value.clientUid !== job.uid)) continue;
         if (job.kind === 'matched' && (current?.status !== 'published' || !matchesOpportunity(current,value,reference) ||
             (await doc(`userRequests/${uid}/items/${job.requestId}`).get()).exists)) continue;
@@ -297,12 +298,12 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
         break;
       case 'conversation': {
         const c=(await doc(`conversations/${resourceId}`).get()).data();
-        if(!c || ![c.clientUid,c.professionalUid].includes(uid) || (await doc(`users/${uid}/deletedConversations/${resourceId}`).get()).exists)return unavailable();
+        if(!c || ![c.clientUid,responderUid(c)].includes(uid) || (await doc(`users/${uid}/deletedConversations/${resourceId}`).get()).exists)return unavailable();
         break;
       }
       case 'proposal': {
         const p=(await doc(`proposals/${resourceId}`).get()).data();
-        if(!p || ![p.clientUid,p.professionalUid].includes(uid))return unavailable();
+        if(!p || ![p.clientUid,responderUid(p)].includes(uid))return unavailable();
         break;
       }
       case 'requestProposals':
@@ -322,7 +323,9 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
       }
       case 'participatedRequest': {
         // A closed public request cannot be read. Use the recipient's private proposal/history.
-        const p=await db.collection('proposals').where('requestId','==',resourceId).where('professionalUid','==',uid).limit(1).get();
+        const {Filter}=require('firebase-admin/firestore');
+        const p=await db.collection('proposals').where('requestId','==',resourceId)
+          .where(Filter.or(Filter.where('responderUid','==',uid),Filter.where('professionalUid','==',uid))).limit(1).get();
         if(p.empty)return unavailable();
         return {resourceType:'proposal',resourceId:p.docs[0].id};
       }
@@ -339,15 +342,15 @@ function createNotificationService({db, auth, messaging, clock = Date.now, logge
     if(!internalId(job.conversationId)||!internalId(job.messageId))fail('not-found','Message indisponible.');
     const [chat,message]=await Promise.all([doc(`conversations/${job.conversationId}`).get(),doc(`conversations/${job.conversationId}/messages/${job.messageId}`).get()]);
     const c=chat.data(),m=message.data();
-    if(!c||!m||![c.clientUid,c.professionalUid].includes(job.uid)||![c.clientUid,c.professionalUid].includes(m.senderUid)||m.senderUid===job.uid)fail('not-found','Cette discussion est privée.');
+    if(!c||!m||![c.clientUid,responderUid(c)].includes(job.uid)||![c.clientUid,responderUid(c)].includes(m.senderUid)||m.senderUid===job.uid)fail('not-found','Cette discussion est privée.');
     if((await doc(`users/${job.uid}/deletedConversations/${job.conversationId}`).get()).exists)fail('not-found','Conversation supprimée de ta messagerie.');
     return {chat:c,message:m};
   }
   async function pushContent(job,prefs) {
     if(job.kind!=='chat_message')return {title:job.title,body:job.bodySafe};
     const {chat,message}=await messageContext(job);
-    const [user,pro]=await Promise.all([doc(`users/${message.senderUid}`).get(),message.senderUid===chat.professionalUid?doc(`professionalProfiles/${message.senderUid}`).get():Promise.resolve(null)]);
-    return messagePushContent(message,pro?.data()?.businessName || user.data()?.fullName,prefs?.messagePreview===true);
+    const [user,pro]=await Promise.all([doc(`users/${message.senderUid}`).get(),message.senderUid===responderUid(chat)?doc(`professionalProfiles/${message.senderUid}`).get():Promise.resolve(null)]);
+    return messagePushContent(message,publicResponderName(user.data(),pro?.data()),prefs?.messagePreview===true);
   }
   async function deliver(id) {
     const ref=doc(`notificationOutbox/${id}`);

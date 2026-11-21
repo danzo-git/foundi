@@ -247,7 +247,7 @@ void main() {
               .first,
         );
         await requests.tapForm(t, find.text('3 réponses'));
-        expect(find.text('3 professionnels ont répondu'), findsOneWidget);
+        expect(find.text('3 personnes ont répondu'), findsOneWidget);
         expect(find.text('Atelier Ébène'), findsOneWidget);
         expect(find.text('Voir mes propositions'), findsNothing);
         await t.binding.handlePopRoute();
@@ -302,9 +302,10 @@ void main() {
         expect(repo.mutations, [true, false, false]);
 
         await requests.tapForm(t, footerAction('Répondre'));
-        expect(find.text('Accès professionnel requis'), findsOneWidget);
-        expect(repo.accessCalls, 0);
-        await fixtures.tap(t, find.text('Fermer'));
+        expect(find.text('Faire une proposition'), findsOneWidget);
+        expect(repo.accessCalls, 1);
+        await t.binding.handlePopRoute();
+        await t.pumpAndSettle();
         await requests.tapForm(t, footerAction('Recommander'));
         await t.enterText(
           find.widgetWithText(TextField, 'Nom, spécialité ou zone'),

@@ -12,9 +12,11 @@ class Conversation {
     required this.requestId,
     required this.selectedProposalId,
     required this.clientUid,
-    required this.professionalUid,
+    this.professionalUid = '',
+    String? responderUid,
     required this.clientName,
-    required this.professionalName,
+    this.professionalName = '',
+    String? responderName,
     required this.requestTitle,
     required this.status,
     required this.updatedAt,
@@ -22,7 +24,9 @@ class Conversation {
     this.lastMessagePreview = '',
     this.proposalStatus = 'discussing',
     this.archivedReason,
-  });
+  }) : responderUid = responderUid ?? professionalUid,
+       responderName = responderName ?? professionalName;
+  final String responderUid, responderName;
   final String id,
       requestId,
       selectedProposalId,
@@ -37,30 +41,34 @@ class Conversation {
   final String proposalStatus;
   final String? archivedReason;
   final FoundiRequest requestSnapshot;
-  String otherName(String uid) =>
-      uid == clientUid ? professionalName : clientName;
+  String otherName(String uid) => uid == clientUid ? responderName : clientName;
   bool get active => status == 'active';
-  factory Conversation.fromMap(String id, Map<String, dynamic> m) =>
-      Conversation(
-        id: id,
-        requestId: m['requestId'] as String,
-        selectedProposalId:
-            (m['proposalId'] ?? m['selectedProposalId']) as String,
-        clientUid: m['clientUid'] as String,
-        professionalUid: m['professionalUid'] as String,
-        clientName: m['clientName'] as String,
-        professionalName: m['professionalName'] as String,
-        requestTitle: m['requestTitle'] as String,
-        status: m['status'] as String,
-        proposalStatus: m['proposalStatus'] as String? ?? 'discussing',
-        archivedReason: m['archivedReason'] as String?,
-        updatedAt: (m['updatedAt'] as num).toInt(),
-        lastMessagePreview: m['lastMessagePreview'] as String? ?? '',
-        requestSnapshot: FoundiRequest.fromMap(
-          m['requestId'] as String,
-          Map<String, dynamic>.from(m['requestSnapshot']),
-        ),
-      );
+  factory Conversation.fromMap(
+    String id,
+    Map<String, dynamic> m,
+  ) => Conversation(
+    id: id,
+    requestId: m['requestId'] as String,
+    selectedProposalId: (m['proposalId'] ?? m['selectedProposalId']) as String,
+    clientUid: m['clientUid'] as String,
+    professionalUid: m['professionalUid'] as String? ?? '',
+    responderUid: (m['responderUid'] ?? m['professionalUid']) as String? ?? '',
+    clientName: m['clientName'] as String,
+    professionalName: m['professionalName'] as String? ?? '',
+    responderName:
+        (m['responderName'] ?? m['professionalName']) as String? ??
+        'Utilisateur Foundi',
+    requestTitle: m['requestTitle'] as String,
+    status: m['status'] as String,
+    proposalStatus: m['proposalStatus'] as String? ?? 'discussing',
+    archivedReason: m['archivedReason'] as String?,
+    updatedAt: (m['updatedAt'] as num).toInt(),
+    lastMessagePreview: m['lastMessagePreview'] as String? ?? '',
+    requestSnapshot: FoundiRequest.fromMap(
+      m['requestId'] as String,
+      Map<String, dynamic>.from(m['requestSnapshot']),
+    ),
+  );
 }
 
 class ConversationMessage {

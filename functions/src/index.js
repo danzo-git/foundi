@@ -287,6 +287,13 @@ const { createCatalogService } = require('./catalog-service');
 
 const catalogService = createCatalogService({ store, auth: getAuth() });
 
+const {createInformationService, createInformationStore} = require('./information-service');
+const informationService = createInformationService({auth: getAuth(), store: createInformationStore(getFirestore())});
+exports.listFoundiInformation = onCall(proOptions, r => informationService.list(r.data));
+exports.readFoundiInformation = onCall(proOptions, r => informationService.read(r.data));
+exports.listAdminFoundiInformation = onCall(proOptions, r => informationService.listAdmin(r.auth?.uid, r.auth?.token, r.data));
+exports.saveFoundiInformation = onCall(proOptions, r => informationService.save(r.auth?.uid, r.auth?.token, r.data));
+
 exports.updateProfessionalCatalog = onCall(proOptions, r => handle(() => catalogService.update(r.auth?.uid, r.auth?.token, r.data)));
 
 
@@ -393,6 +400,8 @@ const proposals = createProposalService({auth:getAuth(),store:{...store,
 exports.proposalAccess=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.access(r.auth?.uid,r.data?.requestId)));
 exports.sendProposal=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.send(r.auth?.uid,r.data?.requestId,r.data?.proposal)));
 exports.proposalApproval=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposals.approval(r.auth?.uid,r.data?.proposalId)));
+const proposalCertifications = require('./proposal-certification-service').createProposalCertificationService({db:getFirestore(),auth:getAuth()});
+exports.resolveProposalCertifications=onCall({region:'europe-west1',maxInstances:3,timeoutSeconds:60},r=>handle(()=>proposalCertifications.resolve(r.auth?.uid,r.data)));
 
 const { createRequestRespondentsService } = require('./request-respondents-service');
 const requestRespondents = createRequestRespondentsService({ db: getFirestore(), auth: getAuth() });

@@ -29,6 +29,7 @@ class AccountScreen extends StatefulWidget {
     this.onSentProposals,
     this.onReceivedProposals,
     this.onDirectRequests,
+    this.onInformation,
   });
   final FoundiUser user;
   final PersonalAvatarRepository? avatarRepository;
@@ -40,6 +41,7 @@ class AccountScreen extends StatefulWidget {
   final VoidCallback onSpaces, onDossier, onActivity, onPersonal;
   final VoidCallback? onRequests, onSentProposals, onReceivedProposals;
   final VoidCallback? onDirectRequests;
+  final VoidCallback? onInformation;
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
@@ -549,6 +551,18 @@ class _AccountScreenState extends State<AccountScreen> {
               ],
               const SizedBox(height: 14),
               _management(),
+              if (widget.onInformation != null) ...[
+                const SizedBox(height: 14),
+                FoundiPanel(
+                  padding: EdgeInsets.zero,
+                  child: _row(
+                    Icons.campaign_outlined,
+                    'Informations Foundi',
+                    'Nouveautés, conseils et explication du badge',
+                    widget.onInformation!,
+                  ),
+                ),
+              ],
               if (widget.onReceivedProposals != null ||
                   (widget.onSentProposals != null &&
                       !widget.professionalSpace) ||

@@ -1,5 +1,7 @@
 import '../../auth/domain/account_photo_changes.dart';
 import 'dart:async';
+import '../../information/domain/information_repository.dart';
+import '../../information/presentation/information_views.dart';
 import 'package:flutter/material.dart';
 import '../../professional/domain/professional_repository.dart';
 import '../../professional/domain/professional_directory.dart';
@@ -26,8 +28,10 @@ class ExplorerView extends StatefulWidget {
     this.footerBuilder,
     this.active = true,
     this.onSectionChanged,
+    this.informationAccountId = 'guest',
   });
   final RequestRepository repository;
+  final String informationAccountId;
   final ProfessionalRepository? catalog;
   final ProfessionalProfile profile;
   final bool professionalSpace, initialForMe;
@@ -43,6 +47,15 @@ class ExplorerView extends StatefulWidget {
 
 class ExplorerViewState extends State<ExplorerView> {
   bool _professionals = false, _hasDirectory = false;
+  final _informationKey = GlobalKey();
+  Widget _information() => ExplorerInformation(
+    key: _informationKey,
+    repository: widget.repository is InformationRepository
+        ? widget.repository as InformationRepository
+        : null,
+    accountId: widget.informationAccountId,
+    active: widget.active,
+  );
   bool get showingProfessionals => _professionals;
   bool handleBack() {
     if (!_professionals) return false;
@@ -591,6 +604,7 @@ class ExplorerViewState extends State<ExplorerView> {
               child: const Text('Publier une demande'),
             ),
         ],
+        if (_items.isEmpty) _information(),
         if (!_forMe && !_busy && _error == null)
           const Text(
             'Les 30 demandes les plus récentes pour ces critères.',
@@ -601,7 +615,7 @@ class ExplorerViewState extends State<ExplorerView> {
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Text('${_items.length} résultat(s) affiché(s)'),
           ),
-        for (final request in _items)
+        for (final (index, request) in _items.indexed) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: RequestCard(
@@ -638,6 +652,8 @@ class ExplorerViewState extends State<ExplorerView> {
                   : null,
             ),
           ),
+          if (index == 0) _information(),
+        ],
         if (!_busy && _cursor != null)
           OutlinedButton(
             onPressed: _load,

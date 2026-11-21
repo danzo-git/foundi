@@ -228,7 +228,7 @@ void main() {
               ),
       );
       await screen(t, panel());
-      await tap(t, find.text('Discuter avec ce professionnel'));
+      await tap(t, find.text('Discuter avec ce répondant'));
       expect(find.text('Ouvrir la discussion'), findsOneWidget);
       expect(r.ownedRequest.status, 'published');
       await tap(t, find.text('Retenir cette proposition'));
@@ -237,7 +237,7 @@ void main() {
       expect(r.chats[r.offer.id]!.active, isTrue);
       selected = r.second.id;
       await screen(t, panel());
-      await tap(t, find.text('Discuter avec ce professionnel'));
+      await tap(t, find.text('Discuter avec ce répondant'));
       expect(r.chats.length, 2);
       await tap(t, find.text('Retenir cette proposition'));
       expect(

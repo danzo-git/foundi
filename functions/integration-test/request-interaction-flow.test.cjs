@@ -101,8 +101,17 @@ test('request interactions enforce Firebase rules, real ownership, notifications
       assert.deepEqual(await counts(), { likeCount: 0, recommendationCount: 0, responseCount: 0 });
       await assert.rejects(getDoc(doc(alice.firestore, proPath)), { code: 'permission-denied' });
 
-      const directory = await alice.call('searchRecommendationProfessionals', { requestId, query: 'ebene' });
-      assert.deepEqual(directory.items, [{ id: pro.uid, name: 'Atelier Ébène', categories: ['Services'],
+      // Earlier integration fixtures leave other approved profiles in this
+      // emulator. Search filters each bounded page; the test must follow its
+      // cursor rather than depending on random Auth UID ordering.
+      const directoryItems = [];
+      let directoryCursor = null;
+      do {
+        const directory = await alice.call('searchRecommendationProfessionals', { requestId, query: 'ebene', cursor: directoryCursor });
+        directoryItems.push(...directory.items);
+        directoryCursor = directory.cursor;
+      } while (directoryCursor);
+      assert.deepEqual(directoryItems, [{ id: pro.uid, name: 'Atelier Ébène', categories: ['Services'],
         specialties: ['Réparation'], zones: ['Bingerville'] }]);
       const recommend = (user, professionalId) => user.call('recommendRequestProfessional', { requestId, professionalId });
       await assert.rejects(recommend(guest, pro.uid), { code: 'functions/unauthenticated' });
@@ -142,7 +151,7 @@ test('request interactions enforce Firebase rules, real ownership, notifications
       assert.equal((await db.doc(`requestPublicationLimits/${alice.uid}`).get()).exists, false);
       assert.deepEqual((await publicRef.get()).data(), request);
       assert.equal((await pro.call('proposalAccess', { requestId })).canSend, true);
-      await assert.rejects(pending.call('proposalAccess', { requestId }), { code: 'functions/permission-denied' });
+      assert.equal((await pending.call('proposalAccess', { requestId })).canSend, true);
 
       const respondents = (user, data = {}) => user.call('listRequestRespondents', { requestId, ...data });
       assert.deepEqual(await respondents(guest), { items: [], total: 0, nextOffset: null, canViewProposals: false });
@@ -170,8 +179,8 @@ test('request interactions enforce Firebase rules, real ownership, notifications
       assert.equal(publicPage.canViewProposals, false);
       assert.equal(publicPage.nextOffset, null);
       assert.deepEqual(publicPage.items.sort((a, b) => a.name.localeCompare(b.name)), [
-        { professionalId: secondPro.uid, name: 'Atelier Acacia', activity: ['Réparation'] },
-        { professionalId: pro.uid, name: 'Atelier Ébène', activity: ['Réparation'] },
+        { responderId: secondPro.uid, certified: true, avatarKey: null, avatarVersion: null, professionalId: secondPro.uid, name: 'Atelier Acacia', activity: ['Réparation'] },
+        { responderId: pro.uid, certified: true, avatarKey: null, avatarVersion: null, professionalId: pro.uid, name: 'Atelier Ébène', activity: ['Réparation'] },
       ]);
       const publicProfile = (professionalId, id = requestId) => guest.call('readRequestRespondentProfile', {
         requestId: id, professionalId,
@@ -212,7 +221,7 @@ test('request interactions enforce Firebase rules, real ownership, notifications
         assert.equal((await getDoc(doc(viewer.firestore, `proposals/${firstProposal.id}`))).data().amount, offer.amount);
       }
       await db.doc(proPath).update({ status: 'suspended' });
-      assert.deepEqual((await respondents(guest)).items, [{ professionalId: secondPro.uid, name: 'Atelier Acacia', activity: ['Réparation'] }]);
+      assert.equal((await respondents(guest)).items.find(row => row.responderId === pro.uid).certified, false);
       await assert.rejects(publicProfile(pro.uid), { code: 'functions/not-found' });
       await assert.rejects(read(owner), { code: 'functions/not-found' });
       await assert.rejects(owner.call('resolveNotification', { notificationId: noteId }), { code: 'functions/not-found' });

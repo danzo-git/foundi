@@ -237,13 +237,13 @@ void main() {
       r.failSelection = true;
       await tap(
         t,
-        find.widgetWithText(FilledButton, 'Discuter avec ce professionnel'),
+        find.widgetWithText(FilledButton, 'Discuter avec ce répondant'),
       );
       expect(find.text('Choix non confirmé. Réessaie.'), findsOneWidget);
       r.failSelection = false;
       await tap(
         t,
-        find.widgetWithText(FilledButton, 'Discuter avec ce professionnel'),
+        find.widgetWithText(FilledButton, 'Discuter avec ce répondant'),
       );
       expect(r.ownedRequest.status, 'published');
       await t.enterText(
@@ -263,7 +263,7 @@ void main() {
       expect(find.text('Bonjour depuis le professionnel'), findsOneWidget);
       await tap(t, find.byKey(const ValueKey('nav-2')));
       expect(find.text('Vos échanges'), findsOneWidget);
-      expect(find.text('Mes clients'), findsNothing);
+      expect(find.text('Mes réponses'), findsOneWidget);
       await tap(t, find.text('Atelier choisi'));
       expect(find.text('Bonjour depuis le client'), findsOneWidget);
       await tap(t, find.text('Voir la demande liée'));
@@ -277,7 +277,7 @@ void main() {
     },
   );
   testWidgets(
-    'empty context and dual role list use Mes recherches and Mes clients',
+    'empty context and dual role list use Mes recherches and Mes réponses',
     (t) async {
       await large(t);
       final r = Conversations();
@@ -306,7 +306,7 @@ void main() {
       r.events.add(null);
       await t.pumpAndSettle();
       expect(find.text('Atelier choisi'), findsOneWidget);
-      await tap(t, find.text('Mes clients'));
+      await tap(t, find.text('Mes réponses'));
       expect(find.text('Client Foundi'), findsOneWidget);
       await tap(t, find.text('Client Foundi'));
       expect(opened, 'RequestIdentifier00002');

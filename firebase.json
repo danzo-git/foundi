@@ -4,7 +4,7 @@
       "android": {
         "default": {
           "projectId": "foundi-7c837",
-          "appId": "1:1080925286687:android:513c1aca87e9c9259a002a",
+          "appId": "1:1080925286687:android:cab9440b93d892649a002a",
           "fileOutput": "android/app/google-services.json"
         }
       },
@@ -12,7 +12,7 @@
         "lib/firebase_options.dart": {
           "projectId": "foundi-7c837",
           "configurations": {
-            "android": "1:1080925286687:android:513c1aca87e9c9259a002a",
+            "android": "1:1080925286687:android:cab9440b93d892649a002a",
             "ios": "1:1080925286687:ios:9cb983305deac41a9a002a",
             "web": "1:1080925286687:web:6ede2902402f3beb9a002a"
           }

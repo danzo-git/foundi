@@ -1,22 +1,23 @@
+const { responderUid, responderName, certifiedProfile, responderFields } = require('./responder');
 const { OtpError, requireUid } = require('./auth-validation');
 const { requestRecord } = require('./request-access');
-const { contactAllowed, assertContact } = require('./safety-guard');
+const { contactAllowed, assertContact, assertActive } = require('./safety-guard');
 const fail = (code, message) => { throw new OtpError(code, message); };
 const idOK = id => typeof id === 'string' && /^[a-zA-Z0-9_-]{20,80}$/.test(id);
 const proposalIdOK = id => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id);
 const publicFields = ['title','description','categoryId','categoryLabel','specialtyId','specialtyLabel','zoneId','zoneLabel','budget','status','createdAt','updatedAt'];
 const proposalOf = chat => chat.proposalId || chat.selectedProposalId;
 function linked(chat, p, id) {
-  return chat && chat.requestId === p.requestId && proposalOf(chat) === id && chat.clientUid === p.clientUid && chat.professionalUid === p.professionalUid;
+  return chat && chat.requestId === p.requestId && proposalOf(chat) === id && chat.clientUid === p.clientUid && responderUid(chat) === responderUid(p);
 }
 async function readConversation(tx, uid, id) {
   const chat = await tx.get(`conversations/${id}`);
-  if (!chat || ![chat.clientUid,chat.professionalUid].includes(uid)) fail('permission-denied', 'Cette discussion est privée.');
+  if (!chat || ![chat.clientUid,responderUid(chat)].includes(uid)) fail('permission-denied', 'Cette discussion est privée.');
   const own = await tx.get(`userRequests/${chat.clientUid}/items/${chat.requestId}`);
   const p = await tx.get(`proposals/${proposalOf(chat)}`);
   const writable = chat.status === 'active' && own && ['published','closed','in_discussion'].includes(own.status) &&
     p && linked(chat,p,proposalOf(chat)) && p.conversationId === id && ['discussing','retained','selected'].includes(p.status);
-  const allowed = await contactAllowed(tx,chat.clientUid,chat.professionalUid);
+  const allowed = await contactAllowed(tx,chat.clientUid,responderUid(chat));
   return {chat,own,p,writable:!!writable && allowed};
 }
 function createConversationService({ store, auth, clock = () => Date.now(), onSendTiming = () => {} }) {
@@ -34,8 +35,8 @@ function createConversationService({ store, auth, clock = () => Date.now(), onSe
     return store.transaction(async tx => {
       const p = await tx.get(`proposals/${proposalId}`);
       const own = await tx.get(`userRequests/${uid}/items/${requestId}`);
-      if (!own || !p || p.clientUid !== uid || p.requestId !== requestId || p.professionalUid === uid) fail('permission-denied', 'Seul l’auteur peut ouvrir la discussion pour une proposition reçue.');
-      await assertContact(tx,uid,p.professionalUid);
+      if (!own || !p || p.clientUid !== uid || p.requestId !== requestId || responderUid(p) === uid) fail('permission-denied', 'Seul l’auteur peut ouvrir la discussion pour une proposition reçue.');
+      await assertContact(tx,uid,responderUid(p));
       const conversationId = p.conversationId || proposalId;
       const chat = await tx.get(`conversations/${conversationId}`);
       if (chat) {
@@ -44,17 +45,17 @@ function createConversationService({ store, auth, clock = () => Date.now(), onSe
       }
       const pub = await requestRecord(tx,requestId);
       const user = await tx.get(`users/${uid}`);
-      const pro = await tx.get(`professionalProfiles/${p.professionalUid}`);
+      const pro = await tx.get(`professionalProfiles/${responderUid(p)}`);
       if (own.status !== 'published' || pub?.status !== 'published' || own.createdAt !== pub.createdAt || !['sent','retained'].includes(p.status) || p.conversationId) fail('failed-precondition', 'Une nouvelle discussion nécessite une demande ouverte et une proposition disponible.');
-      if (pro?.status !== 'approved') fail('permission-denied', 'Ce professionnel n’est plus approuvé.');
-      if (pub.visibility === 'direct' && (pub.clientUid !== uid || pub.directProfessionalId !== p.professionalUid)) fail('permission-denied','Cette demande est privée.');
+      await account(responderUid(p));
+      if (pub.visibility === 'direct' && (pub.clientUid !== uid || pub.directProfessionalId !== responderUid(p) || !certifiedProfile(pro))) fail('permission-denied','Cette demande est privée.');
       const now = clock(), status = p.status === 'retained' ? 'retained' : 'discussing';
       const snapshot = Object.fromEntries(publicFields.filter(k => pub[k] !== undefined).map(k => [k,pub[k]]));
       tx.set(`proposals/${proposalId}`, { ...p, status, conversationId, discussionOpenedAt: now });
       tx.set(`conversations/${conversationId}`, {
-        requestId, proposalId, selectedProposalId: proposalId, clientUid: uid, professionalUid: p.professionalUid,
-        participantUids: [uid,p.professionalUid], clientName: typeof user?.fullName === 'string' && user.fullName.trim() ? user.fullName.trim() : a.displayName || 'Client',
-        professionalName: pro.businessName || p.professionalName, requestTitle: pub.title, requestSnapshot: snapshot,
+        requestId, proposalId, selectedProposalId: proposalId, clientUid: uid, ...responderFields(responderUid(p), responderName(p), pro),
+        participantUids: [uid,responderUid(p)], clientName: typeof user?.fullName === 'string' && user.fullName.trim() ? user.fullName.trim() : a.displayName || 'Client',
+        requestTitle: pub.title, requestSnapshot: snapshot,
         status: 'active', proposalStatus: status, schemaVersion: 81, createdAt: now, updatedAt: now, lastMessageAt: now, lastMessagePreview: '',
       });
       return { conversationId, alreadySelected: false };
@@ -68,7 +69,7 @@ function createConversationService({ store, auth, clock = () => Date.now(), onSe
     return store.transaction(async tx => {
       const ownPath = `userRequests/${uid}/items/${requestId}`, auditPath = `${ownPath}/decisions/${decisionId}`;
       const own = await tx.get(ownPath), p = await tx.get(`proposals/${proposalId}`), audit = await tx.get(auditPath);
-      if (!own || !p || p.clientUid !== uid || p.requestId !== requestId || p.professionalUid === uid) fail('permission-denied', 'Seul l’auteur peut décider pour cette proposition.');
+      if (!own || !p || p.clientUid !== uid || p.requestId !== requestId || responderUid(p) === uid) fail('permission-denied', 'Seul l’auteur peut décider pour cette proposition.');
       if (audit) {
         if (audit.proposalId !== proposalId || audit.action !== action || audit.expectedRetainedProposalId !== expected || audit.reason !== reason) fail('already-exists', 'Cet identifiant correspond à une autre décision.');
         return { proposalId, status: audit.status, alreadyDecided: true };
@@ -79,8 +80,12 @@ function createConversationService({ store, auth, clock = () => Date.now(), onSe
       const previous = currentId && currentId !== proposalId ? await tx.get(`proposals/${currentId}`) : null;
       const chat = p.conversationId ? await tx.get(`conversations/${p.conversationId}`) : null;
       const previousChat = action === 'retain' && previous?.conversationId ? await tx.get(`conversations/${previous.conversationId}`) : null;
-      const pro = action === 'retain' ? await tx.get(`professionalProfiles/${p.professionalUid}`) : null;
-      if (action === 'retain' && pro?.status !== 'approved') fail('permission-denied', 'Ce professionnel n’est plus approuvé.');
+      await assertActive(tx,uid);
+      if (action === 'retain') {
+        await assertContact(tx,uid,responderUid(p));
+        await account(responderUid(p));
+        if (own.visibility === 'direct' && !certifiedProfile(await tx.get(`professionalProfiles/${responderUid(p)}`))) fail('permission-denied','Cette demande est réservée au professionnel choisi.');
+      }
       if (chat && !linked(chat,p,proposalId)) fail('failed-precondition','Discussion incohérente.');
       if (action === 'retain' && previous && (previous.clientUid !== uid || previous.requestId !== requestId || previous.status !== 'retained' || (previousChat && !linked(previousChat,previous,currentId)))) fail('failed-precondition','La retenue précédente est incohérente.');
       if (action === 'retain' && currentId && currentId !== proposalId && !previous) fail('failed-precondition','La retenue précédente est indisponible.');
@@ -91,7 +96,7 @@ function createConversationService({ store, auth, clock = () => Date.now(), onSe
         if (previousChat) tx.set(`conversations/${previous.conversationId}`, { ...previousChat, proposalStatus: priorStatus, updatedAt: now });
       }
       tx.set(`proposals/${proposalId}`, { ...p, status, updatedAt: now, ...(action === 'reject' ? { rejectionReason: reason } : {}) });
-      if (action === 'retain' || currentId === proposalId) tx.set(ownPath, { ...own, retainedProposalId: action === 'retain' ? proposalId : null, retainedProfessionalName: action === 'retain' ? p.professionalName : null, updatedAt: now });
+      if (action === 'retain' || currentId === proposalId) tx.set(ownPath, { ...own, retainedProposalId: action === 'retain' ? proposalId : null, retainedProfessionalName: action === 'retain' ? responderName(p) : null, updatedAt: now });
       if (chat) tx.set(`conversations/${p.conversationId}`, { ...chat, proposalStatus: status, updatedAt: now, ...(action === 'reject' ? { status: 'read_only', archivedReason: 'proposal_rejected' } : {}) });
       tx.set(auditPath, { actorUid: uid, requestId, proposalId, action, status, previousRetainedProposalId: currentId, expectedRetainedProposalId: expected, reason, createdAt: now });
       return { proposalId, status, alreadyDecided: false };
@@ -101,7 +106,7 @@ function createConversationService({ store, auth, clock = () => Date.now(), onSe
     const started = process.hrtime.bigint();
     const report = (stage, extra = {}) => {
       // Never log payloads, participant IDs or tokens, even on validation errors.
-      try { onSendTiming({event:'message_send_server_timing',messageId:idOK(data?.messageId)?data.messageId:undefined,stage,elapsedMs:Number(process.hrtime.bigint()-started)/1e6,...extra}); } catch (_) { /* Metrics cannot affect delivery. */ }
+      try { onSendTiming({event:'message_send_server_timing',stage,elapsedMs:Number(process.hrtime.bigint()-started)/1e6,...extra}); } catch (_) { /* Metrics cannot affect delivery. */ }
     };
     report('S0_handler');
     try {

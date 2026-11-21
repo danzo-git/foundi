@@ -163,7 +163,7 @@ void main() {
         t.widget<ConversationCard>(find.byType(ConversationCard)).avatarKey,
         'a' * 32,
       );
-      await fixtures.tap(t, find.text('Mes clients'));
+      await fixtures.tap(t, find.text('Mes réponses'));
       expect(
         t.widget<ConversationCard>(find.byType(ConversationCard)).avatarKey,
         'b' * 32,
@@ -199,7 +199,7 @@ void main() {
       };
       await capture.page(t, list(r));
       expect(find.text('DanzoCorp'), findsOneWidget);
-      await fixtures.tap(t, find.text('Mes clients'));
+      await fixtures.tap(t, find.text('Mes réponses'));
       old.complete({'CompactConversation00001': 'a' * 32});
       await t.pumpAndSettle();
       expect(
@@ -334,7 +334,7 @@ void main() {
                         onSelected: (_) {},
                       ),
                       ChoiceChip(
-                        label: const Text('Mes clients'),
+                        label: const Text('Mes réponses'),
                         selected: false,
                         onSelected: (_) {},
                       ),
